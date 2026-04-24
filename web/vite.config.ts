@@ -11,10 +11,11 @@ export default defineConfig({
     emptyOutDir: true
   },
   server: {
+    port: 5173,
     proxy: {
-      '/api': { target: 'http://localhost:5125', changeOrigin: true },
-      '/openapi': { target: 'http://localhost:5125', changeOrigin: true },
-      '/health': { target: 'http://localhost:5125', changeOrigin: true }
+      '/api': { target: 'http://localhost:5075', changeOrigin: true },
+      '/openapi': { target: 'http://localhost:5075', changeOrigin: true },
+      '/health': { target: 'http://localhost:5075', changeOrigin: true }
     }
   }
 });

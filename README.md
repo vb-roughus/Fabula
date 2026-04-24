@@ -36,31 +36,39 @@ Fabula/
 
 ## Running
 
-### Production (server serves SPA)
+Two PowerShell helper scripts live at the repo root:
+
+### Normal use — `.\run.ps1`
+
+Builds the SPA into `server/Fabula.Api/wwwroot` and starts the .NET
+server. Everything runs on a single origin: `http://localhost:5075`.
+
+Use this whenever you just want to listen to audiobooks.
+
+### Development — `.\dev.ps1`
+
+Opens two PowerShell windows: the .NET backend on `http://localhost:5075`
+and the Vite dev server on `http://localhost:5173` with hot reload.
+Vite proxies `/api`, `/openapi` and `/health` to the backend, so the
+SPA and API still share an origin.
+
+Open `http://localhost:5173` for development. Changes in `web/src/**`
+are reflected in the browser instantly without rebuild. Changes in
+`server/**` require restarting the backend window.
+
+### Manual / Linux / macOS
+
+If you prefer not to use the PowerShell scripts:
 
 ```bash
+# Production build + run
 cd web && npm install && npm run build
 cd ../server && dotnet run --project Fabula.Api
+
+# Or development with hot reload
+cd server && dotnet run --project Fabula.Api   # terminal 1
+cd web && npm run dev                          # terminal 2
 ```
-
-`npm run build` writes the SPA into `server/Fabula.Api/wwwroot`, so the
-.NET server both hosts the API and serves the web UI on the same port
-(default `http://localhost:5125`).
-
-### Development (Vite dev server + hot reload)
-
-Run the server and the Vite dev server in separate terminals:
-
-```bash
-# Terminal 1 — backend
-cd server && ASPNETCORE_URLS=http://localhost:5125 dotnet run --project Fabula.Api
-
-# Terminal 2 — web UI with HMR
-cd web && npm run dev
-```
-
-Vite serves the SPA on `http://localhost:5173` and proxies `/api`,
-`/openapi`, and `/health` to the backend on `5125`.
 
 On first start the SQLite database is created automatically at
 `server/Fabula.Api/data/fabula.db`.
