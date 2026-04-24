@@ -15,6 +15,12 @@ export interface BookSummary {
   seriesPosition: number | null;
   duration: string; // "HH:MM:SS" TimeSpan
   coverUrl: string | null;
+  progress: ProgressSummary | null;
+}
+
+export interface ProgressSummary {
+  position: string;
+  finished: boolean;
 }
 
 export interface BookDetail extends BookSummary {

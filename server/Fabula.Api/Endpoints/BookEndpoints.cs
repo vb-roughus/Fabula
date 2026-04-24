@@ -7,6 +7,9 @@ namespace Fabula.Api.Endpoints;
 
 public static class BookEndpoints
 {
+    // Temporary single-user id until JWT auth lands -- mirrors ProgressEndpoints.
+    private const int TemporaryUserId = 1;
+
     public static IEndpointRouteBuilder MapBookEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/books").WithTags("Books");
@@ -46,7 +49,11 @@ public static class BookEndpoints
                     b.Series != null ? b.Series.Name : null,
                     b.SeriesPosition,
                     b.Duration,
-                    b.CoverPath != null ? $"/api/books/{b.Id}/cover" : null))
+                    b.CoverPath != null ? $"/api/books/{b.Id}/cover" : null,
+                    db.PlaybackProgress
+                        .Where(p => p.UserId == TemporaryUserId && p.BookId == b.Id)
+                        .Select(p => new ProgressSummaryDto(p.Position, p.Finished))
+                        .FirstOrDefault()))
                 .ToListAsync(ct);
 
             return Results.Ok(new PagedResult<BookSummaryDto>(books, total, page, pageSize));
@@ -116,7 +123,10 @@ public record BookSummaryDto(
     string? Series,
     decimal? SeriesPosition,
     TimeSpan Duration,
-    string? CoverUrl);
+    string? CoverUrl,
+    ProgressSummaryDto? Progress);
+
+public record ProgressSummaryDto(TimeSpan Position, bool Finished);
 
 public record BookDetailDto(
     int Id,
