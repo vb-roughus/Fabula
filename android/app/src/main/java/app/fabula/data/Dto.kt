@@ -20,7 +20,8 @@ data class BookSummaryDto(
 @Serializable
 data class ProgressSummaryDto(
     val position: String,
-    val finished: Boolean
+    val finished: Boolean,
+    val updatedAt: String? = null
 )
 
 @Serializable
@@ -84,4 +85,20 @@ data class UpdateProgressRequest(
     val position: String,
     val finished: Boolean,
     val device: String
+)
+
+@Serializable
+data class SeriesSummaryDto(
+    val id: Int,
+    val name: String,
+    val bookCount: Int,
+    val coverUrl: String? = null
+)
+
+@Serializable
+data class SeriesDetailDto(
+    val id: Int,
+    val name: String,
+    val description: String? = null,
+    val books: List<BookSummaryDto> = emptyList()
 )

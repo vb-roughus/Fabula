@@ -22,6 +22,7 @@ export interface BookSummary {
 export interface ProgressSummary {
   position: string;
   finished: boolean;
+  updatedAt: string;
 }
 
 export interface BookDetail extends BookSummary {

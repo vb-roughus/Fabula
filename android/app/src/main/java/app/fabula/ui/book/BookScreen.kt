@@ -16,10 +16,16 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.Button
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -28,6 +34,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -39,9 +46,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import app.fabula.data.BookDetailDto
 import app.fabula.data.ChapterDto
 import app.fabula.data.FabulaRepository
@@ -88,19 +97,24 @@ fun BookScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(book?.title ?: "") },
+                title = { },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Zurück")
                     }
-                }
+                },
+                actions = {
+                    IconButton(onClick = { /* menu placeholder */ }) {
+                        Icon(Icons.Filled.MoreHoriz, contentDescription = "Mehr")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
             )
-        }
+        },
+        containerColor = MaterialTheme.colorScheme.background
     ) { insets ->
         Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(insets),
+            modifier = Modifier.fillMaxSize().padding(insets),
             contentAlignment = Alignment.Center
         ) {
             val b = book
@@ -116,8 +130,12 @@ fun BookScreen(
                     onPlay = {
                         scope.launch {
                             if (playerState.book?.id != b.id) player.loadBook(b)
-                            player.play()
-                            onPlaybackStarted()
+                            if (playerState.isPlaying && playerState.book?.id == b.id) {
+                                player.pause()
+                            } else {
+                                player.play()
+                                onPlaybackStarted()
+                            }
                         }
                     },
                     onChapterClick = { chapter ->
@@ -144,112 +162,231 @@ private fun BookContent(
     onPlay: () -> Unit,
     onChapterClick: (ChapterDto) -> Unit
 ) {
+    val totalSeconds = parseTimeSpan(book.duration)
+
     LazyColumn(modifier = Modifier.fillMaxSize()) {
         item {
-            Row(modifier = Modifier.padding(16.dp)) {
-                Box(
-                    modifier = Modifier
-                        .size(120.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .aspectRatio(1f)
-                ) {
-                    val coverUrl = repository.coverUrl(book)
-                    if (coverUrl != null) {
-                        AsyncImage(
-                            model = coverUrl,
-                            contentDescription = book.title,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
-                }
-                Spacer(Modifier.width(16.dp))
-                Column(Modifier.fillMaxWidth()) {
-                    Text(book.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                    if (book.authors.isNotEmpty()) {
-                        Text("von ${book.authors.joinToString(", ")}", style = MaterialTheme.typography.bodyMedium)
-                    }
-                    if (book.narrators.isNotEmpty()) {
-                        Text(
-                            "gesprochen von ${book.narrators.joinToString(", ")}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.outline
-                        )
-                    }
-                    book.series?.let { series ->
-                        Text(
-                            buildString {
-                                append(series)
-                                book.seriesPosition?.let { append(" – Teil $it") }
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.secondary
-                        )
-                    }
-                    Text(
-                        formatDurationHuman(parseTimeSpan(book.duration)),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.outline
+            // Cover block, centered, large.
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 48.dp, vertical = 8.dp)
+                    .aspectRatio(1f)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                repository.coverUrl(book)?.let { url ->
+                    AsyncImage(
+                        model = url,
+                        contentDescription = book.title,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
                     )
-                    Spacer(Modifier.height(12.dp))
-                    Button(onClick = onPlay) {
-                        Text(if (isCurrent && isPlaying) "Wird abgespielt" else "Abspielen")
-                    }
                 }
             }
+        }
+
+        item {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Text(
+                    book.title,
+                    style = MaterialTheme.typography.headlineMedium.copy(fontSize = 28.sp),
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 3
+                )
+                book.subtitle?.takeIf { it.isNotBlank() }?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.outline,
+                        maxLines = 2,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+            }
+        }
+
+        item {
+            // "Fabula" brand row + author
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(18.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary)
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    buildString {
+                        append("Fabula")
+                        if (book.authors.isNotEmpty()) {
+                            append(" · ")
+                            append(book.authors.joinToString(", "))
+                        }
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1
+                )
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    buildString {
+                        append(formatDurationHuman(totalSeconds))
+                        if (book.chapters.isNotEmpty()) {
+                            append(" · ${book.chapters.size} Kapitel")
+                        }
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline
+                )
+            }
+        }
+
+        item {
+            ActionRow(onPlay = onPlay, isPlaying = isCurrent && isPlaying)
         }
 
         if (!book.description.isNullOrBlank()) {
             item {
                 Text(
                     book.description,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    style = MaterialTheme.typography.bodyMedium
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.outline,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
                 )
             }
         }
 
         if (book.chapters.isNotEmpty()) {
-            item {
-                Text(
-                    "Kapitel",
-                    modifier = Modifier.padding(start = 16.dp, top = 24.dp, bottom = 8.dp),
-                    style = MaterialTheme.typography.titleMedium
+            items(items = book.chapters, key = { it.index }) { chapter ->
+                ChapterRow(
+                    chapter = chapter,
+                    isActive = isCurrent && currentChapterIndex == chapter.index,
+                    onClick = { onChapterClick(chapter) }
                 )
             }
-            items(items = book.chapters, key = { it.index }) { chapter ->
-                val active = isCurrent && currentChapterIndex == chapter.index
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onChapterClick(chapter) }
-                        .background(if (active) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface)
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            "${chapter.index + 1}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.outline,
-                            modifier = Modifier.width(28.dp)
-                        )
-                        Text(
-                            chapter.title,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = if (active) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                    Text(
-                        formatClock(parseTimeSpan(chapter.start)),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.outline
-                    )
-                }
+        }
+
+        item { Spacer(Modifier.height(24.dp)) }
+    }
+}
+
+@Composable
+private fun ActionRow(onPlay: () -> Unit, isPlaying: Boolean) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        IconButton(onClick = { /* bookmark placeholder */ }) {
+            Icon(
+                Icons.Filled.BookmarkBorder,
+                contentDescription = "Lesezeichen",
+                tint = MaterialTheme.colorScheme.outline,
+                modifier = Modifier.size(26.dp)
+            )
+        }
+        IconButton(onClick = { /* download placeholder */ }, enabled = false) {
+            Icon(
+                Icons.Filled.Download,
+                contentDescription = "Herunterladen",
+                tint = MaterialTheme.colorScheme.outline,
+                modifier = Modifier.size(26.dp)
+            )
+        }
+        IconButton(onClick = { /* more placeholder */ }) {
+            Icon(
+                Icons.Filled.MoreHoriz,
+                contentDescription = "Mehr",
+                tint = MaterialTheme.colorScheme.outline,
+                modifier = Modifier.size(26.dp)
+            )
+        }
+
+        Spacer(Modifier.weight(1f))
+
+        Box(
+            modifier = Modifier
+                .size(56.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary)
+                .clickable(onClick = onPlay),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                contentDescription = if (isPlaying) "Pause" else "Abspielen",
+                tint = MaterialTheme.colorScheme.onPrimary,
+                modifier = Modifier.size(32.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun ChapterRow(
+    chapter: ChapterDto,
+    isActive: Boolean,
+    onClick: () -> Unit
+) {
+    val chapterDurationSec = parseTimeSpan(chapter.end) - parseTimeSpan(chapter.start)
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(
+            modifier = Modifier.weight(1f),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "${chapter.index + 1}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                modifier = Modifier.width(32.dp)
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    chapter.title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                    fontWeight = if (isActive) FontWeight.Medium else FontWeight.Normal,
+                    maxLines = 1
+                )
+                Text(
+                    formatClock(chapterDurationSec.coerceAtLeast(0.0)),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline
+                )
             }
-            item { Spacer(Modifier.height(24.dp)) }
+        }
+        IconButton(onClick = { /* chapter menu placeholder */ }) {
+            Icon(
+                Icons.Filled.MoreHoriz,
+                contentDescription = "Mehr",
+                tint = MaterialTheme.colorScheme.outline
+            )
         }
     }
 }

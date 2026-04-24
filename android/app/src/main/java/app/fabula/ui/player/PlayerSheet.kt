@@ -1,21 +1,20 @@
 package app.fabula.ui.player
 
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.foundation.clickable
+import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import app.fabula.data.FabulaRepository
 import app.fabula.player.PlayerController
 
 /**
- * Renders the mini (collapsed) and full (expanded) players stacked, cross-fading
- * based on whether the BottomSheet is expanded. The mini version responds to tap
- * by expanding the sheet.
+ * Content of the BottomSheet. When collapsed (peek) we stack the mini
+ * player above the bottom navigation tabs. When expanded, the full
+ * player takes over and hides both.
  */
 @Composable
 fun PlayerSheet(
@@ -25,34 +24,37 @@ fun PlayerSheet(
     onRequestExpand: () -> Unit,
     onRequestCollapse: () -> Unit,
     onOpenBook: (Int) -> Unit,
+    bottomTabsContent: @Composable () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val expansion by animateFloatAsState(
-        targetValue = if (isExpanded) 1f else 0f,
-        label = "player-sheet-expansion"
-    )
-
-    Box(modifier = modifier.fillMaxSize()) {
-        // Mini bar at the top of the sheet, visible when collapsed.
-        PlayerBar(
-            player = player,
-            onOpenBook = onOpenBook,
-            modifier = Modifier
-                .fillMaxWidth()
-                .alpha(1f - expansion)
-                .clickable(enabled = !isExpanded) { onRequestExpand() }
-        )
-
-        // Full player fills the sheet, visible when expanded.
-        if (expansion > 0.01f) {
-            FullPlayer(
-                player = player,
-                repository = repository,
-                onCollapse = onRequestCollapse,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .alpha(expansion)
-            )
+    Crossfade(
+        targetState = isExpanded,
+        label = "player-sheet-state",
+        modifier = modifier.fillMaxSize()
+    ) { expanded ->
+        Box(Modifier.fillMaxSize()) {
+            if (expanded) {
+                FullPlayer(
+                    player = player,
+                    repository = repository,
+                    onCollapse = onRequestCollapse,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                ) {
+                    MiniPlayer(
+                        player = player,
+                        repository = repository,
+                        onClick = onRequestExpand,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    bottomTabsContent()
+                }
+            }
         }
     }
 }

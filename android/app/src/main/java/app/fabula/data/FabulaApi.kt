@@ -25,4 +25,10 @@ interface FabulaApi {
         @Path("bookId") bookId: Int,
         @Body body: UpdateProgressRequest
     ): ProgressDto
+
+    @GET("api/series")
+    suspend fun listSeries(): List<SeriesSummaryDto>
+
+    @GET("api/series/{id}")
+    suspend fun getSeries(@Path("id") id: Int): SeriesDetailDto
 }

@@ -59,7 +59,7 @@ public static class SeriesEndpoints
                     b.CoverPath != null ? $"/api/books/{b.Id}/cover" : null,
                     db.PlaybackProgress
                         .Where(p => p.UserId == TemporaryUserId && p.BookId == b.Id)
-                        .Select(p => new ProgressSummaryDto(p.Position, p.Finished))
+                        .Select(p => new ProgressSummaryDto(p.Position, p.Finished, p.UpdatedAt))
                         .FirstOrDefault()))
                 .ToListAsync(ct);
 

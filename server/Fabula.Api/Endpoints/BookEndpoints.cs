@@ -53,7 +53,7 @@ public static class BookEndpoints
                     b.CoverPath != null ? $"/api/books/{b.Id}/cover" : null,
                     db.PlaybackProgress
                         .Where(p => p.UserId == TemporaryUserId && p.BookId == b.Id)
-                        .Select(p => new ProgressSummaryDto(p.Position, p.Finished))
+                        .Select(p => new ProgressSummaryDto(p.Position, p.Finished, p.UpdatedAt))
                         .FirstOrDefault()))
                 .ToListAsync(ct);
 
@@ -77,7 +77,7 @@ public static class BookEndpoints
             var progress = await db.PlaybackProgress
                 .AsNoTracking()
                 .Where(p => p.UserId == TemporaryUserId && p.BookId == id)
-                .Select(p => new ProgressSummaryDto(p.Position, p.Finished))
+                .Select(p => new ProgressSummaryDto(p.Position, p.Finished, p.UpdatedAt))
                 .FirstOrDefaultAsync(ct);
 
             return Results.Ok(new BookDetailDto(
@@ -136,7 +136,7 @@ public record BookSummaryDto(
     string? CoverUrl,
     ProgressSummaryDto? Progress);
 
-public record ProgressSummaryDto(TimeSpan Position, bool Finished);
+public record ProgressSummaryDto(TimeSpan Position, bool Finished, DateTime UpdatedAt);
 
 public record BookDetailDto(
     int Id,
