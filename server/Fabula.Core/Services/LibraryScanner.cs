@@ -39,7 +39,7 @@ public class LibraryScanner(
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var files = bookDir.OrderBy(f => f, StringComparer.OrdinalIgnoreCase).ToList();
+            var files = bookDir.OrderBy(f => f, NaturalStringComparer.Instance).ToList();
             try
             {
                 var result = await ProcessBookAsync(folder, bookDir.Key, files, cancellationToken);
