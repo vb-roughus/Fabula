@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -42,7 +43,14 @@ fun Navigation(
 
     val startDestination = if (baseUrl!!.isBlank()) "settings" else "library"
 
-    Column(Modifier.fillMaxSize()) {
+    // navigationBarsPadding keeps the whole app UI above the system
+    // navigation buttons. Status bar inset is handled per-screen by the
+    // Material3 TopAppBars.
+    Column(
+        Modifier
+            .fillMaxSize()
+            .navigationBarsPadding()
+    ) {
         NavHost(
             navController = navController,
             startDestination = startDestination,
