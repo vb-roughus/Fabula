@@ -1,37 +1,34 @@
 package app.fabula.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LibraryBooks
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Style
-import androidx.compose.material3.BottomSheetScaffold
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.SheetValue
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberBottomSheetScaffoldState
-import androidx.compose.material3.rememberStandardBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.unit.dp
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -45,14 +42,12 @@ import app.fabula.player.PlayerController
 import app.fabula.ui.book.BookScreen
 import app.fabula.ui.home.HomeScreen
 import app.fabula.ui.library.LibraryScreen
-import app.fabula.ui.player.PlayerSheet
+import app.fabula.ui.player.FullPlayer
+import app.fabula.ui.player.MiniPlayer
 import app.fabula.ui.series.SeriesDetailScreen
 import app.fabula.ui.series.SeriesScreen
 import app.fabula.ui.settings.SettingsScreen
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
-
-private val MiniPlayerHeight = 76.dp
 
 private enum class Tab(
     val route: String,
@@ -70,7 +65,6 @@ private enum class Tab(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun Navigation(
     repository: FabulaRepository,
@@ -92,56 +86,32 @@ fun Navigation(
     val playerState by player.state.collectAsState()
     val hasBook = playerState.book != null
 
-    val sheetState = rememberStandardBottomSheetState(
-        initialValue = SheetValue.PartiallyExpanded,
-        skipHiddenState = true
-    )
-    val scaffoldState = rememberBottomSheetScaffoldState(bottomSheetState = sheetState)
-    val scope = rememberCoroutineScope()
+    var fullPlayerOpen by remember { mutableStateOf(false) }
 
-    val isExpanded = sheetState.currentValue == SheetValue.Expanded ||
-        sheetState.targetValue == SheetValue.Expanded
+    BackHandler(enabled = fullPlayerOpen) { fullPlayerOpen = false }
 
-    BackHandler(enabled = isExpanded) {
-        scope.launch { sheetState.partialExpand() }
-    }
-
-    val expandPlayer: () -> Unit = { scope.launch { sheetState.expand() } }
-    val collapsePlayer: () -> Unit = { scope.launch { sheetState.partialExpand() } }
-
-    val navBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    val miniHeight = if (hasBook) MiniPlayerHeight else 0.dp
-
-    BottomSheetScaffold(
-        scaffoldState = scaffoldState,
-        sheetPeekHeight = miniHeight + 80.dp + navBarInset,  // mini player + nav bar + inset
-        sheetSwipeEnabled = hasBook,
-        sheetDragHandle = null,
-        sheetContent = {
-            PlayerSheet(
-                player = player,
-                repository = repository,
-                isExpanded = isExpanded,
-                onRequestExpand = expandPlayer,
-                onRequestCollapse = collapsePlayer,
-                onOpenBook = { id ->
-                    collapsePlayer()
-                    navController.navigate("book/$id")
-                },
-                bottomTabsContent = {
+    Box(modifier = Modifier.fillMaxSize()) {
+        Scaffold(
+            modifier = Modifier.fillMaxSize(),
+            bottomBar = {
+                Column {
+                    if (hasBook) {
+                        MiniPlayer(
+                            player = player,
+                            repository = repository,
+                            onClick = { fullPlayerOpen = true }
+                        )
+                    }
                     FabulaNavigationBar(navController = navController)
                 }
-            )
-        }
-    ) { innerPadding ->
-        Column(
-            Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-        ) {
+            }
+        ) { innerPadding ->
             NavHost(
                 navController = navController,
-                startDestination = startTab.route
+                startDestination = startTab.route,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
             ) {
                 composable(Tab.Home.route) {
                     HomeScreen(
@@ -194,10 +164,25 @@ fun Navigation(
                         repository = repository,
                         player = player,
                         onBack = { navController.popBackStack() },
-                        onPlaybackStarted = expandPlayer
+                        onPlaybackStarted = { fullPlayerOpen = true }
                     )
                 }
             }
+        }
+
+        // Fullscreen player slides up from the bottom and covers everything
+        // (including the nav bar). Back button or the collapse arrow dismisses it.
+        AnimatedVisibility(
+            visible = hasBook && fullPlayerOpen,
+            enter = slideInVertically(initialOffsetY = { it }),
+            exit = slideOutVertically(targetOffsetY = { it })
+        ) {
+            FullPlayer(
+                player = player,
+                repository = repository,
+                onCollapse = { fullPlayerOpen = false },
+                modifier = Modifier.fillMaxSize()
+            )
         }
     }
 }
@@ -229,4 +214,3 @@ private fun FabulaNavigationBar(navController: NavHostController) {
         }
     }
 }
-
