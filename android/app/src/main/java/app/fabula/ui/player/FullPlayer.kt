@@ -215,35 +215,70 @@ fun FullPlayer(
 
         Spacer(Modifier.height(16.dp))
 
-        // Slider with chapter-relative time labels
-        Slider(
-            value = sliderValue,
-            onValueChange = { scrubFraction = it },
-            onValueChangeFinished = {
-                scrubFraction?.let { fraction ->
-                    player.seekInBook(chapterStart + fraction * chapterDuration)
-                }
-                scrubFraction = null
-            },
-            colors = SliderDefaults.colors(
-                thumbColor = whiteText,
-                activeTrackColor = whiteText,
-                inactiveTrackColor = whiteText.copy(alpha = 0.25f)
-            )
-        )
+        // Slim chapter-relative scrubber: time / slider / time on a single line.
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
+            verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
                 formatClock(chapterPos),
-                style = MaterialTheme.typography.labelMedium,
-                color = mutedText
+                style = MaterialTheme.typography.labelSmall,
+                color = mutedText,
+                modifier = Modifier.width(40.dp)
+            )
+            Slider(
+                value = sliderValue,
+                onValueChange = { scrubFraction = it },
+                onValueChangeFinished = {
+                    scrubFraction?.let { fraction ->
+                        player.seekInBook(chapterStart + fraction * chapterDuration)
+                    }
+                    scrubFraction = null
+                },
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 8.dp),
+                colors = SliderDefaults.colors(
+                    thumbColor = whiteText,
+                    activeTrackColor = whiteText,
+                    inactiveTrackColor = whiteText.copy(alpha = 0.25f)
+                ),
+                thumb = {
+                    Box(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .clip(CircleShape)
+                            .background(whiteText)
+                    )
+                },
+                track = { sliderState ->
+                    val range = sliderState.valueRange.endInclusive - sliderState.valueRange.start
+                    val fraction = if (range > 0f)
+                        ((sliderState.value - sliderState.valueRange.start) / range).coerceIn(0f, 1f)
+                    else 0f
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(2.dp)
+                            .clip(RoundedCornerShape(1.dp))
+                            .background(whiteText.copy(alpha = 0.25f))
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth(fraction)
+                                .height(2.dp)
+                                .clip(RoundedCornerShape(1.dp))
+                                .background(whiteText)
+                        )
+                    }
+                }
             )
             Text(
                 formatClock(chapterDuration),
-                style = MaterialTheme.typography.labelMedium,
-                color = mutedText
+                style = MaterialTheme.typography.labelSmall,
+                color = mutedText,
+                modifier = Modifier.width(40.dp),
+                textAlign = TextAlign.End
             )
         }
 
