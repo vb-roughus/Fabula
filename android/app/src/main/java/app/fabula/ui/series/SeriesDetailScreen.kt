@@ -37,11 +37,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import app.fabula.data.BookSummaryDto
 import app.fabula.data.FabulaRepository
+import app.fabula.data.SeriesBookDto
 import app.fabula.data.SeriesDetailDto
-import app.fabula.data.formatDurationHuman
-import app.fabula.data.parseTimeSpan
 import coil3.compose.AsyncImage
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -100,7 +98,7 @@ fun SeriesDetailScreen(
 
 @Composable
 private fun SeriesBookRow(
-    book: BookSummaryDto,
+    book: SeriesBookDto,
     repository: FabulaRepository,
     onClick: () -> Unit
 ) {
@@ -117,7 +115,7 @@ private fun SeriesBookRow(
                 .clip(RoundedCornerShape(4.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant)
         ) {
-            repository.coverUrl(book)?.let { url ->
+            book.coverUrl?.let { repository.resolveUrl(it) }?.let { url ->
                 AsyncImage(
                     model = url,
                     contentDescription = book.title,
@@ -129,7 +127,7 @@ private fun SeriesBookRow(
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                book.seriesPosition?.let {
+                book.position?.let {
                     Text(
                         "#$it",
                         style = MaterialTheme.typography.bodySmall,
@@ -144,11 +142,14 @@ private fun SeriesBookRow(
                     maxLines = 1
                 )
             }
-            Text(
-                formatDurationHuman(parseTimeSpan(book.duration)),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.outline
-            )
+            if (book.authors.isNotEmpty()) {
+                Text(
+                    book.authors.joinToString(", "),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline,
+                    maxLines = 1
+                )
+            }
         }
     }
 }

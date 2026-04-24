@@ -91,7 +91,17 @@ data class UpdateProgressRequest(
 data class SeriesSummaryDto(
     val id: Int,
     val name: String,
+    val description: String? = null,
     val bookCount: Int,
+    val coverUrl: String? = null
+)
+
+@Serializable
+data class SeriesBookDto(
+    val id: Int,
+    val title: String,
+    val authors: List<String> = emptyList(),
+    val position: Double? = null,
     val coverUrl: String? = null
 )
 
@@ -100,5 +110,5 @@ data class SeriesDetailDto(
     val id: Int,
     val name: String,
     val description: String? = null,
-    val books: List<BookSummaryDto> = emptyList()
+    val books: List<SeriesBookDto> = emptyList()
 )

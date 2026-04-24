@@ -83,7 +83,16 @@ export interface Bookmark {
 export interface SeriesSummary {
   id: number;
   name: string;
+  description: string | null;
   bookCount: number;
+  coverUrl: string | null;
+}
+
+export interface SeriesBook {
+  id: number;
+  title: string;
+  authors: string[];
+  position: number | null;
   coverUrl: string | null;
 }
 
@@ -91,5 +100,5 @@ export interface SeriesDetail {
   id: number;
   name: string;
   description: string | null;
-  books: BookSummary[];
+  books: SeriesBook[];
 }

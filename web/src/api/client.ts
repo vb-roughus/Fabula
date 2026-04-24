@@ -48,6 +48,31 @@ export const api = {
 
   getBook: (id: number) => request<BookDetail>(`/api/books/${id}`),
 
+  assignBookSeries: (bookId: number, seriesId: number | null, seriesPosition: number | null) =>
+    request<void>(`/api/books/${bookId}/series`, {
+      method: 'PUT',
+      body: JSON.stringify({ seriesId, seriesPosition })
+    }),
+
+  listSeries: () => request<SeriesSummary[]>('/api/series'),
+
+  getSeries: (id: number) => request<SeriesDetail>(`/api/series/${id}`),
+
+  createSeries: (name: string, description: string | null) =>
+    request<SeriesSummary>('/api/series', {
+      method: 'POST',
+      body: JSON.stringify({ name, description })
+    }),
+
+  updateSeries: (id: number, name: string, description: string | null) =>
+    request<SeriesSummary>(`/api/series/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ name, description })
+    }),
+
+  deleteSeries: (id: number) =>
+    request<void>(`/api/series/${id}`, { method: 'DELETE' }),
+
   getProgress: (bookId: number) => request<Progress>(`/api/progress/${bookId}`),
 
   saveProgress: (bookId: number, position: string, finished: boolean, device: string) =>
@@ -72,11 +97,7 @@ export const api = {
     }),
 
   deleteBookmark: (id: number) =>
-    request<void>(`/api/bookmarks/${id}`, { method: 'DELETE' }),
-
-  listSeries: () => request<SeriesSummary[]>('/api/series'),
-
-  getSeries: (id: number) => request<SeriesDetail>(`/api/series/${id}`)
+    request<void>(`/api/bookmarks/${id}`, { method: 'DELETE' })
 };
 
 export const streamUrl = (audioFileId: number) => `/api/stream/${audioFileId}`;

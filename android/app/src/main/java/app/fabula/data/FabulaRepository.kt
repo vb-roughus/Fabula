@@ -60,6 +60,8 @@ class FabulaRepository(private val preferences: ServerPreferences) {
     fun coverUrl(book: BookSummaryDto): String? = book.coverUrl?.let { resolveRelative(it) }
     fun coverUrl(book: BookDetailDto): String? = book.coverUrl?.let { resolveRelative(it) }
     fun coverUrl(series: SeriesSummaryDto): String? = series.coverUrl?.let { resolveRelative(it) }
+
+    fun resolveUrl(path: String): String? = resolveRelative(path)
     fun streamUrl(audioFileId: Int): String? {
         val base = currentBaseUrl ?: return null
         return base + "api/stream/$audioFileId"

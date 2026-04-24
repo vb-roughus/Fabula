@@ -102,6 +102,29 @@ public static class BookEndpoints
                 book.Files.Select(f => new AudioFileDto(f.Id, f.TrackIndex, f.Duration, f.OffsetInBook)).ToList()));
         });
 
+        group.MapPut("/{id:int}/series", async (int id, FabulaDbContext db, AssignSeriesRequest req, CancellationToken ct) =>
+        {
+            var book = await db.Books.FindAsync([id], ct);
+            if (book is null) return Results.NotFound();
+
+            if (req.SeriesId is int seriesId)
+            {
+                if (!await db.Series.AnyAsync(s => s.Id == seriesId, ct))
+                    return Results.BadRequest(new { error = $"Series {seriesId} does not exist." });
+
+                book.SeriesId = seriesId;
+                book.SeriesPosition = req.SeriesPosition;
+            }
+            else
+            {
+                book.SeriesId = null;
+                book.SeriesPosition = null;
+            }
+
+            await db.SaveChangesAsync(ct);
+            return Results.NoContent();
+        });
+
         group.MapGet("/{id:int}/cover", async (int id, FabulaDbContext db, ICoverStore store, CancellationToken ct) =>
         {
             var book = await db.Books.AsNoTracking().FirstOrDefaultAsync(b => b.Id == id, ct);
@@ -162,3 +185,4 @@ public record BookDetailDto(
 public record ChapterDto(int Index, string Title, TimeSpan Start, TimeSpan End);
 public record AudioFileDto(int Id, int TrackIndex, TimeSpan Duration, TimeSpan OffsetInBook);
 public record PagedResult<T>(IReadOnlyList<T> Items, int Total, int Page, int PageSize);
+public record AssignSeriesRequest(int? SeriesId, decimal? SeriesPosition);
