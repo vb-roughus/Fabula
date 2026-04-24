@@ -36,6 +36,7 @@ app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 
 app.MapLibraryEndpoints();
 app.MapBookEndpoints();
+app.MapSeriesEndpoints();
 app.MapStreamingEndpoints();
 app.MapProgressEndpoints();
 

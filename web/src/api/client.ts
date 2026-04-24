@@ -4,7 +4,9 @@ import type {
   LibraryFolder,
   PagedResult,
   Progress,
-  ScanResult
+  ScanResult,
+  SeriesDetail,
+  SeriesSummary
 } from './types';
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -44,6 +46,31 @@ export const api = {
   },
 
   getBook: (id: number) => request<BookDetail>(`/api/books/${id}`),
+
+  assignBookSeries: (bookId: number, seriesId: number | null, seriesPosition: number | null) =>
+    request<void>(`/api/books/${bookId}/series`, {
+      method: 'PUT',
+      body: JSON.stringify({ seriesId, seriesPosition })
+    }),
+
+  listSeries: () => request<SeriesSummary[]>('/api/series'),
+
+  getSeries: (id: number) => request<SeriesDetail>(`/api/series/${id}`),
+
+  createSeries: (name: string, description: string | null) =>
+    request<SeriesSummary>('/api/series', {
+      method: 'POST',
+      body: JSON.stringify({ name, description })
+    }),
+
+  updateSeries: (id: number, name: string, description: string | null) =>
+    request<SeriesSummary>(`/api/series/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ name, description })
+    }),
+
+  deleteSeries: (id: number) =>
+    request<void>(`/api/series/${id}`, { method: 'DELETE' }),
 
   getProgress: (bookId: number) => request<Progress>(`/api/progress/${bookId}`),
 

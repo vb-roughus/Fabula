@@ -18,6 +18,7 @@ export interface BookSummary {
 }
 
 export interface BookDetail extends BookSummary {
+  seriesId: number | null;
   description: string | null;
   language: string | null;
   publisher: string | null;
@@ -62,4 +63,26 @@ export interface ScanResult {
   booksUpdated: number;
   booksRemoved: number;
   filesScanned: number;
+}
+
+export interface SeriesSummary {
+  id: number;
+  name: string;
+  description: string | null;
+  bookCount: number;
+}
+
+export interface SeriesBook {
+  id: number;
+  title: string;
+  authors: string[];
+  position: number | null;
+  coverUrl: string | null;
+}
+
+export interface SeriesDetail {
+  id: number;
+  name: string;
+  description: string | null;
+  books: SeriesBook[];
 }
