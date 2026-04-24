@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
@@ -28,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import app.fabula.data.formatClock
+import app.fabula.data.parseTimeSpan
 import app.fabula.player.PlayerController
 
 @Composable
@@ -44,12 +46,19 @@ fun PlayerBar(
     val prevChapter = chapters.getOrNull(chapterIdx - 1)
     val nextChapter = chapters.getOrNull(chapterIdx + 1)
 
-    val pct = if (state.durationInBook > 0) (state.positionInBook / state.durationInBook).toFloat().coerceIn(0f, 1f) else 0f
+    // Progress relative to the current chapter (falls back to book-wide if
+    // no chapter is defined at the current position).
+    val chapterStart = state.currentChapter?.let { parseTimeSpan(it.start) } ?: 0.0
+    val chapterEnd = state.currentChapter?.let { parseTimeSpan(it.end) } ?: state.durationInBook
+    val chapterDuration = (chapterEnd - chapterStart).coerceAtLeast(0.0)
+    val chapterPos = (state.positionInBook - chapterStart).coerceIn(0.0, chapterDuration)
+    val pct = if (chapterDuration > 0) (chapterPos / chapterDuration).toFloat().coerceIn(0f, 1f) else 0f
 
     Column(
         modifier = modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surface)
+            .navigationBarsPadding()
     ) {
         Box(
             modifier = Modifier
@@ -122,8 +131,12 @@ fun PlayerBar(
                 .padding(horizontal = 16.dp, vertical = 2.dp),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text(formatClock(state.positionInBook), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
-            Text(formatClock(state.durationInBook), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+            Text(formatClock(chapterPos), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+            Text(
+                "-" + formatClock((chapterDuration - chapterPos).coerceAtLeast(0.0)),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.outline
+            )
         }
     }
 }

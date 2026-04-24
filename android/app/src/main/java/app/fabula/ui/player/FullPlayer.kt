@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -46,6 +47,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import app.fabula.data.FabulaRepository
 import app.fabula.data.formatClock
+import app.fabula.data.parseTimeSpan
 import app.fabula.player.PlayerController
 import coil3.compose.AsyncImage
 
@@ -62,23 +64,31 @@ fun FullPlayer(
     val book = state.book ?: return
 
     // Local drag position so the slider stays smooth while the user scrubs.
+    // Stored as book-wide seconds; the slider projects into chapter-relative.
     var scrubPosition by remember { mutableStateOf<Float?>(null) }
     var currentSpeed by remember { mutableFloatStateOf(1.0f) }
     var speedMenuOpen by remember { mutableStateOf(false) }
 
     val pos = scrubPosition?.toDouble() ?: state.positionInBook
-    val duration = state.durationInBook
-    val sliderValue = if (duration > 0) (pos / duration).toFloat().coerceIn(0f, 1f) else 0f
 
     val chapters = book.chapters
     val chapterIdx = state.currentChapter?.index ?: -1
     val prevChapter = chapters.getOrNull(chapterIdx - 1)
     val nextChapter = chapters.getOrNull(chapterIdx + 1)
 
+    // The slider reflects progress within the current chapter. When no chapter
+    // is defined at the current position, fall back to the whole book.
+    val chapterStart = state.currentChapter?.let { parseTimeSpan(it.start) } ?: 0.0
+    val chapterEnd = state.currentChapter?.let { parseTimeSpan(it.end) } ?: state.durationInBook
+    val chapterDuration = (chapterEnd - chapterStart).coerceAtLeast(0.0)
+    val chapterPos = (pos - chapterStart).coerceIn(0.0, chapterDuration)
+    val sliderValue = if (chapterDuration > 0) (chapterPos / chapterDuration).toFloat().coerceIn(0f, 1f) else 0f
+
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.surface)
+            .systemBarsPadding()
             .padding(horizontal = 24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
@@ -159,7 +169,9 @@ fun FullPlayer(
         Column {
             Slider(
                 value = sliderValue,
-                onValueChange = { scrubPosition = (it * duration).toFloat() },
+                onValueChange = { fraction ->
+                    scrubPosition = (chapterStart + fraction * chapterDuration).toFloat()
+                },
                 onValueChangeFinished = {
                     scrubPosition?.let { player.seekInBook(it.toDouble()) }
                     scrubPosition = null
@@ -170,12 +182,12 @@ fun FullPlayer(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    formatClock(pos),
+                    formatClock(chapterPos),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.outline
                 )
                 Text(
-                    formatClock(duration),
+                    "-" + formatClock((chapterDuration - chapterPos).coerceAtLeast(0.0)),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.outline
                 )

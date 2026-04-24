@@ -3,7 +3,10 @@ package app.fabula.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.BottomSheetScaffold
 import androidx.compose.material3.CircularProgressIndicator
@@ -79,9 +82,12 @@ fun Navigation(
         scope.launch { sheetState.partialExpand() }
     }
 
+    val navBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val peekHeight = if (hasBook) MiniPlayerHeight + navBarInset else 0.dp
+
     BottomSheetScaffold(
         scaffoldState = scaffoldState,
-        sheetPeekHeight = if (hasBook) MiniPlayerHeight else 0.dp,
+        sheetPeekHeight = peekHeight,
         sheetSwipeEnabled = hasBook,
         sheetDragHandle = null,
         sheetContent = {
