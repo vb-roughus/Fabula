@@ -10,7 +10,10 @@ Fabula is a personal audiobook streaming platform consisting of:
 
 ## Status
 
-Phase 1 (backend skeleton) — in progress.
+- Phase 1 (backend skeleton) — **done**
+- Phase 2 (web UI) — **done**
+- Phase 3 (Android app) — next
+- Phase 4 (metadata fetchers, auth) — later
 
 ## Project layout
 
@@ -31,14 +34,36 @@ Fabula/
 - (later) Node.js 20+ for the web UI
 - (later) Android Studio for the Android app
 
-## Running the server
+## Running
+
+### Production (server serves SPA)
 
 ```bash
-cd server
-dotnet run --project Fabula.Api
+cd web && npm install && npm run build
+cd ../server && dotnet run --project Fabula.Api
 ```
 
-On first start the SQLite database is created automatically at `server/Fabula.Api/data/fabula.db`.
+`npm run build` writes the SPA into `server/Fabula.Api/wwwroot`, so the
+.NET server both hosts the API and serves the web UI on the same port
+(default `http://localhost:5125`).
+
+### Development (Vite dev server + hot reload)
+
+Run the server and the Vite dev server in separate terminals:
+
+```bash
+# Terminal 1 — backend
+cd server && ASPNETCORE_URLS=http://localhost:5125 dotnet run --project Fabula.Api
+
+# Terminal 2 — web UI with HMR
+cd web && npm run dev
+```
+
+Vite serves the SPA on `http://localhost:5173` and proxies `/api`,
+`/openapi`, and `/health` to the backend on `5125`.
+
+On first start the SQLite database is created automatically at
+`server/Fabula.Api/data/fabula.db`.
 
 ### Useful endpoints
 
