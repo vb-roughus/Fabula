@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { usePlayerContext } from '../hooks/playerContext';
 import { formatDurationHours, formatTimeSpan, parseTimeSpan } from '../lib/time';
@@ -83,7 +83,13 @@ export function BookPage() {
           )}
           {book.series && (
             <div className="text-accent-400 mt-2">
-              {book.series}
+              {book.seriesId != null ? (
+                <Link to={`/series/${book.seriesId}`} className="hover:underline">
+                  {book.series}
+                </Link>
+              ) : (
+                book.series
+              )}
               {book.seriesPosition != null && ` – Teil ${book.seriesPosition}`}
             </div>
           )}

@@ -5,7 +5,9 @@ import type {
   LibraryFolder,
   PagedResult,
   Progress,
-  ScanResult
+  ScanResult,
+  SeriesDetail,
+  SeriesSummary
 } from './types';
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -70,7 +72,11 @@ export const api = {
     }),
 
   deleteBookmark: (id: number) =>
-    request<void>(`/api/bookmarks/${id}`, { method: 'DELETE' })
+    request<void>(`/api/bookmarks/${id}`, { method: 'DELETE' }),
+
+  listSeries: () => request<SeriesSummary[]>('/api/series'),
+
+  getSeries: (id: number) => request<SeriesDetail>(`/api/series/${id}`)
 };
 
 export const streamUrl = (audioFileId: number) => `/api/stream/${audioFileId}`;

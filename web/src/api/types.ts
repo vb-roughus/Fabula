@@ -11,6 +11,7 @@ export interface BookSummary {
   subtitle: string | null;
   authors: string[];
   narrators: string[];
+  seriesId: number | null;
   series: string | null;
   seriesPosition: number | null;
   duration: string; // "HH:MM:SS" TimeSpan
@@ -76,4 +77,18 @@ export interface Bookmark {
   position: string; // TimeSpan "HH:MM:SS"
   note: string | null;
   createdAt: string;
+}
+
+export interface SeriesSummary {
+  id: number;
+  name: string;
+  bookCount: number;
+  coverUrl: string | null;
+}
+
+export interface SeriesDetail {
+  id: number;
+  name: string;
+  description: string | null;
+  books: BookSummary[];
 }

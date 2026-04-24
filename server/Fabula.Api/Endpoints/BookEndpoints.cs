@@ -46,6 +46,7 @@ public static class BookEndpoints
                     b.Subtitle,
                     b.Authors.Select(a => a.Name).ToList(),
                     b.Narrators.Select(n => n.Name).ToList(),
+                    b.SeriesId,
                     b.Series != null ? b.Series.Name : null,
                     b.SeriesPosition,
                     b.Duration,
@@ -73,6 +74,12 @@ public static class BookEndpoints
 
             if (book is null) return Results.NotFound();
 
+            var progress = await db.PlaybackProgress
+                .AsNoTracking()
+                .Where(p => p.UserId == TemporaryUserId && p.BookId == id)
+                .Select(p => new ProgressSummaryDto(p.Position, p.Finished))
+                .FirstOrDefaultAsync(ct);
+
             return Results.Ok(new BookDetailDto(
                 book.Id,
                 book.Title,
@@ -80,6 +87,7 @@ public static class BookEndpoints
                 book.Description,
                 book.Authors.Select(a => a.Name).ToList(),
                 book.Narrators.Select(n => n.Name).ToList(),
+                book.SeriesId,
                 book.Series?.Name,
                 book.SeriesPosition,
                 book.Language,
@@ -89,6 +97,7 @@ public static class BookEndpoints
                 book.Asin,
                 book.Duration,
                 book.CoverPath != null ? $"/api/books/{book.Id}/cover" : null,
+                progress,
                 book.Chapters.Select(c => new ChapterDto(c.Index, c.Title, c.Start, c.End)).ToList(),
                 book.Files.Select(f => new AudioFileDto(f.Id, f.TrackIndex, f.Duration, f.OffsetInBook)).ToList()));
         });
@@ -120,6 +129,7 @@ public record BookSummaryDto(
     string? Subtitle,
     List<string> Authors,
     List<string> Narrators,
+    int? SeriesId,
     string? Series,
     decimal? SeriesPosition,
     TimeSpan Duration,
@@ -135,6 +145,7 @@ public record BookDetailDto(
     string? Description,
     List<string> Authors,
     List<string> Narrators,
+    int? SeriesId,
     string? Series,
     decimal? SeriesPosition,
     string? Language,
@@ -144,6 +155,7 @@ public record BookDetailDto(
     string? Asin,
     TimeSpan Duration,
     string? CoverUrl,
+    ProgressSummaryDto? Progress,
     List<ChapterDto> Chapters,
     List<AudioFileDto> Files);
 

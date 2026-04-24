@@ -1,8 +1,9 @@
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import type { BookSummary } from '../api/types';
 import { formatDurationHours, parseTimeSpan } from '../lib/time';
 
 export function BookCard({ book }: { book: BookSummary }) {
+  const navigate = useNavigate();
   const durationSec = parseTimeSpan(book.duration);
   const positionSec = book.progress ? parseTimeSpan(book.progress.position) : 0;
   const finished = book.progress?.finished ?? false;
@@ -48,8 +49,21 @@ export function BookCard({ book }: { book: BookSummary }) {
           <div className="text-ink-400 text-xs mt-1 line-clamp-1">{book.authors.join(', ')}</div>
         )}
         {book.series && (
-          <div className="text-accent-400 text-xs mt-1">
-            {book.series}
+          <div className="text-accent-400 text-xs mt-1 truncate">
+            {book.seriesId != null ? (
+              <span
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  navigate(`/series/${book.seriesId}`);
+                }}
+                className="hover:underline cursor-pointer"
+              >
+                {book.series}
+              </span>
+            ) : (
+              book.series
+            )}
             {book.seriesPosition != null && ` #${book.seriesPosition}`}
           </div>
         )}
