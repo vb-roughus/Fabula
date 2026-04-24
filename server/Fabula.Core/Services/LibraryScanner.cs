@@ -166,14 +166,20 @@ public class LibraryScanner(
 
         if (metadata.Count > 1)
         {
+            // Audiobook rips often tag every file with the same title (the book name).
+            // Only use per-track titles if they are actually distinct.
+            var titles = metadata
+                .Select(m => m.Meta.Title?.Trim() ?? string.Empty)
+                .ToList();
+            var allTitlesDistinct = titles.All(t => !string.IsNullOrWhiteSpace(t)) &&
+                                    titles.Distinct(StringComparer.OrdinalIgnoreCase).Count() == metadata.Count;
+
             var result = new List<ChapterInfo>(metadata.Count);
             for (int i = 0; i < metadata.Count; i++)
             {
-                var title = metadata[i].Meta.Title;
-                if (string.IsNullOrWhiteSpace(title))
-                    title = Path.GetFileNameWithoutExtension(metadata[i].Path);
+                var title = allTitlesDistinct ? titles[i] : $"Kapitel {i + 1}";
                 var offset = files[i].OffsetInBook;
-                result.Add(new ChapterInfo(title!, offset, offset + metadata[i].Meta.Duration));
+                result.Add(new ChapterInfo(title, offset, offset + metadata[i].Meta.Duration));
             }
             return result;
         }
