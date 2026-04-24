@@ -31,7 +31,14 @@ interface FileRange {
 }
 
 export function usePlayer() {
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  // Lazy-initialised audio element. A useState lazy init gives us a stable
+  // reference that exists before any effect runs, so event listeners can be
+  // attached immediately (a ref would still be null on the first effect run).
+  const [audio] = useState<HTMLAudioElement>(() => {
+    const el = new Audio();
+    el.preload = 'metadata';
+    return el;
+  });
   const [book, setBook] = useState<BookDetail | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [positionInBook, setPositionInBook] = useState(0);
@@ -87,22 +94,12 @@ export function usePlayer() {
     }
   }, []);
 
-  const ensureAudio = useCallback((): HTMLAudioElement => {
-    if (!audioRef.current) {
-      const el = new Audio();
-      el.preload = 'metadata';
-      audioRef.current = el;
-    }
-    return audioRef.current;
-  }, []);
-
   // Seek to a book-wide position by loading the matching file and setting its currentTime.
   const seekInBook = useCallback(
     (absSeconds: number) => {
       if (!book || !fileRanges.length) return;
       const clamped = Math.max(0, Math.min(absSeconds, durationInBook));
       const range = fileRanges.find((r) => clamped < r.end) ?? fileRanges[fileRanges.length - 1];
-      const audio = ensureAudio();
       const desiredSrc = streamUrl(range.id);
       const localSeek = clamped - range.start;
       if (!audio.src.endsWith(desiredSrc)) {
@@ -117,40 +114,42 @@ export function usePlayer() {
       }
       setPositionInBook(clamped);
     },
-    [book, fileRanges, durationInBook, ensureAudio]
+    [audio, book, fileRanges, durationInBook]
   );
 
   const play = useCallback(() => {
     if (!book) return;
-    const audio = ensureAudio();
     if (!audio.src && currentFile) {
       audio.src = streamUrl(currentFile.id);
       const onMeta = () => {
         audio.currentTime = Math.max(0, positionInBook - currentFile.start);
         audio.playbackRate = speed;
-        audio.play();
+        audio.play().catch(() => {});
         audio.removeEventListener('loadedmetadata', onMeta);
       };
       audio.addEventListener('loadedmetadata', onMeta);
     } else {
       audio.playbackRate = speed;
-      audio.play();
+      audio.play().catch(() => {});
     }
-  }, [book, currentFile, positionInBook, speed, ensureAudio]);
+  }, [audio, book, currentFile, positionInBook, speed]);
 
   const pause = useCallback(() => {
-    audioRef.current?.pause();
-  }, []);
+    audio.pause();
+  }, [audio]);
 
   const toggle = useCallback(() => {
     if (isPlaying) pause();
     else play();
   }, [isPlaying, pause, play]);
 
-  const setSpeed = useCallback((value: number) => {
-    setSpeedState(value);
-    if (audioRef.current) audioRef.current.playbackRate = value;
-  }, []);
+  const setSpeed = useCallback(
+    (value: number) => {
+      setSpeedState(value);
+      audio.playbackRate = value;
+    },
+    [audio]
+  );
 
   const skip = useCallback(
     (seconds: number) => seekInBook(positionInBook + seconds),
@@ -164,23 +163,20 @@ export function usePlayer() {
 
   // Audio element event wiring and auto-advance between files.
   useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio || !currentFile) return;
+    if (!currentFile) return;
 
     const onPlay = () => setIsPlaying(true);
     const onPause = () => setIsPlaying(false);
     const onTimeUpdate = () => {
-      if (!currentFile) return;
       setPositionInBook(currentFile.start + audio.currentTime);
     };
     const onEnded = () => {
-      if (!book) return;
       const idx = fileRanges.findIndex((r) => r.id === currentFile.id);
       const next = fileRanges[idx + 1];
       if (next) {
         audio.src = streamUrl(next.id);
         audio.playbackRate = speed;
-        audio.play();
+        audio.play().catch(() => {});
       } else {
         setIsPlaying(false);
       }
@@ -196,7 +192,7 @@ export function usePlayer() {
       audio.removeEventListener('timeupdate', onTimeUpdate);
       audio.removeEventListener('ended', onEnded);
     };
-  }, [book, fileRanges, currentFile, speed]);
+  }, [audio, fileRanges, currentFile, speed]);
 
   // Debounced progress save.
   const lastSavedRef = useRef<{ pos: number; bookId: number | null }>({ pos: -10, bookId: null });
