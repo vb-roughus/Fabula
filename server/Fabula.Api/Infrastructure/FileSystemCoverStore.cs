@@ -26,8 +26,9 @@ public class FileSystemCoverStore(IOptions<FabulaOptions> options) : ICoverStore
         var root = string.IsNullOrWhiteSpace(options.CoversDirectory)
             ? Path.Combine(options.DataDirectory, "covers")
             : options.CoversDirectory;
-        Directory.CreateDirectory(root);
-        return root;
+        var absolute = Path.GetFullPath(root);
+        Directory.CreateDirectory(absolute);
+        return absolute;
     }
 
     private static string MimeToExtension(string? mime) => mime?.ToLowerInvariant() switch

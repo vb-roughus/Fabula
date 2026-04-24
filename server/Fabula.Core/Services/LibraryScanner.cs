@@ -74,8 +74,16 @@ public class LibraryScanner(
         var totalDuration = TimeSpan.FromTicks(allMetadata.Sum(m => m.Meta.Duration.Ticks));
 
         string? coverPath = null;
-        if (firstMeta.CoverImage is { Length: > 0 })
+        var folderCover = FindFolderCover(bookDir);
+        if (folderCover is not null)
+        {
+            var bytes = await File.ReadAllBytesAsync(folderCover, cancellationToken);
+            coverPath = await coverStore.SaveCoverAsync(bookDir, bytes, GetImageMimeType(folderCover), cancellationToken);
+        }
+        else if (firstMeta.CoverImage is { Length: > 0 })
+        {
             coverPath = await coverStore.SaveCoverAsync(bookDir, firstMeta.CoverImage, firstMeta.CoverMimeType, cancellationToken);
+        }
 
         var book = existing ?? new Book
         {
@@ -92,7 +100,7 @@ public class LibraryScanner(
         book.Isbn = firstMeta.Isbn;
         book.Asin = firstMeta.Asin;
         book.Duration = totalDuration;
-        book.CoverPath = coverPath ?? book.CoverPath;
+        book.CoverPath = coverPath;
         book.UpdatedAt = DateTime.UtcNow;
 
         var audioFiles = BuildAudioFiles(allMetadata);
@@ -172,6 +180,38 @@ public class LibraryScanner(
 
         return [];
     }
+
+    private static readonly string[] ImageExtensions = [".jpg", ".jpeg", ".png", ".webp", ".gif"];
+    private static readonly string[] PreferredCoverBaseNames = ["cover", "folder", "front", "poster", "albumart", "album"];
+
+    private static string? FindFolderCover(string bookDir)
+    {
+        if (!Directory.Exists(bookDir)) return null;
+
+        var images = Directory
+            .EnumerateFiles(bookDir, "*", SearchOption.TopDirectoryOnly)
+            .Where(f => ImageExtensions.Contains(Path.GetExtension(f), StringComparer.OrdinalIgnoreCase))
+            .ToList();
+
+        if (images.Count == 0) return null;
+
+        foreach (var preferred in PreferredCoverBaseNames)
+        {
+            var match = images.FirstOrDefault(f =>
+                string.Equals(Path.GetFileNameWithoutExtension(f), preferred, StringComparison.OrdinalIgnoreCase));
+            if (match is not null) return match;
+        }
+
+        return images.OrderBy(f => f, StringComparer.OrdinalIgnoreCase).First();
+    }
+
+    private static string GetImageMimeType(string path) => Path.GetExtension(path).ToLowerInvariant() switch
+    {
+        ".png" => "image/png",
+        ".webp" => "image/webp",
+        ".gif" => "image/gif",
+        _ => "image/jpeg"
+    };
 
     private enum BookScanOutcome { Added, Updated }
 }
