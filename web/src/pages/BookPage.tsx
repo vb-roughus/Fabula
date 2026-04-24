@@ -1,5 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
-import { useEffect } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { usePlayerContext } from '../hooks/playerContext';
@@ -8,13 +8,43 @@ import { formatDurationHours, formatTimeSpan, parseTimeSpan } from '../lib/time'
 export function BookPage() {
   const { id } = useParams<{ id: string }>();
   const bookId = Number(id);
-  const { state, loadBook, play, jumpToChapter } = usePlayerContext();
+  const { state, loadBook, play, jumpToChapter, seekInBook } = usePlayerContext();
+  const qc = useQueryClient();
 
   const { data: book, isLoading, isError, error } = useQuery({
     queryKey: ['book', bookId],
     queryFn: () => api.getBook(bookId),
     enabled: Number.isFinite(bookId)
   });
+
+  const { data: bookmarks } = useQuery({
+    queryKey: ['bookmarks', bookId],
+    queryFn: () => api.listBookmarks(bookId),
+    enabled: Number.isFinite(bookId)
+  });
+
+  const deleteBookmark = useMutation({
+    mutationFn: (bookmarkId: number) => api.deleteBookmark(bookmarkId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['bookmarks', bookId] })
+  });
+
+  const updateBookmark = useMutation({
+    mutationFn: (args: { id: number; note: string | null }) => api.updateBookmark(args.id, args.note),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['bookmarks', bookId] })
+  });
+
+  const chaptersWithSeconds = useMemo(
+    () =>
+      (book?.chapters ?? []).map((c) => ({
+        ...c,
+        startSec: parseTimeSpan(c.start),
+        endSec: parseTimeSpan(c.end)
+      })),
+    [book]
+  );
+
+  const chapterAt = (sec: number) =>
+    chaptersWithSeconds.find((c) => sec >= c.startSec && sec < c.endSec) ?? null;
 
   useEffect(() => {
     if (book && state.book?.id !== book.id) {
@@ -76,6 +106,60 @@ export function BookPage() {
           )}
         </div>
       </div>
+
+      {bookmarks && bookmarks.length > 0 && (
+        <section className="mt-10">
+          <h2 className="text-lg font-semibold text-ink-100 mb-3">Lesezeichen</h2>
+          <ul className="divide-y divide-ink-700 rounded-lg ring-1 ring-ink-700 bg-ink-800 overflow-hidden">
+            {bookmarks.map((bm) => {
+              const posSec = parseTimeSpan(bm.position);
+              const chapter = chapterAt(posSec);
+              return (
+                <li key={bm.id} className="flex items-center gap-3 px-4 py-3 hover:bg-ink-700">
+                  <button
+                    onClick={() => {
+                      if (state.book?.id !== book.id) loadBook(book);
+                      seekInBook(posSec);
+                      play();
+                    }}
+                    className="flex-1 min-w-0 text-left"
+                  >
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-accent-400 tabular-nums">{formatTimeSpan(posSec)}</span>
+                      {chapter && <span className="text-ink-400 text-sm truncate">· {chapter.title}</span>}
+                    </div>
+                    {bm.note && <div className="text-ink-200 text-sm mt-1 truncate">{bm.note}</div>}
+                    <div className="text-ink-400 text-xs mt-0.5">
+                      {new Date(bm.createdAt).toLocaleString()}
+                    </div>
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const next = window.prompt('Notiz bearbeiten:', bm.note ?? '');
+                      if (next !== null) updateBookmark.mutate({ id: bm.id, note: next.trim() || null });
+                    }}
+                    title="Notiz bearbeiten"
+                    className="text-ink-400 hover:text-ink-100 p-1"
+                  >
+                    ✎
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (confirm('Lesezeichen löschen?')) deleteBookmark.mutate(bm.id);
+                    }}
+                    title="Löschen"
+                    className="text-ink-400 hover:text-red-400 p-1"
+                  >
+                    ✕
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
 
       {book.chapters.length > 0 && (
         <section className="mt-10">

@@ -1,12 +1,23 @@
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
+import { api } from '../api/client';
 import { usePlayerContext } from '../hooks/playerContext';
-import { formatTimeSpan } from '../lib/time';
+import { formatTimeSpan, toTimeSpanString } from '../lib/time';
 
 const SPEEDS = [0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0];
 
 export function PlayerBar() {
   const { state, toggle, skip, seekInBook, setSpeed, jumpToChapter } = usePlayerContext();
   const { book, isPlaying, positionInBook, durationInBook, speed, currentChapter, nextChapter, previousChapter } = state;
+  const qc = useQueryClient();
+
+  const createBookmark = useMutation({
+    mutationFn: (args: { bookId: number; position: string; note: string | null }) =>
+      api.createBookmark(args.bookId, args.position, args.note),
+    onSuccess: (_, args) => {
+      qc.invalidateQueries({ queryKey: ['bookmarks', args.bookId] });
+    }
+  });
 
   if (!book) return null;
 
@@ -88,6 +99,24 @@ export function PlayerBar() {
             <div className="absolute inset-y-0 left-0 bg-accent-500" style={{ width: `${pct}%` }} />
           </div>
         </div>
+
+        <button
+          onClick={() => {
+            const note = window.prompt('Notiz für das Lesezeichen (optional):') ?? '';
+            createBookmark.mutate({
+              bookId: book.id,
+              position: toTimeSpanString(positionInBook),
+              note: note.trim() || null
+            });
+          }}
+          disabled={createBookmark.isPending}
+          title={`Lesezeichen bei ${formatTimeSpan(positionInBook)} setzen`}
+          className="p-2 rounded hover:bg-ink-700 disabled:opacity-40"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z" />
+          </svg>
+        </button>
 
         <select
           value={speed}

@@ -14,6 +14,7 @@ public class FabulaDbContext(DbContextOptions<FabulaDbContext> options) : DbCont
     public DbSet<LibraryFolder> LibraryFolders => Set<LibraryFolder>();
     public DbSet<User> Users => Set<User>();
     public DbSet<PlaybackProgress> PlaybackProgress => Set<PlaybackProgress>();
+    public DbSet<Bookmark> Bookmarks => Set<Bookmark>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -108,6 +109,22 @@ public class FabulaDbContext(DbContextOptions<FabulaDbContext> options) : DbCont
 
             e.HasOne(x => x.User)
                 .WithMany(u => u.Progress)
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasOne(x => x.Book)
+                .WithMany()
+                .HasForeignKey(x => x.BookId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        b.Entity<Bookmark>(e =>
+        {
+            e.HasIndex(x => new { x.UserId, x.BookId, x.Position });
+            e.Property(x => x.Note).HasMaxLength(512);
+
+            e.HasOne(x => x.User)
+                .WithMany()
                 .HasForeignKey(x => x.UserId)
                 .OnDelete(DeleteBehavior.Cascade);
 

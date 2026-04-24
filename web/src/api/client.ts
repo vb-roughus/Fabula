@@ -1,6 +1,7 @@
 import type {
   BookDetail,
   BookSummary,
+  Bookmark,
   LibraryFolder,
   PagedResult,
   Progress,
@@ -51,7 +52,25 @@ export const api = {
     request<Progress>(`/api/progress/${bookId}`, {
       method: 'PUT',
       body: JSON.stringify({ position, finished, device })
-    })
+    }),
+
+  listBookmarks: (bookId: number) =>
+    request<Bookmark[]>(`/api/books/${bookId}/bookmarks`),
+
+  createBookmark: (bookId: number, position: string, note: string | null) =>
+    request<Bookmark>(`/api/books/${bookId}/bookmarks`, {
+      method: 'POST',
+      body: JSON.stringify({ position, note })
+    }),
+
+  updateBookmark: (id: number, note: string | null) =>
+    request<Bookmark>(`/api/bookmarks/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ note })
+    }),
+
+  deleteBookmark: (id: number) =>
+    request<void>(`/api/bookmarks/${id}`, { method: 'DELETE' })
 };
 
 export const streamUrl = (audioFileId: number) => `/api/stream/${audioFileId}`;

@@ -63,3 +63,11 @@ export interface ScanResult {
   booksRemoved: number;
   filesScanned: number;
 }
+
+export interface Bookmark {
+  id: number;
+  bookId: number;
+  position: string; // TimeSpan "HH:MM:SS"
+  note: string | null;
+  createdAt: string;
+}

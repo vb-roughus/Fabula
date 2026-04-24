@@ -38,6 +38,7 @@ app.MapLibraryEndpoints();
 app.MapBookEndpoints();
 app.MapStreamingEndpoints();
 app.MapProgressEndpoints();
+app.MapBookmarkEndpoints();
 
 app.MapFallbackToFile("index.html");
 app.UseDefaultFiles();
