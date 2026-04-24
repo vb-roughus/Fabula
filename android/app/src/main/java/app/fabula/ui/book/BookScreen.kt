@@ -58,7 +58,8 @@ fun BookScreen(
     bookId: Int,
     repository: FabulaRepository,
     player: PlayerController,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onPlaybackStarted: () -> Unit
 ) {
     var book by remember { mutableStateOf<BookDetailDto?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -116,6 +117,7 @@ fun BookScreen(
                         scope.launch {
                             if (playerState.book?.id != b.id) player.loadBook(b)
                             player.play()
+                            onPlaybackStarted()
                         }
                     },
                     onChapterClick = { chapter ->
@@ -123,6 +125,7 @@ fun BookScreen(
                             if (playerState.book?.id != b.id) player.loadBook(b)
                             player.jumpToChapter(chapter)
                             player.play()
+                            onPlaybackStarted()
                         }
                     }
                 )
