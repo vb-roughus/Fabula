@@ -1,6 +1,8 @@
 import { NavLink, Route, Routes } from 'react-router-dom';
 import { LibraryPage } from './pages/LibraryPage';
 import { BookPage } from './pages/BookPage';
+import { SeriesPage } from './pages/SeriesPage';
+import { SeriesDetailPage } from './pages/SeriesDetailPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { PlayerBar } from './components/PlayerBar';
 
@@ -21,6 +23,12 @@ export default function App() {
               Bibliothek
             </NavLink>
             <NavLink
+              to="/series"
+              className={({ isActive }) => (isActive ? 'text-ink-100' : 'text-ink-400 hover:text-ink-100')}
+            >
+              Serien
+            </NavLink>
+            <NavLink
               to="/settings"
               className={({ isActive }) => (isActive ? 'text-ink-100' : 'text-ink-400 hover:text-ink-100')}
             >
@@ -34,6 +42,8 @@ export default function App() {
         <Routes>
           <Route path="/" element={<LibraryPage />} />
           <Route path="/book/:id" element={<BookPage />} />
+          <Route path="/series" element={<SeriesPage />} />
+          <Route path="/series/:id" element={<SeriesDetailPage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Routes>
       </main>
