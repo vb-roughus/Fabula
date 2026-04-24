@@ -26,10 +26,10 @@ if (-not (Test-Path (Join-Path $webDir 'node_modules'))) {
     try { npm install } finally { Pop-Location }
 }
 
-Write-Host "Starting backend on http://localhost:5075 ..." -ForegroundColor Cyan
+Write-Host "Starting backend on http://0.0.0.0:5075 (reachable from LAN) ..." -ForegroundColor Cyan
 Start-Process -FilePath 'powershell.exe' -ArgumentList @(
     '-NoExit', '-Command',
-    "`$Host.UI.RawUI.WindowTitle = 'Fabula backend'; Set-Location '$serverDir'; dotnet run --project Fabula.Api"
+    "`$Host.UI.RawUI.WindowTitle = 'Fabula backend'; Set-Location '$serverDir'; `$env:ASPNETCORE_URLS = 'http://0.0.0.0:5075'; dotnet run --project Fabula.Api --no-launch-profile"
 )
 
 Write-Host "Starting Vite dev server on http://localhost:5173 ..." -ForegroundColor Cyan

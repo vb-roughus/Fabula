@@ -25,6 +25,9 @@ Push-Location $webDir
 try { npm run build } finally { Pop-Location }
 
 Write-Host ""
-Write-Host "Starting server on http://localhost:5075 ..." -ForegroundColor Cyan
+Write-Host "Starting server on http://0.0.0.0:5075 (reachable from other devices on your LAN) ..." -ForegroundColor Cyan
 Push-Location $serverDir
-try { dotnet run --project Fabula.Api } finally { Pop-Location }
+try {
+    $env:ASPNETCORE_URLS = 'http://0.0.0.0:5075'
+    dotnet run --project Fabula.Api --no-launch-profile
+} finally { Pop-Location }
