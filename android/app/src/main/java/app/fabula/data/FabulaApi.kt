@@ -31,4 +31,10 @@ interface FabulaApi {
 
     @GET("api/series/{id}")
     suspend fun getSeries(@Path("id") id: Int): SeriesDetailDto
+
+    @retrofit2.http.POST("api/books/{bookId}/bookmarks")
+    suspend fun createBookmark(
+        @Path("bookId") bookId: Int,
+        @Body body: CreateBookmarkRequest
+    ): BookmarkDto
 }

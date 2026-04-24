@@ -112,3 +112,15 @@ data class SeriesDetailDto(
     val description: String? = null,
     val books: List<SeriesBookDto> = emptyList()
 )
+
+@Serializable
+data class BookmarkDto(
+    val id: Int,
+    val bookId: Int,
+    val position: String,
+    val note: String? = null,
+    val createdAt: String
+)
+
+@Serializable
+data class CreateBookmarkRequest(val position: String, val note: String? = null)
