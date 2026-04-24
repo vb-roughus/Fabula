@@ -95,6 +95,9 @@ public class LibraryScanner(
         book.CoverPath = coverPath ?? book.CoverPath;
         book.UpdatedAt = DateTime.UtcNow;
 
+        var audioFiles = BuildAudioFiles(allMetadata);
+        var chapters = BuildChapters(allMetadata, audioFiles);
+
         await repository.UpsertBookAsync(
             book,
             bookDir,
@@ -102,8 +105,8 @@ public class LibraryScanner(
             firstMeta.Narrators,
             firstMeta.SeriesName,
             firstMeta.SeriesPosition,
-            BuildAudioFiles(allMetadata),
-            firstMeta.Chapters,
+            audioFiles,
+            chapters,
             cancellationToken);
 
         return existing is null ? BookScanOutcome.Added : BookScanOutcome.Updated;
@@ -131,6 +134,43 @@ public class LibraryScanner(
             offset += meta.Duration;
         }
         return result;
+    }
+
+    private static List<ChapterInfo> BuildChapters(
+        List<(string Path, AudioMetadata Meta)> metadata,
+        List<AudioFile> files)
+    {
+        var hasEmbedded = metadata.Any(m => m.Meta.Chapters.Count > 0);
+
+        if (hasEmbedded)
+        {
+            var result = new List<ChapterInfo>();
+            for (int i = 0; i < metadata.Count; i++)
+            {
+                var offset = files[i].OffsetInBook;
+                foreach (var c in metadata[i].Meta.Chapters)
+                {
+                    result.Add(new ChapterInfo(c.Title, offset + c.Start, offset + c.End));
+                }
+            }
+            return result;
+        }
+
+        if (metadata.Count > 1)
+        {
+            var result = new List<ChapterInfo>(metadata.Count);
+            for (int i = 0; i < metadata.Count; i++)
+            {
+                var title = metadata[i].Meta.Title;
+                if (string.IsNullOrWhiteSpace(title))
+                    title = Path.GetFileNameWithoutExtension(metadata[i].Path);
+                var offset = files[i].OffsetInBook;
+                result.Add(new ChapterInfo(title!, offset, offset + metadata[i].Meta.Duration));
+            }
+            return result;
+        }
+
+        return [];
     }
 
     private enum BookScanOutcome { Added, Updated }

@@ -17,7 +17,7 @@ builder.Services.AddFabulaData(connectionString);
 builder.Services.AddScoped<ILibraryRepository, LibraryRepository>();
 builder.Services.AddScoped<IStreamingService, StreamingService>();
 builder.Services.AddScoped<ILibraryScanner, LibraryScanner>();
-builder.Services.AddSingleton<IAudioMetadataReader, TagLibAudioMetadataReader>();
+builder.Services.AddSingleton<IAudioMetadataReader, AtlAudioMetadataReader>();
 builder.Services.AddSingleton<ICoverStore, FileSystemCoverStore>();
 
 builder.Services.AddOpenApi();

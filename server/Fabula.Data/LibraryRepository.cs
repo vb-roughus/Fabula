@@ -13,6 +13,7 @@ public class LibraryRepository(FabulaDbContext db) : ILibraryRepository
     {
         var prefix = bookDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         return db.Books
+            .AsSplitQuery()
             .Include(b => b.Files)
             .Include(b => b.Chapters)
             .Include(b => b.Authors)
