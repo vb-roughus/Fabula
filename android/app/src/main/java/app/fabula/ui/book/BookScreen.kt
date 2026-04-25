@@ -21,18 +21,22 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bookmark
-import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -56,10 +60,12 @@ import androidx.compose.ui.unit.sp
 import app.fabula.data.BookDetailDto
 import app.fabula.data.BookmarkDto
 import app.fabula.data.ChapterDto
+import app.fabula.data.CreateBookmarkRequest
 import app.fabula.data.FabulaRepository
 import app.fabula.data.formatClock
 import app.fabula.data.formatDurationHuman
 import app.fabula.data.parseTimeSpan
+import app.fabula.data.toTimeSpanString
 import app.fabula.player.PlayerController
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.launch
@@ -76,9 +82,20 @@ fun BookScreen(
     var book by remember { mutableStateOf<BookDetailDto?>(null) }
     var bookmarks by remember { mutableStateOf<List<BookmarkDto>>(emptyList()) }
     var error by remember { mutableStateOf<String?>(null) }
+    var moreMenuOpen by remember { mutableStateOf(false) }
+    var addBookmarkOpen by remember { mutableStateOf(false) }
+    var bookmarkNote by remember { mutableStateOf("") }
     val playerState by player.state.collectAsState()
     val bookmarksRevision by repository.bookmarksRevision.collectAsState()
     val scope = rememberCoroutineScope()
+
+    // Position the bookmark would be saved at: current playback position when
+    // playing this book, otherwise the saved progress on the book itself
+    // (falls back to 0 when neither is available).
+    val pendingBookmarkPosition: Double = when {
+        playerState.book?.id == bookId -> playerState.positionInBook
+        else -> book?.progress?.let { parseTimeSpan(it.position) } ?: 0.0
+    }
 
     LaunchedEffect(bookId) {
         try {
@@ -116,8 +133,26 @@ fun BookScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { /* menu placeholder */ }) {
-                        Icon(Icons.Filled.MoreHoriz, contentDescription = "Mehr")
+                    Box {
+                        IconButton(onClick = { moreMenuOpen = true }) {
+                            Icon(Icons.Filled.MoreHoriz, contentDescription = "Mehr")
+                        }
+                        DropdownMenu(
+                            expanded = moreMenuOpen,
+                            onDismissRequest = { moreMenuOpen = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Lesezeichen hier setzen") },
+                                leadingIcon = {
+                                    Icon(Icons.Filled.Bookmark, contentDescription = null)
+                                },
+                                onClick = {
+                                    moreMenuOpen = false
+                                    bookmarkNote = ""
+                                    addBookmarkOpen = true
+                                }
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
@@ -180,6 +215,55 @@ fun BookScreen(
                 )
             }
         }
+    }
+
+    if (addBookmarkOpen) {
+        AlertDialog(
+            onDismissRequest = { addBookmarkOpen = false },
+            title = { Text("Lesezeichen hinzufügen") },
+            text = {
+                Column {
+                    Text(
+                        "Position: ${formatClock(pendingBookmarkPosition)}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = bookmarkNote,
+                        onValueChange = { bookmarkNote = it },
+                        label = { Text("Notiz (optional)") },
+                        singleLine = false,
+                        maxLines = 3,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val note = bookmarkNote.trim().ifBlank { null }
+                    val pos = pendingBookmarkPosition
+                    addBookmarkOpen = false
+                    bookmarkNote = ""
+                    scope.launch {
+                        runCatching {
+                            val api = repository.apiOrNull() ?: return@runCatching
+                            api.createBookmark(
+                                bookId,
+                                CreateBookmarkRequest(
+                                    position = toTimeSpanString(pos),
+                                    note = note
+                                )
+                            )
+                            repository.bumpBookmarksRevision()
+                        }
+                    }
+                }) { Text("Speichern") }
+            },
+            dismissButton = {
+                TextButton(onClick = { addBookmarkOpen = false }) { Text("Abbrechen") }
+            }
+        )
     }
 }
 
