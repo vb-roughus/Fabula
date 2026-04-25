@@ -1,5 +1,10 @@
 package app.fabula.ui.player
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -32,6 +37,7 @@ import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.outlined.Bedtime
+import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -53,7 +59,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -87,6 +95,32 @@ fun FullPlayer(
     var currentSpeed by remember { mutableFloatStateOf(1.0f) }
     var speedMenuOpen by remember { mutableStateOf(false) }
     var bookmarkSavedFlash by remember { mutableStateOf(false) }
+    var pulseEnabled by remember { mutableStateOf(false) }
+
+    // Slow breathing animation for the gradient when pulse mode is active.
+    val pulseTransition = rememberInfiniteTransition(label = "pulse")
+    val pulseValue by pulseTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 3000, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulse-amount"
+    )
+    val pulseFactor = if (pulseEnabled) pulseValue else 0f
+
+    val baseColor = MaterialTheme.colorScheme.background
+    val accentColor = MaterialTheme.colorScheme.primary
+    // Static base tint of 10% accent at the top, brightened up to 30%
+    // when pulsing -- pre-blended onto the navy so the gradient itself
+    // is fully opaque and predictable.
+    val topTint = accentColor.copy(alpha = 0.10f + 0.20f * pulseFactor).compositeOver(baseColor)
+    val backgroundGradient = Brush.verticalGradient(
+        0.0f to topTint,
+        0.45f to baseColor,
+        1.0f to baseColor
+    )
 
     val pos = state.positionInBook
 
@@ -108,7 +142,7 @@ fun FullPlayer(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .background(brush = backgroundGradient)
             .systemBarsPadding()
             .padding(horizontal = 24.dp)
     ) {
@@ -416,6 +450,18 @@ fun FullPlayer(
                 }
             }
             Spacer(Modifier.weight(1f))
+
+            IconButton(
+                onClick = { pulseEnabled = !pulseEnabled },
+                modifier = Modifier.size(40.dp)
+            ) {
+                Icon(
+                    Icons.Outlined.GraphicEq,
+                    contentDescription = if (pulseEnabled) "Pulse-Modus aus" else "Pulse-Modus an",
+                    tint = if (pulseEnabled) MaterialTheme.colorScheme.primary else whiteText.copy(alpha = 0.7f),
+                    modifier = Modifier.size(20.dp)
+                )
+            }
 
             val sleepRemaining = state.sleepTimerRemainingMs
             if (sleepRemaining != null) {
