@@ -1,13 +1,11 @@
 package app.fabula.ui.player
 
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -62,9 +60,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
@@ -113,16 +108,6 @@ fun FullPlayer(
             repeatMode = RepeatMode.Reverse
         ),
         label = "pulse-amount"
-    )
-    // Continuous 0..2π time for the equaliser bars below.
-    val beatTime by pulseTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = (2 * Math.PI).toFloat(),
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 2000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "beat-time"
     )
     val pulseFactor = if (pulseEnabled) pulseValue else 0f
 
@@ -427,18 +412,6 @@ fun FullPlayer(
 
         Spacer(Modifier.weight(0.3f))
 
-        // Audio-style equaliser strip. Only renders while pulse mode is on.
-        if (pulseEnabled) {
-            FakeEqualizer(
-                time = beatTime,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(36.dp)
-                    .padding(horizontal = 12.dp, vertical = 4.dp)
-            )
-        }
-
         // Bottom utility row: speed picker on left, sleep timer on right.
         Row(
             modifier = Modifier
@@ -537,51 +510,6 @@ fun FullPlayer(
                     )
                 }
             }
-        }
-    }
-}
-
-/**
- * Animated graphic-equaliser-style bars driven entirely by sine waves at
- * different frequencies and phases per bar. Not actually reactive to audio
- * (that would need RECORD_AUDIO + Visualizer), but the result reads as
- * "pumping with the beat" without any permission cost.
- */
-@Composable
-private fun FakeEqualizer(
-    time: Float,
-    color: Color,
-    modifier: Modifier = Modifier,
-    barCount: Int = 18
-) {
-    Canvas(modifier = modifier) {
-        if (size.width <= 0f || size.height <= 0f) return@Canvas
-        val gap = 2.dp.toPx()
-        val totalGap = gap * (barCount - 1)
-        val barWidth = ((size.width - totalGap) / barCount).coerceAtLeast(1f)
-        val cornerRadius = CornerRadius(barWidth / 2f, barWidth / 2f)
-
-        for (i in 0 until barCount) {
-            // Each bar gets a unique frequency and phase so they don't move
-            // in sync. Combine a low-frequency wave with a higher harmonic
-            // for a busier, less mechanical feel.
-            val freqA = 1.4f + (i % 5) * 0.55f
-            val freqB = 2.7f + (i % 3) * 0.9f
-            val phase = i * 0.47f
-            val waveA = kotlin.math.sin(time * freqA + phase)
-            val waveB = kotlin.math.sin(time * freqB + phase * 1.3f) * 0.5f
-            val raw = (waveA + waveB + 1.5f) / 3f  // normalise into ~0..1
-            val amplitude = raw.coerceIn(0.08f, 1f)
-
-            val barHeight = size.height * amplitude
-            val x = i * (barWidth + gap)
-            val y = size.height - barHeight
-            drawRoundRect(
-                color = color,
-                topLeft = Offset(x, y),
-                size = Size(barWidth, barHeight),
-                cornerRadius = cornerRadius
-            )
         }
     }
 }
