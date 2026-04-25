@@ -40,3 +40,7 @@ android/*.iml
 # OS
 .DS_Store
 Thumbs.db
+
+# Claude Code session metadata
+.claude/
+**/.claude/
