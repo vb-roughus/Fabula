@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -259,9 +260,14 @@ fun FullPlayer(
                     val fraction = if (range > 0f)
                         ((sliderState.value - sliderState.valueRange.start) / range).coerceIn(0f, 1f)
                     else 0f
+                    // The slider offsets the thumb by half its width, so the
+                    // 10 dp thumb starts 5 dp in from each edge. Pad the track
+                    // by the same amount so the active fill ends exactly under
+                    // the thumb's centre, regardless of value.
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .padding(horizontal = 5.dp)
                             .height(2.dp)
                             .clip(RoundedCornerShape(1.dp))
                             .background(whiteText.copy(alpha = 0.25f))
@@ -269,7 +275,7 @@ fun FullPlayer(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth(fraction)
-                                .height(2.dp)
+                                .fillMaxHeight()
                                 .clip(RoundedCornerShape(1.dp))
                                 .background(whiteText)
                         )
