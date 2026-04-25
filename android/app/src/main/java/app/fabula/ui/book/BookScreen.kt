@@ -405,7 +405,7 @@ private fun BookContent(
                     modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp)
                 )
             }
-            items(items = bookmarks, key = { it.id }) { bookmark ->
+            items(items = bookmarks, key = { "bookmark-${it.id}" }) { bookmark ->
                 BookmarkRow(
                     bookmark = bookmark,
                     chapterTitle = chapterAt(book, parseTimeSpan(bookmark.position))?.title,
@@ -424,7 +424,7 @@ private fun BookContent(
                     modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp)
                 )
             }
-            items(items = book.chapters, key = { it.index }) { chapter ->
+            items(items = book.chapters, key = { "chapter-${it.index}" }) { chapter ->
                 ChapterRow(
                     chapter = chapter,
                     isActive = isCurrent && currentChapterIndex == chapter.index,
