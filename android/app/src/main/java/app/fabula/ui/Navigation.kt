@@ -46,6 +46,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -217,12 +218,25 @@ fun Navigation(
                 }
             }
 
-            // Bottom overlay: optional mini player + transparent nav bar. Sits
-            // on top of the content so listings scroll behind it.
+            // Bottom overlay: optional mini player + transparent nav bar. A
+            // vertical gradient (transparent at the top, mostly opaque at the
+            // bottom) sits behind both so scrolling content fades smoothly
+            // behind the tab bar instead of cutting off harshly.
+            val overlayScrim = MaterialTheme.colorScheme.background
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                overlayScrim.copy(alpha = 0f),
+                                overlayScrim.copy(alpha = 0.6f),
+                                overlayScrim.copy(alpha = 0.92f),
+                                overlayScrim.copy(alpha = 0.97f)
+                            )
+                        )
+                    )
             ) {
                 if (hasBook) {
                     MiniPlayer(

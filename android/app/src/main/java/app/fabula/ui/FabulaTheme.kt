@@ -7,36 +7,41 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
-private val Ink900 = Color(0xFF0B0F14)
-private val Ink800 = Color(0xFF121821)
-private val Ink700 = Color(0xFF1A222E)
-private val Ink400 = Color(0xFF6D7A8C)
-private val Ink200 = Color(0xFFD0D6E0)
-private val Ink100 = Color(0xFFEEF1F6)
+// Navy-black palette: deep blue background, slightly lighter surface tones,
+// bright text with a clearly readable secondary tone (no more "grey on grey").
+private val Navy950 = Color(0xFF0A1428)  // background
+private val Navy900 = Color(0xFF0F1A30)  // surface
+private val Navy800 = Color(0xFF18243F)  // surfaceVariant (cards / chips)
+private val Navy700 = Color(0xFF24314F)  // dividers / track
+private val Slate300 = Color(0xFFA8B4CC)  // secondary text -- much lighter than the old outline
+private val Slate200 = Color(0xFFC9D2E4)
+private val OffWhite = Color(0xFFF1F4FA)  // primary text
 private val Accent500 = Color(0xFFE88F33)
 private val Accent400 = Color(0xFFF5B06B)
 
+val FabulaBackground get() = Navy950
+
 private val DarkScheme = darkColorScheme(
     primary = Accent500,
-    onPrimary = Ink900,
+    onPrimary = Navy950,
     secondary = Accent400,
-    onSecondary = Ink900,
-    background = Ink900,
-    onBackground = Ink100,
-    surface = Ink800,
-    onSurface = Ink100,
-    surfaceVariant = Ink700,
-    onSurfaceVariant = Ink200,
-    outline = Ink400
+    onSecondary = Navy950,
+    background = Navy950,
+    onBackground = OffWhite,
+    surface = Navy900,
+    onSurface = OffWhite,
+    surfaceVariant = Navy800,
+    onSurfaceVariant = Slate200,
+    outline = Slate300
 )
 
 private val LightScheme = lightColorScheme(
     primary = Accent500,
-    onPrimary = Ink900,
+    onPrimary = Navy950,
     secondary = Accent400,
-    background = Ink100,
-    surface = Ink200,
-    onSurface = Ink900
+    background = OffWhite,
+    surface = Slate200,
+    onSurface = Navy950
 )
 
 @Composable
