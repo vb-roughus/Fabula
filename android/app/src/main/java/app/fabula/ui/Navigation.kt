@@ -11,10 +11,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.LibraryBooks
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Style
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.LibraryBooks
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Style
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.Icon
@@ -70,9 +70,9 @@ private enum class Tab(
     val label: String,
     val icon: ImageVector
 ) {
-    Home("home", "Startseite", Icons.Filled.Home),
-    Library("library", "Bibliothek", Icons.Filled.LibraryBooks),
-    Series("series", "Serien", Icons.Filled.Style);
+    Home("home", "Startseite", Icons.Outlined.Home),
+    Library("library", "Bibliothek", Icons.Outlined.LibraryBooks),
+    Series("series", "Serien", Icons.Outlined.Style);
 
     companion object {
         fun fromRoute(route: String?): Tab? =
@@ -121,7 +121,7 @@ fun Navigation(
                 )
                 Spacer(Modifier.height(16.dp))
                 NavigationDrawerItem(
-                    icon = { Icon(Icons.Filled.Settings, contentDescription = null) },
+                    icon = { Icon(Icons.Outlined.Settings, contentDescription = null) },
                     label = { Text("Einstellungen") },
                     selected = false,
                     onClick = {
@@ -259,7 +259,8 @@ private fun FabulaNavigationBar(navController: NavHostController) {
                         restoreState = true
                     }
                 },
-                icon = { Icon(tab.icon, contentDescription = tab.label) },
+                icon = { Icon(tab.icon, contentDescription = null) },
+                label = { Text(tab.label) },
                 colors = NavigationBarItemDefaults.colors(
                     indicatorColor = Color.Transparent
                 )
