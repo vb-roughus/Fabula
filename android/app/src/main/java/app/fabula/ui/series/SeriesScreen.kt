@@ -40,6 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.fabula.data.FabulaRepository
 import app.fabula.data.SeriesSummaryDto
+import app.fabula.ui.LocalContentBottomInset
 import coil3.compose.AsyncImage
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -72,7 +73,8 @@ fun SeriesScreen(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
             )
         },
-        containerColor = Color.Transparent
+        containerColor = Color.Transparent,
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0.dp)
     ) { insets ->
         Box(modifier = Modifier.fillMaxSize().padding(insets), contentAlignment = Alignment.Center) {
             when {
@@ -81,7 +83,12 @@ fun SeriesScreen(
                 series!!.isEmpty() -> Text("Noch keine Serien erkannt.")
                 else -> LazyVerticalGrid(
                     columns = GridCells.Adaptive(minSize = 140.dp),
-                    contentPadding = PaddingValues(12.dp),
+                    contentPadding = PaddingValues(
+                        start = 12.dp,
+                        end = 12.dp,
+                        top = 12.dp,
+                        bottom = 12.dp + LocalContentBottomInset.current.calculateBottomPadding()
+                    ),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.fillMaxSize()

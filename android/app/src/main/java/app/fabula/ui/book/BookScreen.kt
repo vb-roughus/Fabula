@@ -123,7 +123,8 @@ fun BookScreen(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
             )
         },
-        containerColor = MaterialTheme.colorScheme.background
+        containerColor = MaterialTheme.colorScheme.background,
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0.dp)
     ) { insets ->
         Box(
             modifier = Modifier.fillMaxSize().padding(insets),
@@ -197,7 +198,12 @@ private fun BookContent(
 ) {
     val totalSeconds = parseTimeSpan(book.duration)
 
-    LazyColumn(modifier = Modifier.fillMaxSize()) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(
+            bottom = app.fabula.ui.LocalContentBottomInset.current.calculateBottomPadding()
+        )
+    ) {
         item {
             // Cover block, centered, large.
             Box(

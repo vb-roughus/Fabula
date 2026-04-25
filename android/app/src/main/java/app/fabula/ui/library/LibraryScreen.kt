@@ -43,6 +43,8 @@ import app.fabula.data.BookSummaryDto
 import app.fabula.data.FabulaRepository
 import app.fabula.data.formatDurationHuman
 import app.fabula.data.parseTimeSpan
+import app.fabula.ui.LocalContentBottomInset
+import androidx.compose.runtime.CompositionLocalProvider
 import coil3.compose.AsyncImage
 
 private sealed interface LibraryState {
@@ -85,7 +87,8 @@ fun LibraryScreen(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
             )
         },
-        containerColor = Color.Transparent
+        containerColor = Color.Transparent,
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0.dp)
     ) { insets ->
         Box(
             modifier = Modifier
@@ -114,9 +117,10 @@ private fun BookGrid(
     repository: FabulaRepository,
     onClick: (Int) -> Unit
 ) {
+    val bottomInset = LocalContentBottomInset.current.calculateBottomPadding()
     LazyVerticalGrid(
         columns = GridCells.Adaptive(minSize = 140.dp),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 12.dp + bottomInset),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
         modifier = Modifier.fillMaxSize()

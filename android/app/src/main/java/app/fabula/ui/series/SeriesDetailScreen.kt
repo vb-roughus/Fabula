@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import app.fabula.data.FabulaRepository
 import app.fabula.data.SeriesBookDto
 import app.fabula.data.SeriesDetailDto
+import app.fabula.ui.LocalContentBottomInset
 import coil3.compose.AsyncImage
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -75,13 +76,19 @@ fun SeriesDetailScreen(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
             )
         },
-        containerColor = Color.Transparent
+        containerColor = Color.Transparent,
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0.dp)
     ) { insets ->
         Box(modifier = Modifier.fillMaxSize().padding(insets), contentAlignment = Alignment.Center) {
             when {
                 error != null -> Text(error!!, color = MaterialTheme.colorScheme.error)
                 series == null -> CircularProgressIndicator()
-                else -> LazyColumn(modifier = Modifier.fillMaxSize()) {
+                else -> LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                        bottom = LocalContentBottomInset.current.calculateBottomPadding()
+                    )
+                ) {
                     series!!.description?.takeIf { it.isNotBlank() }?.let { desc ->
                         item {
                             Text(

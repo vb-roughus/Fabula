@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import app.fabula.data.BookSummaryDto
 import app.fabula.data.FabulaRepository
 import app.fabula.data.parseTimeSpan
+import app.fabula.ui.LocalContentBottomInset
 import coil3.compose.AsyncImage
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -90,7 +91,8 @@ fun HomeScreen(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
             )
         },
-        containerColor = Color.Transparent
+        containerColor = Color.Transparent,
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0.dp)
     ) { insets ->
         Box(modifier = Modifier
             .fillMaxSize()
@@ -103,7 +105,10 @@ fun HomeScreen(
                 books!!.isEmpty() -> Text("Noch keine Hörbücher in deiner Bibliothek.")
                 else -> LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 8.dp)
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                        top = 8.dp,
+                        bottom = 8.dp + LocalContentBottomInset.current.calculateBottomPadding()
+                    )
                 ) {
                     if (continueListening.isNotEmpty()) {
                         item {

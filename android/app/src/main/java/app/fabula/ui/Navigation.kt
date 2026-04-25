@@ -4,11 +4,17 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Home
@@ -27,10 +33,10 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.NavigationDrawerItemDefaults
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -64,6 +70,9 @@ import app.fabula.ui.series.SeriesScreen
 import app.fabula.ui.settings.SettingsScreen
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+
+private val MiniPlayerHeight = 76.dp
+private val NavigationBarContentHeight = 80.dp
 
 private enum class Tab(
     val route: String,
@@ -107,6 +116,10 @@ fun Navigation(
 
     val openDrawer: () -> Unit = { scope.launch { drawerState.open() } }
 
+    val sysNavBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val miniHeight = if (hasBook) MiniPlayerHeight else 0.dp
+    val bottomOverlayInset = miniHeight + NavigationBarContentHeight + sysNavBarInset
+
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
@@ -133,29 +146,21 @@ fun Navigation(
             }
         }
     ) {
-        Box(modifier = Modifier.fillMaxSize()) {
-            Scaffold(
-                modifier = Modifier.fillMaxSize(),
-                bottomBar = {
-                    Column {
-                        if (hasBook) {
-                            MiniPlayer(
-                                player = player,
-                                repository = repository,
-                                onClick = { fullPlayerOpen = true }
-                            )
-                        }
-                        FabulaNavigationBar(navController = navController)
-                    }
-                },
-                containerColor = MaterialTheme.colorScheme.background
-            ) { innerPadding ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+        ) {
+            // Content fills the entire screen including under the bottom overlay.
+            // Each screen's scrollable content adds LocalContentBottomInset to its
+            // contentPadding so the last item can scroll above the nav bar.
+            CompositionLocalProvider(
+                LocalContentBottomInset provides PaddingValues(bottom = bottomOverlayInset)
+            ) {
                 NavHost(
                     navController = navController,
                     startDestination = startRoute,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(bottom = innerPadding.calculateBottomPadding())
+                    modifier = Modifier.fillMaxSize()
                 ) {
                     composable(Tab.Home.route) {
                         HomeScreen(
@@ -212,16 +217,28 @@ fun Navigation(
                 }
             }
 
+            // Bottom overlay: optional mini player + transparent nav bar. Sits
+            // on top of the content so listings scroll behind it.
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+            ) {
+                if (hasBook) {
+                    MiniPlayer(
+                        player = player,
+                        repository = repository,
+                        onClick = { fullPlayerOpen = true }
+                    )
+                }
+                FabulaNavigationBar(navController = navController)
+            }
+
             AnimatedVisibility(
                 visible = hasBook && fullPlayerOpen,
                 enter = slideInVertically(initialOffsetY = { it }),
                 exit = slideOutVertically(targetOffsetY = { it })
             ) {
-                // Registered inside AnimatedVisibility so it's added to the
-                // back-press dispatcher AFTER the NavHost's own back handler.
-                // The dispatcher invokes the most recently registered enabled
-                // callback first, so this one wins and minimises the player
-                // instead of popping the screen behind it.
                 BackHandler(enabled = true) { fullPlayerOpen = false }
                 FullPlayer(
                     player = player,
