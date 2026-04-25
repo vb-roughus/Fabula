@@ -102,8 +102,6 @@ fun Navigation(
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
 
-    BackHandler(enabled = fullPlayerOpen) { fullPlayerOpen = false }
-
     val openDrawer: () -> Unit = { scope.launch { drawerState.open() } }
 
     ModalNavigationDrawer(
@@ -216,6 +214,12 @@ fun Navigation(
                 enter = slideInVertically(initialOffsetY = { it }),
                 exit = slideOutVertically(targetOffsetY = { it })
             ) {
+                // Registered inside AnimatedVisibility so it's added to the
+                // back-press dispatcher AFTER the NavHost's own back handler.
+                // The dispatcher invokes the most recently registered enabled
+                // callback first, so this one wins and minimises the player
+                // instead of popping the screen behind it.
+                BackHandler(enabled = true) { fullPlayerOpen = false }
                 FullPlayer(
                     player = player,
                     repository = repository,
