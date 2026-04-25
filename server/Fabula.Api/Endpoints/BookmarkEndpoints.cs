@@ -36,12 +36,18 @@ public static class BookmarkEndpoints
 
             await EnsureUserAsync(db, ct);
 
+            // No explicit note? Stamp the bookmark with the local date and
+            // time so the user always has a hint of when it was set.
+            var trimmed = req.Note?.Trim();
+            var note = string.IsNullOrEmpty(trimmed)
+                ? DateTime.Now.ToString("dd.MM.yyyy, HH:mm")
+                : trimmed;
             var bookmark = new Bookmark
             {
                 UserId = TemporaryUserId,
                 BookId = bookId,
                 Position = req.Position,
-                Note = string.IsNullOrWhiteSpace(req.Note) ? null : req.Note.Trim()
+                Note = note
             };
             db.Bookmarks.Add(bookmark);
             await db.SaveChangesAsync(ct);
