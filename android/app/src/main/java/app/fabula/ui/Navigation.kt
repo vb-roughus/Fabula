@@ -22,7 +22,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarDefaults
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.NavigationDrawerItemDefaults
 import androidx.compose.material3.Scaffold
@@ -38,6 +40,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -237,7 +240,11 @@ private fun FabulaNavigationBar(navController: NavHostController) {
     val currentRoute = backStackEntry?.destination?.route
     val currentTab = Tab.fromRoute(currentRoute)
 
-    NavigationBar {
+    NavigationBar(
+        containerColor = Color.Transparent,
+        tonalElevation = 0.dp,
+        windowInsets = NavigationBarDefaults.windowInsets
+    ) {
         Tab.entries.forEach { tab ->
             val selected = currentTab == tab
             NavigationBarItem(
@@ -252,7 +259,10 @@ private fun FabulaNavigationBar(navController: NavHostController) {
                         restoreState = true
                     }
                 },
-                icon = { Icon(tab.icon, contentDescription = tab.label) }
+                icon = { Icon(tab.icon, contentDescription = tab.label) },
+                colors = NavigationBarItemDefaults.colors(
+                    indicatorColor = Color.Transparent
+                )
             )
         }
     }
