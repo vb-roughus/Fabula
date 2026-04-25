@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -85,6 +86,8 @@ fun BookScreen(
     var moreMenuOpen by remember { mutableStateOf(false) }
     var addBookmarkOpen by remember { mutableStateOf(false) }
     var bookmarkNote by remember { mutableStateOf("") }
+    var hasAutoScrolled by remember(bookId) { mutableStateOf(false) }
+    val listState = rememberLazyListState()
     val playerState by player.state.collectAsState()
     val bookmarksRevision by repository.bookmarksRevision.collectAsState()
     val scope = rememberCoroutineScope()
@@ -121,6 +124,43 @@ fun BookScreen(
         if (playerState.book?.id != current.id) {
             player.loadBook(current)
         }
+    }
+
+    // Auto-scroll the chapter list to wherever playback left off (or where it
+    // is right now if this book is the active one). Runs once per book id;
+    // re-keys when bookId changes via the `remember(bookId)` above.
+    LaunchedEffect(book?.id, bookmarks.size, playerState.book?.id, playerState.currentChapter?.index) {
+        if (hasAutoScrolled) return@LaunchedEffect
+        val current = book ?: return@LaunchedEffect
+        if (current.chapters.isEmpty()) return@LaunchedEffect
+
+        val activeIdx: Int? = if (playerState.book?.id == current.id) {
+            playerState.currentChapter?.index
+        } else {
+            val pos = current.progress?.let { parseTimeSpan(it.position) } ?: 0.0
+            if (pos > 1.0) {
+                current.chapters.indexOfFirst { c ->
+                    pos >= parseTimeSpan(c.start) && pos < parseTimeSpan(c.end)
+                }.takeIf { it >= 0 }
+            } else null
+        }
+
+        if (activeIdx == null || activeIdx <= 0) {
+            hasAutoScrolled = true
+            return@LaunchedEffect
+        }
+
+        // LazyColumn structure: cover, title, brand+duration, action,
+        // (optional description), (optional bookmarks header + bookmarks),
+        // chapter header, chapters[N], spacer.
+        var target = 4
+        if (!current.description.isNullOrBlank()) target += 1
+        if (bookmarks.isNotEmpty()) target += 1 + bookmarks.size
+        target += 1  // chapter header
+        target += activeIdx
+
+        listState.scrollToItem(target)
+        hasAutoScrolled = true
     }
 
     Scaffold(
@@ -176,6 +216,7 @@ fun BookScreen(
                     isPlaying = playerState.isPlaying,
                     currentChapterIndex = playerState.currentChapter?.index,
                     bookmarks = bookmarks,
+                    listState = listState,
                     onPlay = {
                         scope.launch {
                             if (playerState.book?.id != b.id) player.loadBook(b)
@@ -275,6 +316,7 @@ private fun BookContent(
     isPlaying: Boolean,
     currentChapterIndex: Int?,
     bookmarks: List<BookmarkDto>,
+    listState: androidx.compose.foundation.lazy.LazyListState,
     onPlay: () -> Unit,
     onChapterClick: (ChapterDto) -> Unit,
     onBookmarkClick: (BookmarkDto) -> Unit,
@@ -284,6 +326,7 @@ private fun BookContent(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
+        state = listState,
         contentPadding = androidx.compose.foundation.layout.PaddingValues(
             bottom = app.fabula.ui.LocalContentBottomInset.current.calculateBottomPadding()
         )
