@@ -2,6 +2,7 @@ package app.fabula.player
 
 import android.content.ComponentName
 import android.content.Context
+import android.media.RingtoneManager
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
@@ -9,6 +10,7 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import app.fabula.data.BookDetailDto
 import app.fabula.data.ChapterDto
+import app.fabula.data.CreateBookmarkRequest
 import app.fabula.data.FabulaRepository
 import app.fabula.data.UpdateProgressRequest
 import app.fabula.data.parseTimeSpan
@@ -33,7 +35,9 @@ data class PlayerUiState(
     val isPlaying: Boolean = false,
     val positionInBook: Double = 0.0,
     val durationInBook: Double = 0.0,
-    val currentChapter: ChapterDto? = null
+    val currentChapter: ChapterDto? = null,
+    /** Remaining sleep timer in milliseconds. Null when the timer is off. */
+    val sleepTimerRemainingMs: Long? = null
 )
 
 /**
@@ -49,6 +53,7 @@ class PlayerController(
     private var controller: MediaController? = null
     private var pollJob: Job? = null
     private var progressJob: Job? = null
+    private var sleepJob: Job? = null
 
     private val _state = MutableStateFlow(PlayerUiState())
     val state: StateFlow<PlayerUiState> = _state.asStateFlow()
@@ -70,6 +75,7 @@ class PlayerController(
     fun release() {
         pollJob?.cancel()
         progressJob?.cancel()
+        sleepJob?.cancel()
         controller?.release()
         controller = null
         scope.cancel()
@@ -145,6 +151,65 @@ class PlayerController(
 
     fun jumpToChapter(chapter: ChapterDto) {
         seekInBook(parseTimeSpan(chapter.start))
+    }
+
+    /**
+     * Start (or reset) a sleep timer that, when it elapses, plays the system
+     * notification sound, pauses playback, and stores a "Gute Nacht!"
+     * bookmark at the position where playback stopped.
+     */
+    fun startSleepTimer(durationMs: Long) {
+        sleepJob?.cancel()
+        val endAt = System.currentTimeMillis() + durationMs
+        sleepJob = scope.launch {
+            while (true) {
+                val remaining = endAt - System.currentTimeMillis()
+                if (remaining <= 0) break
+                _state.value = _state.value.copy(sleepTimerRemainingMs = remaining)
+                delay(1000)
+            }
+            _state.value = _state.value.copy(sleepTimerRemainingMs = 0L)
+            fireSleepEnd()
+            _state.value = _state.value.copy(sleepTimerRemainingMs = null)
+        }
+    }
+
+    fun cancelSleepTimer() {
+        sleepJob?.cancel()
+        sleepJob = null
+        _state.value = _state.value.copy(sleepTimerRemainingMs = null)
+    }
+
+    private suspend fun fireSleepEnd() {
+        val current = _state.value
+        val book = current.book
+        val pos = current.positionInBook
+
+        // Pause first, then play the notification on the alarm/notification
+        // stream so it doesn't get muffled by the audio book stream.
+        controller?.pause()
+        playNotificationSound()
+
+        if (book != null) {
+            val api = repository.apiOrNull() ?: return
+            runCatching {
+                api.createBookmark(
+                    book.id,
+                    CreateBookmarkRequest(
+                        position = toTimeSpanString(pos),
+                        note = "Gute Nacht!"
+                    )
+                )
+                repository.bumpBookmarksRevision()
+            }
+        }
+    }
+
+    private fun playNotificationSound() {
+        runCatching {
+            val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+            RingtoneManager.getRingtone(context, uri)?.play()
+        }
     }
 
     private fun mapBookToMedia(seconds: Double): Pair<Int, Long> {

@@ -20,15 +20,18 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BookmarkAdd
+import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Forward30
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Replay30
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -66,6 +69,7 @@ import coil3.compose.AsyncImage
 import kotlinx.coroutines.launch
 
 private val SPEED_CHOICES = listOf(0.8f, 0.9f, 1.0f, 1.1f, 1.25f, 1.5f, 1.75f, 2.0f)
+private const val SLEEP_TIMER_DURATION_MS = 30L * 60 * 1000  // 30 minutes
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -373,7 +377,7 @@ fun FullPlayer(
 
         Spacer(Modifier.weight(0.3f))
 
-        // Bottom utility row: speed picker on left
+        // Bottom utility row: speed picker on left, sleep timer on right.
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -412,6 +416,53 @@ fun FullPlayer(
                 }
             }
             Spacer(Modifier.weight(1f))
+
+            val sleepRemaining = state.sleepTimerRemainingMs
+            if (sleepRemaining != null) {
+                val totalSec = (sleepRemaining + 999L) / 1000L  // round up
+                val mm = totalSec / 60
+                val ss = totalSec % 60
+                TextButton(onClick = { player.cancelSleepTimer() }) {
+                    Icon(
+                        Icons.Filled.Bedtime,
+                        contentDescription = "Schlaf-Timer aktiv",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        "%d:%02d".format(mm, ss),
+                        color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                }
+                IconButton(
+                    onClick = { player.startSleepTimer(SLEEP_TIMER_DURATION_MS) },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        Icons.Filled.Refresh,
+                        contentDescription = "Schlaf-Timer zurücksetzen",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            } else {
+                TextButton(onClick = { player.startSleepTimer(SLEEP_TIMER_DURATION_MS) }) {
+                    Icon(
+                        Icons.Outlined.Bedtime,
+                        contentDescription = null,
+                        tint = whiteText,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        "30 min",
+                        color = whiteText,
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                }
+            }
         }
     }
 }
