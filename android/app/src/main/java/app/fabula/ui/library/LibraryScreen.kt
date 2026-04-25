@@ -15,9 +15,15 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -49,8 +55,8 @@ private sealed interface LibraryState {
 @Composable
 fun LibraryScreen(
     repository: FabulaRepository,
-    onBookClick: (Int) -> Unit,
-    onOpenSettings: () -> Unit = {}
+    onMenuClick: () -> Unit,
+    onBookClick: (Int) -> Unit
 ) {
     var state by remember { mutableStateOf<LibraryState>(LibraryState.Loading) }
 
@@ -68,7 +74,18 @@ fun LibraryScreen(
     }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Bibliothek") }) }
+        topBar = {
+            TopAppBar(
+                title = { Text("Bibliothek") },
+                navigationIcon = {
+                    IconButton(onClick = onMenuClick) {
+                        Icon(Icons.Filled.Menu, contentDescription = "Menü")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
+            )
+        },
+        containerColor = Color.Transparent
     ) { insets ->
         Box(
             modifier = Modifier

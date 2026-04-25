@@ -25,6 +25,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -61,16 +63,20 @@ fun SeriesDetailScreen(
         } catch (t: Throwable) { error = t.message }
     }
 
-    Scaffold(topBar = {
-        TopAppBar(
-            title = { Text(series?.name ?: "") },
-            navigationIcon = {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Zurück")
-                }
-            }
-        )
-    }) { insets ->
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(series?.name ?: "") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Zurück")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
+            )
+        },
+        containerColor = Color.Transparent
+    ) { insets ->
         Box(modifier = Modifier.fillMaxSize().padding(insets), contentAlignment = Alignment.Center) {
             when {
                 error != null -> Text(error!!, color = MaterialTheme.colorScheme.error)

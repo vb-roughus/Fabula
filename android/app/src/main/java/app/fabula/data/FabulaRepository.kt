@@ -18,6 +18,12 @@ class FabulaRepository(private val preferences: ServerPreferences) {
     private val _baseUrl = MutableStateFlow("")
     val baseUrl: StateFlow<String> = _baseUrl.asStateFlow()
 
+    /** Bumps every time a bookmark is created/edited/deleted, so screens that
+     *  show bookmarks (BookScreen) can re-fetch without prop drilling. */
+    private val _bookmarksRevision = MutableStateFlow(0)
+    val bookmarksRevision: StateFlow<Int> = _bookmarksRevision.asStateFlow()
+    fun bumpBookmarksRevision() { _bookmarksRevision.value = _bookmarksRevision.value + 1 }
+
     private val json = Json {
         ignoreUnknownKeys = true
         explicitNulls = false

@@ -21,7 +21,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Pause
@@ -52,6 +54,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.fabula.data.BookDetailDto
+import app.fabula.data.BookmarkDto
 import app.fabula.data.ChapterDto
 import app.fabula.data.FabulaRepository
 import app.fabula.data.formatClock
@@ -71,8 +74,10 @@ fun BookScreen(
     onPlaybackStarted: () -> Unit
 ) {
     var book by remember { mutableStateOf<BookDetailDto?>(null) }
+    var bookmarks by remember { mutableStateOf<List<BookmarkDto>>(emptyList()) }
     var error by remember { mutableStateOf<String?>(null) }
     val playerState by player.state.collectAsState()
+    val bookmarksRevision by repository.bookmarksRevision.collectAsState()
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(bookId) {
@@ -84,6 +89,13 @@ fun BookScreen(
             book = api.getBook(bookId)
         } catch (t: Throwable) {
             error = t.message
+        }
+    }
+
+    LaunchedEffect(bookId, bookmarksRevision) {
+        runCatching {
+            val api = repository.apiOrNull() ?: return@runCatching
+            bookmarks = api.listBookmarks(bookId)
         }
     }
 
@@ -127,6 +139,7 @@ fun BookScreen(
                     isCurrent = playerState.book?.id == b.id,
                     isPlaying = playerState.isPlaying,
                     currentChapterIndex = playerState.currentChapter?.index,
+                    bookmarks = bookmarks,
                     onPlay = {
                         scope.launch {
                             if (playerState.book?.id != b.id) player.loadBook(b)
@@ -145,6 +158,23 @@ fun BookScreen(
                             player.play()
                             onPlaybackStarted()
                         }
+                    },
+                    onBookmarkClick = { bookmark ->
+                        scope.launch {
+                            if (playerState.book?.id != b.id) player.loadBook(b)
+                            player.seekInBook(parseTimeSpan(bookmark.position))
+                            player.play()
+                            onPlaybackStarted()
+                        }
+                    },
+                    onBookmarkDelete = { bookmark ->
+                        scope.launch {
+                            runCatching {
+                                val api = repository.apiOrNull() ?: return@runCatching
+                                api.deleteBookmark(bookmark.id)
+                                repository.bumpBookmarksRevision()
+                            }
+                        }
                     }
                 )
             }
@@ -159,8 +189,11 @@ private fun BookContent(
     isCurrent: Boolean,
     isPlaying: Boolean,
     currentChapterIndex: Int?,
+    bookmarks: List<BookmarkDto>,
     onPlay: () -> Unit,
-    onChapterClick: (ChapterDto) -> Unit
+    onChapterClick: (ChapterDto) -> Unit,
+    onBookmarkClick: (BookmarkDto) -> Unit,
+    onBookmarkDelete: (BookmarkDto) -> Unit
 ) {
     val totalSeconds = parseTimeSpan(book.duration)
 
@@ -273,7 +306,34 @@ private fun BookContent(
             }
         }
 
+        if (bookmarks.isNotEmpty()) {
+            item {
+                Text(
+                    "Lesezeichen",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp)
+                )
+            }
+            items(items = bookmarks, key = { it.id }) { bookmark ->
+                BookmarkRow(
+                    bookmark = bookmark,
+                    chapterTitle = chapterAt(book, parseTimeSpan(bookmark.position))?.title,
+                    onClick = { onBookmarkClick(bookmark) },
+                    onDelete = { onBookmarkDelete(bookmark) }
+                )
+            }
+        }
+
         if (book.chapters.isNotEmpty()) {
+            item {
+                Text(
+                    "Kapitel",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp)
+                )
+            }
             items(items = book.chapters, key = { it.index }) { chapter ->
                 ChapterRow(
                     chapter = chapter,
@@ -286,6 +346,11 @@ private fun BookContent(
         item { Spacer(Modifier.height(24.dp)) }
     }
 }
+
+private fun chapterAt(book: BookDetailDto, posSec: Double): ChapterDto? =
+    book.chapters.firstOrNull {
+        posSec >= parseTimeSpan(it.start) && posSec < parseTimeSpan(it.end)
+    }
 
 @Composable
 private fun ActionRow(onPlay: () -> Unit, isPlaying: Boolean) {
@@ -385,6 +450,66 @@ private fun ChapterRow(
             Icon(
                 Icons.Filled.MoreHoriz,
                 contentDescription = "Mehr",
+                tint = MaterialTheme.colorScheme.outline
+            )
+        }
+    }
+}
+
+@Composable
+private fun BookmarkRow(
+    bookmark: BookmarkDto,
+    chapterTitle: String?,
+    onClick: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val posSec = parseTimeSpan(bookmark.position)
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            Icons.Filled.Bookmark,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier
+                .size(28.dp)
+                .padding(end = 4.dp)
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    formatClock(posSec),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Medium
+                )
+                if (!chapterTitle.isNullOrBlank()) {
+                    Text(
+                        " · $chapterTitle",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline,
+                        maxLines = 1
+                    )
+                }
+            }
+            if (!bookmark.note.isNullOrBlank()) {
+                Text(
+                    bookmark.note,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 2
+                )
+            }
+        }
+        IconButton(onClick = onDelete) {
+            Icon(
+                Icons.Filled.Close,
+                contentDescription = "Lesezeichen löschen",
                 tint = MaterialTheme.colorScheme.outline
             )
         }

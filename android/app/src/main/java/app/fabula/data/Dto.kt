@@ -124,3 +124,6 @@ data class BookmarkDto(
 
 @Serializable
 data class CreateBookmarkRequest(val position: String, val note: String? = null)
+
+@Serializable
+data class UpdateBookmarkRequest(val note: String? = null)

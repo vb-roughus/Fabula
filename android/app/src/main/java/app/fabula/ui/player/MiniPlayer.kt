@@ -35,7 +35,6 @@ import app.fabula.player.PlayerController
 import coil3.compose.AsyncImage
 
 private val MiniPlayerTint = Color(0xFF6B2E20)  // warm dark brown; later: extract from cover
-private val MiniPlayerCornerRadius = 8.dp
 
 @Composable
 fun MiniPlayer(
@@ -55,8 +54,7 @@ fun MiniPlayer(
 
     Column(
         modifier = modifier
-            .padding(horizontal = 8.dp)
-            .clip(RoundedCornerShape(MiniPlayerCornerRadius))
+            .fillMaxWidth()
             .background(MiniPlayerTint)
             .clickable(onClick = onClick)
     ) {

@@ -202,6 +202,7 @@ fun FullPlayer(
                                     note = null
                                 )
                             )
+                            repository.bumpBookmarksRevision()
                             bookmarkSavedFlash = true
                         }
                     }

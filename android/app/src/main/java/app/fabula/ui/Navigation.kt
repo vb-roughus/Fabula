@@ -6,7 +6,9 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
@@ -14,21 +16,31 @@ import androidx.compose.material.icons.filled.LibraryBooks
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Style
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationDrawerItem
+import androidx.compose.material3.NavigationDrawerItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -48,6 +60,7 @@ import app.fabula.ui.series.SeriesDetailScreen
 import app.fabula.ui.series.SeriesScreen
 import app.fabula.ui.settings.SettingsScreen
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
 private enum class Tab(
     val route: String,
@@ -56,8 +69,7 @@ private enum class Tab(
 ) {
     Home("home", "Startseite", Icons.Filled.Home),
     Library("library", "Bibliothek", Icons.Filled.LibraryBooks),
-    Series("series", "Serien", Icons.Filled.Style),
-    Settings("settings", "Einstellungen", Icons.Filled.Settings);
+    Series("series", "Serien", Icons.Filled.Style);
 
     companion object {
         fun fromRoute(route: String?): Tab? =
@@ -82,107 +94,135 @@ fun Navigation(
         return
     }
 
-    val startTab = if (baseUrl!!.isBlank()) Tab.Settings else Tab.Home
+    val startRoute = if (baseUrl!!.isBlank()) "settings" else Tab.Home.route
     val playerState by player.state.collectAsState()
     val hasBook = playerState.book != null
 
     var fullPlayerOpen by remember { mutableStateOf(false) }
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    val scope = rememberCoroutineScope()
 
     BackHandler(enabled = fullPlayerOpen) { fullPlayerOpen = false }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        Scaffold(
-            modifier = Modifier.fillMaxSize(),
-            bottomBar = {
-                Column {
-                    if (hasBook) {
-                        MiniPlayer(
-                            player = player,
-                            repository = repository,
-                            onClick = { fullPlayerOpen = true }
-                        )
-                    }
-                    FabulaNavigationBar(navController = navController)
-                }
-            }
-        ) { innerPadding ->
-            NavHost(
-                navController = navController,
-                startDestination = startTab.route,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
-            ) {
-                composable(Tab.Home.route) {
-                    HomeScreen(
-                        repository = repository,
-                        onBookClick = { id -> navController.navigate("book/$id") }
-                    )
-                }
-                composable(Tab.Library.route) {
-                    LibraryScreen(
-                        repository = repository,
-                        onBookClick = { id -> navController.navigate("book/$id") },
-                        onOpenSettings = { navController.navigate(Tab.Settings.route) }
-                    )
-                }
-                composable(Tab.Series.route) {
-                    SeriesScreen(
-                        repository = repository,
-                        onSeriesClick = { id -> navController.navigate("series/$id") }
-                    )
-                }
-                composable(
-                    route = "series/{seriesId}",
-                    arguments = listOf(navArgument("seriesId") { type = NavType.IntType })
-                ) { entry ->
-                    val id = entry.arguments?.getInt("seriesId") ?: return@composable
-                    SeriesDetailScreen(
-                        seriesId = id,
-                        repository = repository,
-                        onBack = { navController.popBackStack() },
-                        onBookClick = { bookId -> navController.navigate("book/$bookId") }
-                    )
-                }
-                composable(Tab.Settings.route) {
-                    SettingsScreen(
-                        repository = repository,
-                        onDone = {
-                            navController.navigate(Tab.Home.route) {
-                                popUpTo(Tab.Settings.route) { inclusive = true }
-                            }
-                        }
-                    )
-                }
-                composable(
-                    route = "book/{bookId}",
-                    arguments = listOf(navArgument("bookId") { type = NavType.IntType })
-                ) { entry ->
-                    val bookId = entry.arguments?.getInt("bookId") ?: return@composable
-                    BookScreen(
-                        bookId = bookId,
-                        repository = repository,
-                        player = player,
-                        onBack = { navController.popBackStack() },
-                        onPlaybackStarted = { fullPlayerOpen = true }
-                    )
-                }
+    val openDrawer: () -> Unit = { scope.launch { drawerState.open() } }
+
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            ModalDrawerSheet {
+                Spacer(Modifier.height(24.dp))
+                Text(
+                    "Fabula",
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(horizontal = 28.dp, vertical = 8.dp),
+                    style = MaterialTheme.typography.titleLarge
+                )
+                Spacer(Modifier.height(16.dp))
+                NavigationDrawerItem(
+                    icon = { Icon(Icons.Filled.Settings, contentDescription = null) },
+                    label = { Text("Einstellungen") },
+                    selected = false,
+                    onClick = {
+                        scope.launch { drawerState.close() }
+                        navController.navigate("settings")
+                    },
+                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                )
             }
         }
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            Scaffold(
+                modifier = Modifier.fillMaxSize(),
+                bottomBar = {
+                    Column {
+                        if (hasBook) {
+                            MiniPlayer(
+                                player = player,
+                                repository = repository,
+                                onClick = { fullPlayerOpen = true }
+                            )
+                        }
+                        FabulaNavigationBar(navController = navController)
+                    }
+                },
+                containerColor = MaterialTheme.colorScheme.background
+            ) { innerPadding ->
+                NavHost(
+                    navController = navController,
+                    startDestination = startRoute,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(bottom = innerPadding.calculateBottomPadding())
+                ) {
+                    composable(Tab.Home.route) {
+                        HomeScreen(
+                            repository = repository,
+                            onMenuClick = openDrawer,
+                            onBookClick = { id -> navController.navigate("book/$id") }
+                        )
+                    }
+                    composable(Tab.Library.route) {
+                        LibraryScreen(
+                            repository = repository,
+                            onMenuClick = openDrawer,
+                            onBookClick = { id -> navController.navigate("book/$id") }
+                        )
+                    }
+                    composable(Tab.Series.route) {
+                        SeriesScreen(
+                            repository = repository,
+                            onMenuClick = openDrawer,
+                            onSeriesClick = { id -> navController.navigate("series/$id") }
+                        )
+                    }
+                    composable(
+                        route = "series/{seriesId}",
+                        arguments = listOf(navArgument("seriesId") { type = NavType.IntType })
+                    ) { entry ->
+                        val id = entry.arguments?.getInt("seriesId") ?: return@composable
+                        SeriesDetailScreen(
+                            seriesId = id,
+                            repository = repository,
+                            onBack = { navController.popBackStack() },
+                            onBookClick = { bookId -> navController.navigate("book/$bookId") }
+                        )
+                    }
+                    composable("settings") {
+                        SettingsScreen(
+                            repository = repository,
+                            onDone = { navController.popBackStack() }
+                        )
+                    }
+                    composable(
+                        route = "book/{bookId}",
+                        arguments = listOf(navArgument("bookId") { type = NavType.IntType })
+                    ) { entry ->
+                        val bookId = entry.arguments?.getInt("bookId") ?: return@composable
+                        BookScreen(
+                            bookId = bookId,
+                            repository = repository,
+                            player = player,
+                            onBack = { navController.popBackStack() },
+                            onPlaybackStarted = { fullPlayerOpen = true }
+                        )
+                    }
+                }
+            }
 
-        // Fullscreen player slides up from the bottom and covers everything
-        // (including the nav bar). Back button or the collapse arrow dismisses it.
-        AnimatedVisibility(
-            visible = hasBook && fullPlayerOpen,
-            enter = slideInVertically(initialOffsetY = { it }),
-            exit = slideOutVertically(targetOffsetY = { it })
-        ) {
-            FullPlayer(
-                player = player,
-                repository = repository,
-                onCollapse = { fullPlayerOpen = false },
-                modifier = Modifier.fillMaxSize()
-            )
+            AnimatedVisibility(
+                visible = hasBook && fullPlayerOpen,
+                enter = slideInVertically(initialOffsetY = { it }),
+                exit = slideOutVertically(targetOffsetY = { it })
+            ) {
+                FullPlayer(
+                    player = player,
+                    repository = repository,
+                    onCollapse = { fullPlayerOpen = false },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
         }
     }
 }
@@ -208,8 +248,7 @@ private fun FabulaNavigationBar(navController: NavHostController) {
                         restoreState = true
                     }
                 },
-                icon = { Icon(tab.icon, contentDescription = null) },
-                label = { Text(tab.label) }
+                icon = { Icon(tab.icon, contentDescription = tab.label) }
             )
         }
     }

@@ -1,7 +1,10 @@
 package app.fabula.data
 
 import retrofit2.http.Body
+import retrofit2.http.DELETE
 import retrofit2.http.GET
+import retrofit2.http.PATCH
+import retrofit2.http.POST
 import retrofit2.http.PUT
 import retrofit2.http.Path
 import retrofit2.http.Query
@@ -32,9 +35,21 @@ interface FabulaApi {
     @GET("api/series/{id}")
     suspend fun getSeries(@Path("id") id: Int): SeriesDetailDto
 
-    @retrofit2.http.POST("api/books/{bookId}/bookmarks")
+    @GET("api/books/{bookId}/bookmarks")
+    suspend fun listBookmarks(@Path("bookId") bookId: Int): List<BookmarkDto>
+
+    @POST("api/books/{bookId}/bookmarks")
     suspend fun createBookmark(
         @Path("bookId") bookId: Int,
         @Body body: CreateBookmarkRequest
     ): BookmarkDto
+
+    @PATCH("api/bookmarks/{id}")
+    suspend fun updateBookmark(
+        @Path("id") id: Int,
+        @Body body: UpdateBookmarkRequest
+    ): BookmarkDto
+
+    @DELETE("api/bookmarks/{id}")
+    suspend fun deleteBookmark(@Path("id") id: Int)
 }
