@@ -248,37 +248,53 @@ fun FullPlayer(
                     inactiveTrackColor = whiteText.copy(alpha = 0.25f)
                 ),
                 thumb = {
+                    // Wrap the visible 10 dp circle in a 20 dp box so the
+                    // slider treats the thumb as 20 dp wide/tall. That keeps
+                    // its bounds the same height as the track wrapper below
+                    // so their centres align vertically and gives the track
+                    // a known half-thumb width to inset its drawn line by.
                     Box(
-                        modifier = Modifier
-                            .size(10.dp)
-                            .clip(CircleShape)
-                            .background(whiteText)
-                    )
+                        modifier = Modifier.size(20.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(10.dp)
+                                .clip(CircleShape)
+                                .background(whiteText)
+                        )
+                    }
                 },
                 track = { sliderState ->
                     val range = sliderState.valueRange.endInclusive - sliderState.valueRange.start
                     val fraction = if (range > 0f)
                         ((sliderState.value - sliderState.valueRange.start) / range).coerceIn(0f, 1f)
                     else 0f
-                    // The slider offsets the thumb by half its width, so the
-                    // 10 dp thumb starts 5 dp in from each edge. Pad the track
-                    // by the same amount so the active fill ends exactly under
-                    // the thumb's centre, regardless of value.
+                    // Outer wrapper matches the thumb height so the slider
+                    // measures both at 20 dp and centres them on the same
+                    // baseline; the visible 2 dp line sits in the middle.
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 5.dp)
-                            .height(2.dp)
-                            .clip(RoundedCornerShape(1.dp))
-                            .background(whiteText.copy(alpha = 0.25f))
+                            .height(20.dp),
+                        contentAlignment = Alignment.Center
                     ) {
                         Box(
                             modifier = Modifier
-                                .fillMaxWidth(fraction)
-                                .fillMaxHeight()
+                                .fillMaxWidth()
+                                .padding(horizontal = 10.dp)
+                                .height(2.dp)
                                 .clip(RoundedCornerShape(1.dp))
-                                .background(whiteText)
-                        )
+                                .background(whiteText.copy(alpha = 0.25f))
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth(fraction)
+                                    .fillMaxHeight()
+                                    .clip(RoundedCornerShape(1.dp))
+                                    .background(whiteText)
+                            )
+                        }
                     }
                 }
             )
