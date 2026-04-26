@@ -77,7 +77,9 @@ import app.fabula.ui.series.SeriesDetailScreen
 import app.fabula.ui.series.SeriesManagementScreen
 import app.fabula.ui.series.SeriesScreen
 import app.fabula.ui.settings.SettingsScreen
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 private val MiniPlayerHeight = 76.dp
@@ -116,8 +118,12 @@ fun Navigation(
     }
 
     val startRoute = if (baseUrl!!.isBlank()) "settings" else Tab.Home.route
-    val playerState by player.state.collectAsState()
-    val hasBook = playerState.book != null
+    // Only read whether we have a book at all -- avoid recomposing Navigation
+    // (and reallocating its gradients) every position tick.
+    val hasBookFlow = remember(player) {
+        player.state.map { it.book != null }.distinctUntilChanged()
+    }
+    val hasBook by hasBookFlow.collectAsState(initial = false)
 
     var fullPlayerOpen by remember { mutableStateOf(false) }
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
@@ -170,18 +176,17 @@ fun Navigation(
         // screen Scaffold uses Color.Transparent so the gradient is visible
         // across the whole app, not just the drawer / sub-menus.
         val baseColor = MaterialTheme.colorScheme.background
-        val tintTop = MaterialTheme.colorScheme.primary
-            .copy(alpha = 0.22f)
-            .compositeOver(baseColor)
-        val tintBottom = MaterialTheme.colorScheme.primary
-            .copy(alpha = 0.14f)
-            .compositeOver(baseColor)
-        val appBackground = Brush.verticalGradient(
-            0.0f to tintTop,
-            0.40f to baseColor,
-            0.75f to baseColor,
-            1.0f to tintBottom
-        )
+        val accentColor = MaterialTheme.colorScheme.primary
+        val appBackground = remember(baseColor, accentColor) {
+            val tintTop = accentColor.copy(alpha = 0.22f).compositeOver(baseColor)
+            val tintBottom = accentColor.copy(alpha = 0.14f).compositeOver(baseColor)
+            Brush.verticalGradient(
+                0.0f to tintTop,
+                0.40f to baseColor,
+                0.75f to baseColor,
+                1.0f to tintBottom
+            )
+        }
 
         Box(
             modifier = Modifier
@@ -305,20 +310,21 @@ fun Navigation(
             // bottom) sits behind both so scrolling content fades smoothly
             // behind the tab bar instead of cutting off harshly.
             val overlayScrim = MaterialTheme.colorScheme.background
+            val overlayBrush = remember(overlayScrim) {
+                Brush.verticalGradient(
+                    colors = listOf(
+                        overlayScrim.copy(alpha = 0f),
+                        overlayScrim.copy(alpha = 0.6f),
+                        overlayScrim.copy(alpha = 0.92f),
+                        overlayScrim.copy(alpha = 0.97f)
+                    )
+                )
+            }
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                overlayScrim.copy(alpha = 0f),
-                                overlayScrim.copy(alpha = 0.6f),
-                                overlayScrim.copy(alpha = 0.92f),
-                                overlayScrim.copy(alpha = 0.97f)
-                            )
-                        )
-                    )
+                    .background(overlayBrush)
             ) {
                 if (hasBook) {
                     MiniPlayer(

@@ -53,9 +53,9 @@ fun MiniPlayer(
     val chapterPos = (state.positionInBook - chapterStart).coerceIn(0.0, chapterDuration)
     val pct = if (chapterDuration > 0) (chapterPos / chapterDuration).toFloat().coerceIn(0f, 1f) else 0f
 
-    val miniGradient = Brush.horizontalGradient(
-        listOf(BrandGreen500, BrandGreen400)
-    )
+    val miniGradient = remember {
+        Brush.horizontalGradient(listOf(BrandGreen500, BrandGreen400))
+    }
     Column(
         modifier = modifier
             .fillMaxWidth()
