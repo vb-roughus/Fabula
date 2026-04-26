@@ -165,17 +165,22 @@ fun Navigation(
             }
         }
     ) {
-        // App-wide background gradient: subtle accent tint at the top fading
-        // into the navy base. Applied to the outer Box so every screen --
-        // not just the FullPlayer -- shows the same gradient.
+        // App-wide background gradient: subtle brand-green tint at the top and
+        // bottom, navy base in the middle. Applied to the outer Box AND every
+        // screen Scaffold uses Color.Transparent so the gradient is visible
+        // across the whole app, not just the drawer / sub-menus.
         val baseColor = MaterialTheme.colorScheme.background
         val tintTop = MaterialTheme.colorScheme.primary
-            .copy(alpha = 0.10f)
+            .copy(alpha = 0.22f)
+            .compositeOver(baseColor)
+        val tintBottom = MaterialTheme.colorScheme.primary
+            .copy(alpha = 0.14f)
             .compositeOver(baseColor)
         val appBackground = Brush.verticalGradient(
             0.0f to tintTop,
-            0.45f to baseColor,
-            1.0f to baseColor
+            0.40f to baseColor,
+            0.75f to baseColor,
+            1.0f to tintBottom
         )
 
         Box(

@@ -77,7 +77,7 @@ fun SeriesDetailScreen(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
             )
         },
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = Color.Transparent,
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0.dp)
     ) { insets ->
         Box(modifier = Modifier.fillMaxSize().padding(insets), contentAlignment = Alignment.Center) {

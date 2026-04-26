@@ -7,25 +7,29 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
-// Navy-black palette: deep blue background, slightly lighter surface tones,
-// bright text with a clearly readable secondary tone (no more "grey on grey").
-private val Navy950 = Color(0xFF0A1428)  // background
-private val Navy900 = Color(0xFF0F1A30)  // surface
-private val Navy800 = Color(0xFF18243F)  // surfaceVariant (cards / chips)
-private val Navy700 = Color(0xFF24314F)  // dividers / track
-private val Slate300 = Color(0xFFA8B4CC)  // secondary text -- much lighter than the old outline
+// Vita Brevis brand palette: deep navy (matches the wordmark) for backgrounds
+// and a vivid emerald green (matches the "B" mark) as the primary accent.
+private val Navy950 = Color(0xFF0B1224)  // background -- closer to the wordmark colour
+private val Navy900 = Color(0xFF111A33)  // surface
+private val Navy800 = Color(0xFF1A2545)  // surfaceVariant (cards / chips)
+private val Navy700 = Color(0xFF243259)  // dividers / track
+private val Slate300 = Color(0xFFA8B4CC)  // secondary text
 private val Slate200 = Color(0xFFC9D2E4)
 private val OffWhite = Color(0xFFF1F4FA)  // primary text
-private val Accent500 = Color(0xFFE88F33)
-private val Accent400 = Color(0xFFF5B06B)
+val BrandGreen500 = Color(0xFF31C76B)  // deeper end of the logo gradient
+val BrandGreen400 = Color(0xFF5BE391)  // lighter end of the logo gradient
+val BrandGreen300 = Color(0xFF8AF0AF)
 
 val FabulaBackground get() = Navy950
+val FabulaSurface get() = Navy900
+val FabulaSurfaceVariant get() = Navy800
 
 private val DarkScheme = darkColorScheme(
-    primary = Accent500,
+    primary = BrandGreen500,
     onPrimary = Navy950,
-    secondary = Accent400,
+    secondary = BrandGreen400,
     onSecondary = Navy950,
+    tertiary = BrandGreen300,
     background = Navy950,
     onBackground = OffWhite,
     surface = Navy900,
@@ -36,9 +40,9 @@ private val DarkScheme = darkColorScheme(
 )
 
 private val LightScheme = lightColorScheme(
-    primary = Accent500,
+    primary = BrandGreen500,
     onPrimary = Navy950,
-    secondary = Accent400,
+    secondary = BrandGreen400,
     background = OffWhite,
     surface = Slate200,
     onSurface = Navy950

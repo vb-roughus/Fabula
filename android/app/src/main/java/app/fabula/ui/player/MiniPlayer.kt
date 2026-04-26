@@ -25,6 +25,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -32,9 +33,9 @@ import androidx.compose.ui.unit.dp
 import app.fabula.data.FabulaRepository
 import app.fabula.data.parseTimeSpan
 import app.fabula.player.PlayerController
+import app.fabula.ui.BrandGreen400
+import app.fabula.ui.BrandGreen500
 import coil3.compose.AsyncImage
-
-private val MiniPlayerTint = Color(0xFF6B2E20)  // warm dark brown; later: extract from cover
 
 @Composable
 fun MiniPlayer(
@@ -52,10 +53,13 @@ fun MiniPlayer(
     val chapterPos = (state.positionInBook - chapterStart).coerceIn(0.0, chapterDuration)
     val pct = if (chapterDuration > 0) (chapterPos / chapterDuration).toFloat().coerceIn(0f, 1f) else 0f
 
+    val miniGradient = Brush.horizontalGradient(
+        listOf(BrandGreen500, BrandGreen400)
+    )
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(MiniPlayerTint)
+            .background(miniGradient)
             .clickable(onClick = onClick)
     ) {
         Row(
@@ -80,18 +84,19 @@ fun MiniPlayer(
                 }
             }
             Spacer(Modifier.width(12.dp))
+            val onGreen = MaterialTheme.colorScheme.onPrimary
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = book.title,
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
-                    color = Color.White,
+                    color = onGreen,
                     maxLines = 1
                 )
                 Text(
                     text = state.currentChapter?.title ?: book.authors.joinToString(", "),
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color.White.copy(alpha = 0.75f),
+                    color = onGreen.copy(alpha = 0.75f),
                     maxLines = 1
                 )
             }
@@ -103,14 +108,14 @@ fun MiniPlayer(
                     Icon(
                         Icons.Filled.Pause,
                         contentDescription = "Pause",
-                        tint = Color.White,
+                        tint = onGreen,
                         modifier = Modifier.size(28.dp)
                     )
                 } else {
                     Icon(
                         Icons.Filled.PlayArrow,
                         contentDescription = "Abspielen",
-                        tint = Color.White,
+                        tint = onGreen,
                         modifier = Modifier.size(28.dp)
                     )
                 }
@@ -121,17 +126,18 @@ fun MiniPlayer(
             .fillMaxWidth()
             .padding(horizontal = 6.dp, vertical = 4.dp)
         ) {
+            val onGreen = MaterialTheme.colorScheme.onPrimary
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(2.dp)
-                    .background(Color.White.copy(alpha = 0.2f), RoundedCornerShape(1.dp))
+                    .background(onGreen.copy(alpha = 0.2f), RoundedCornerShape(1.dp))
             ) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth(pct)
                         .height(2.dp)
-                        .background(Color.White, RoundedCornerShape(1.dp))
+                        .background(onGreen, RoundedCornerShape(1.dp))
                 )
             }
         }
