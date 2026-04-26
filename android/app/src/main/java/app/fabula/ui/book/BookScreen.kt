@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.LibraryBooks
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -217,10 +218,7 @@ fun BookScreen(
                                     )
                                 },
                                 leadingIcon = {
-                                    Icon(
-                                        androidx.compose.material.icons.Icons.Filled.LibraryBooks,
-                                        contentDescription = null
-                                    )
+                                    Icon(Icons.Filled.LibraryBooks, contentDescription = null)
                                 },
                                 onClick = {
                                     moreMenuOpen = false
