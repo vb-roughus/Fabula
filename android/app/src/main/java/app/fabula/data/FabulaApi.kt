@@ -35,6 +35,24 @@ interface FabulaApi {
     @GET("api/series/{id}")
     suspend fun getSeries(@Path("id") id: Int): SeriesDetailDto
 
+    @POST("api/series")
+    suspend fun createSeries(@Body body: SeriesRequest): SeriesSummaryDto
+
+    @PUT("api/series/{id}")
+    suspend fun updateSeries(
+        @Path("id") id: Int,
+        @Body body: SeriesRequest
+    ): SeriesSummaryDto
+
+    @DELETE("api/series/{id}")
+    suspend fun deleteSeries(@Path("id") id: Int)
+
+    @PUT("api/books/{bookId}/series")
+    suspend fun assignBookSeries(
+        @Path("bookId") bookId: Int,
+        @Body body: AssignSeriesRequest
+    )
+
     @GET("api/books/{bookId}/bookmarks")
     suspend fun listBookmarks(@Path("bookId") bookId: Int): List<BookmarkDto>
 

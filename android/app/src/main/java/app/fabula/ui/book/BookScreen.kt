@@ -33,6 +33,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -58,11 +60,13 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.fabula.data.AssignSeriesRequest
 import app.fabula.data.BookDetailDto
 import app.fabula.data.BookmarkDto
 import app.fabula.data.ChapterDto
 import app.fabula.data.CreateBookmarkRequest
 import app.fabula.data.FabulaRepository
+import app.fabula.data.SeriesSummaryDto
 import app.fabula.data.formatClock
 import app.fabula.data.formatDurationHuman
 import app.fabula.data.parseTimeSpan
@@ -86,6 +90,9 @@ fun BookScreen(
     var moreMenuOpen by remember { mutableStateOf(false) }
     var addBookmarkOpen by remember { mutableStateOf(false) }
     var bookmarkNote by remember { mutableStateOf("") }
+    var assignSeriesOpen by remember { mutableStateOf(false) }
+    var seriesList by remember { mutableStateOf<List<SeriesSummaryDto>>(emptyList()) }
+    val seriesRevision by repository.seriesRevision.collectAsState()
     var hasAutoScrolled by remember(bookId) { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val playerState by player.state.collectAsState()
@@ -100,7 +107,7 @@ fun BookScreen(
         else -> book?.progress?.let { parseTimeSpan(it.position) } ?: 0.0
     }
 
-    LaunchedEffect(bookId) {
+    LaunchedEffect(bookId, seriesRevision) {
         try {
             val api = repository.apiOrNull() ?: run {
                 error = "Kein Server konfiguriert."
@@ -116,6 +123,16 @@ fun BookScreen(
         runCatching {
             val api = repository.apiOrNull() ?: return@runCatching
             bookmarks = api.listBookmarks(bookId)
+        }
+    }
+
+    // Pre-load the series list when the assign dialog is opened.
+    LaunchedEffect(assignSeriesOpen, seriesRevision) {
+        if (assignSeriesOpen) {
+            runCatching {
+                val api = repository.apiOrNull() ?: return@runCatching
+                seriesList = api.listSeries()
+            }
         }
     }
 
@@ -190,6 +207,24 @@ fun BookScreen(
                                     moreMenuOpen = false
                                     bookmarkNote = ""
                                     addBookmarkOpen = true
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        if (book?.series.isNullOrBlank()) "Serie zuweisen"
+                                        else "Serie ändern"
+                                    )
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        androidx.compose.material.icons.Icons.Filled.LibraryBooks,
+                                        contentDescription = null
+                                    )
+                                },
+                                onClick = {
+                                    moreMenuOpen = false
+                                    assignSeriesOpen = true
                                 }
                             )
                         }
@@ -306,7 +341,116 @@ fun BookScreen(
             }
         )
     }
+
+    if (assignSeriesOpen) {
+        AssignSeriesDialog(
+            availableSeries = seriesList,
+            currentSeriesId = book?.seriesId,
+            currentPosition = book?.seriesPosition,
+            onDismiss = { assignSeriesOpen = false },
+            onSave = { newSeriesId, newPosition ->
+                assignSeriesOpen = false
+                scope.launch {
+                    runCatching {
+                        val api = repository.apiOrNull() ?: return@runCatching
+                        api.assignBookSeries(
+                            bookId,
+                            AssignSeriesRequest(seriesId = newSeriesId, seriesPosition = newPosition)
+                        )
+                        repository.bumpSeriesRevision()
+                    }
+                }
+            }
+        )
+    }
 }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AssignSeriesDialog(
+    availableSeries: List<SeriesSummaryDto>,
+    currentSeriesId: Int?,
+    currentPosition: Double?,
+    onDismiss: () -> Unit,
+    onSave: (seriesId: Int?, seriesPosition: Double?) -> Unit
+) {
+    var dropdownOpen by remember { mutableStateOf(false) }
+    var selectedSeriesId by remember(currentSeriesId) { mutableStateOf(currentSeriesId) }
+    var positionText by remember(currentPosition) {
+        mutableStateOf(currentPosition?.let { formatPosition(it) } ?: "")
+    }
+
+    val selectedName = availableSeries.firstOrNull { it.id == selectedSeriesId }?.name
+        ?: "– Keine Serie –"
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Serie zuweisen") },
+        text = {
+            androidx.compose.foundation.layout.Column {
+                ExposedDropdownMenuBox(
+                    expanded = dropdownOpen,
+                    onExpandedChange = { dropdownOpen = !dropdownOpen }
+                ) {
+                    OutlinedTextField(
+                        value = selectedName,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Serie") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = dropdownOpen) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .menuAnchor()
+                    )
+                    DropdownMenu(
+                        expanded = dropdownOpen,
+                        onDismissRequest = { dropdownOpen = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("– Keine Serie –") },
+                            onClick = {
+                                selectedSeriesId = null
+                                dropdownOpen = false
+                            }
+                        )
+                        availableSeries.forEach { s ->
+                            DropdownMenuItem(
+                                text = { Text(s.name) },
+                                onClick = {
+                                    selectedSeriesId = s.id
+                                    dropdownOpen = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                if (selectedSeriesId != null) {
+                    androidx.compose.foundation.layout.Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = positionText,
+                        onValueChange = { positionText = it },
+                        label = { Text("Position (z. B. 1, 2, 3.5)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                val pos = positionText.trim().replace(',', '.').toDoubleOrNull()
+                onSave(selectedSeriesId, if (selectedSeriesId == null) null else pos)
+            }) { Text("Speichern") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Abbrechen") }
+        }
+    )
+}
+
+private fun formatPosition(value: Double): String =
+    if (value % 1.0 == 0.0) value.toInt().toString() else value.toString()
 
 @Composable
 private fun BookContent(

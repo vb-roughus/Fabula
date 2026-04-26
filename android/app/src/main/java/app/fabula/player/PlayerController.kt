@@ -16,6 +16,7 @@ import app.fabula.data.UpdateProgressRequest
 import app.fabula.data.parseTimeSpan
 import app.fabula.data.toTimeSpanString
 import com.google.common.util.concurrent.MoreExecutors
+import java.util.Calendar
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -54,6 +55,28 @@ class PlayerController(
     private var pollJob: Job? = null
     private var progressJob: Job? = null
     private var sleepJob: Job? = null
+
+    // Most recent sleep timer duration (defaults to 30 min). Used when the
+    // timer auto-restarts after the user resumes playback.
+    private var lastSleepDurationMs: Long = 30L * 60 * 1000
+
+    // Set when the sleep timer fires and pauses playback. Cleared when the
+    // user starts/cancels the timer manually or when we auto-restart it.
+    private var stoppedBySleep: Boolean = false
+
+    // Cached preferences -- collected from the repository when the
+    // controller is created, kept in sync via the scope.
+    private var sleepRepeatEnabled: Boolean = true
+    private var sleepRepeatUntilMinutes: Int = 7 * 60
+
+    init {
+        scope.launch {
+            repository.sleepRepeatEnabled.collect { sleepRepeatEnabled = it }
+        }
+        scope.launch {
+            repository.sleepRepeatUntilMinutes.collect { sleepRepeatUntilMinutes = it }
+        }
+    }
 
     private val _state = MutableStateFlow(PlayerUiState())
     val state: StateFlow<PlayerUiState> = _state.asStateFlow()
@@ -160,6 +183,8 @@ class PlayerController(
      */
     fun startSleepTimer(durationMs: Long) {
         sleepJob?.cancel()
+        lastSleepDurationMs = durationMs
+        stoppedBySleep = false  // a fresh manual start cancels the auto-resume flag
         val endAt = System.currentTimeMillis() + durationMs
         sleepJob = scope.launch {
             while (true) {
@@ -177,6 +202,7 @@ class PlayerController(
     fun cancelSleepTimer() {
         sleepJob?.cancel()
         sleepJob = null
+        stoppedBySleep = false
         _state.value = _state.value.copy(sleepTimerRemainingMs = null)
     }
 
@@ -184,6 +210,10 @@ class PlayerController(
         val current = _state.value
         val book = current.book
         val pos = current.positionInBook
+
+        // Mark before pausing so the player listener doesn't try to
+        // auto-restart on its own sleep-induced pause callback.
+        stoppedBySleep = true
 
         // Pause first, then play the notification on the alarm/notification
         // stream so it doesn't get muffled by the audio book stream.
@@ -203,6 +233,20 @@ class PlayerController(
                 repository.bumpBookmarksRevision()
             }
         }
+    }
+
+    /** Wall-clock millis of the next occurrence of [sleepRepeatUntilMinutes]
+     *  (e.g. tomorrow 07:00 if it's already past today's 07:00). */
+    private fun nextWakeUpMillis(): Long {
+        val now = Calendar.getInstance()
+        val target = (now.clone() as Calendar).apply {
+            set(Calendar.HOUR_OF_DAY, sleepRepeatUntilMinutes / 60)
+            set(Calendar.MINUTE, sleepRepeatUntilMinutes % 60)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        if (!target.after(now)) target.add(Calendar.DAY_OF_YEAR, 1)
+        return target.timeInMillis
     }
 
     private fun playNotificationSound() {
@@ -225,7 +269,19 @@ class PlayerController(
     }
 
     private val playerListener = object : Player.Listener {
-        override fun onIsPlayingChanged(isPlaying: Boolean) { updateStateFromController() }
+        override fun onIsPlayingChanged(isPlaying: Boolean) {
+            // If playback resumes after the sleep timer paused us, and the
+            // user has the auto-repeat enabled, start a fresh timer with the
+            // same duration -- but only while we're still before the next
+            // configured wake-up time.
+            if (isPlaying && stoppedBySleep) {
+                stoppedBySleep = false
+                if (sleepRepeatEnabled && System.currentTimeMillis() < nextWakeUpMillis()) {
+                    startSleepTimer(lastSleepDurationMs)
+                }
+            }
+            updateStateFromController()
+        }
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) { updateStateFromController() }
     }
 

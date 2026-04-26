@@ -24,6 +24,12 @@ class FabulaRepository(private val preferences: ServerPreferences) {
     val bookmarksRevision: StateFlow<Int> = _bookmarksRevision.asStateFlow()
     fun bumpBookmarksRevision() { _bookmarksRevision.value = _bookmarksRevision.value + 1 }
 
+    /** Bumps every time the series catalog changes (create/update/delete or
+     *  a book's series assignment changes), so list screens can re-fetch. */
+    private val _seriesRevision = MutableStateFlow(0)
+    val seriesRevision: StateFlow<Int> = _seriesRevision.asStateFlow()
+    fun bumpSeriesRevision() { _seriesRevision.value = _seriesRevision.value + 1 }
+
     private val json = Json {
         ignoreUnknownKeys = true
         explicitNulls = false
@@ -39,6 +45,12 @@ class FabulaRepository(private val preferences: ServerPreferences) {
     private var currentBaseUrl: String? = null
 
     val baseUrlFlow: Flow<String> = preferences.baseUrl
+    val sleepRepeatEnabled: Flow<Boolean> = preferences.sleepRepeatEnabled
+    val sleepRepeatUntilMinutes: Flow<Int> = preferences.sleepRepeatUntilMinutes
+    suspend fun setSleepRepeatEnabled(enabled: Boolean) =
+        preferences.setSleepRepeatEnabled(enabled)
+    suspend fun setSleepRepeatUntilMinutes(minutes: Int) =
+        preferences.setSleepRepeatUntilMinutes(minutes)
 
     suspend fun apiOrNull(): FabulaApi? {
         val raw = preferences.baseUrl.first()

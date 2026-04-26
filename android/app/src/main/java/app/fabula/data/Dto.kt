@@ -127,3 +127,9 @@ data class CreateBookmarkRequest(val position: String, val note: String? = null)
 
 @Serializable
 data class UpdateBookmarkRequest(val note: String? = null)
+
+@Serializable
+data class SeriesRequest(val name: String, val description: String? = null)
+
+@Serializable
+data class AssignSeriesRequest(val seriesId: Int? = null, val seriesPosition: Double? = null)

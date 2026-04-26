@@ -21,6 +21,7 @@ import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.LibraryBooks
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Style
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.Icon
@@ -67,6 +68,7 @@ import app.fabula.ui.library.LibraryScreen
 import app.fabula.ui.player.FullPlayer
 import app.fabula.ui.player.MiniPlayer
 import app.fabula.ui.series.SeriesDetailScreen
+import app.fabula.ui.series.SeriesManagementScreen
 import app.fabula.ui.series.SeriesScreen
 import app.fabula.ui.settings.SettingsScreen
 import kotlinx.coroutines.flow.first
@@ -135,6 +137,16 @@ fun Navigation(
                 )
                 Spacer(Modifier.height(16.dp))
                 NavigationDrawerItem(
+                    icon = { Icon(Icons.Outlined.Tune, contentDescription = null) },
+                    label = { Text("Serien verwalten") },
+                    selected = false,
+                    onClick = {
+                        scope.launch { drawerState.close() }
+                        navController.navigate("series-manage")
+                    },
+                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                )
+                NavigationDrawerItem(
                     icon = { Icon(Icons.Outlined.Settings, contentDescription = null) },
                     label = { Text("Einstellungen") },
                     selected = false,
@@ -199,7 +211,14 @@ fun Navigation(
                     composable("settings") {
                         SettingsScreen(
                             repository = repository,
-                            onDone = { navController.popBackStack() }
+                            onDone = { navController.popBackStack() },
+                            onManageSeries = { navController.navigate("series-manage") }
+                        )
+                    }
+                    composable("series-manage") {
+                        SeriesManagementScreen(
+                            repository = repository,
+                            onBack = { navController.popBackStack() }
                         )
                     }
                     composable(
