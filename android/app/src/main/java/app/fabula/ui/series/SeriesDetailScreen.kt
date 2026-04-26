@@ -21,6 +21,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -163,6 +164,42 @@ private fun SeriesBookRow(
                     maxLines = 1
                 )
             }
+            val fraction = remember(book.duration, book.progress) { computeFraction(book) }
+            if (fraction != null) {
+                Spacer(Modifier.height(4.dp))
+                LinearProgressIndicator(
+                    progress = { fraction },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(3.dp)
+                        .clip(RoundedCornerShape(2.dp)),
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+            }
         }
+    }
+}
+
+private fun computeFraction(book: SeriesBookDto): Float? {
+    val progress = book.progress ?: return null
+    if (progress.finished) return 1f
+    val total = parseHmsToSeconds(book.duration) ?: return null
+    val pos = parseHmsToSeconds(progress.position) ?: return null
+    if (total <= 0.0) return null
+    return (pos / total).toFloat().coerceIn(0f, 1f)
+}
+
+private fun parseHmsToSeconds(value: String): Double? {
+    val parts = value.split(":")
+    if (parts.size < 2) return value.toDoubleOrNull()
+    return try {
+        when (parts.size) {
+            2 -> parts[0].toLong() * 60.0 + parts[1].toDouble()
+            3 -> parts[0].toLong() * 3600.0 + parts[1].toLong() * 60.0 + parts[2].toDouble()
+            else -> null
+        }
+    } catch (_: NumberFormatException) {
+        null
     }
 }

@@ -6,6 +6,9 @@ namespace Fabula.Api.Endpoints;
 
 public static class SeriesEndpoints
 {
+    // Temporary single-user id until JWT auth lands -- mirrors ProgressEndpoints.
+    private const int TemporaryUserId = 1;
+
     public static IEndpointRouteBuilder MapSeriesEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/series").WithTags("Series");
@@ -29,14 +32,16 @@ public static class SeriesEndpoints
         group.MapGet("/{id:int}", async (int id, FabulaDbContext db, CancellationToken ct) =>
         {
             var series = await db.Series
-                .AsSplitQuery()
-                .Include(s => s.Books).ThenInclude(b => b.Authors)
                 .AsNoTracking()
-                .FirstOrDefaultAsync(s => s.Id == id, ct);
+                .Where(s => s.Id == id)
+                .Select(s => new { s.Id, s.Name, s.Description })
+                .FirstOrDefaultAsync(ct);
 
             if (series is null) return Results.NotFound();
 
-            var books = series.Books
+            var books = await db.Books
+                .AsNoTracking()
+                .Where(b => b.SeriesId == id)
                 .OrderBy(b => b.SeriesPosition ?? decimal.MaxValue)
                 .ThenBy(b => b.SortTitle ?? b.Title)
                 .Select(b => new SeriesBookDto(
@@ -44,8 +49,13 @@ public static class SeriesEndpoints
                     b.Title,
                     b.Authors.Select(a => a.Name).ToList(),
                     b.SeriesPosition,
-                    b.CoverPath != null ? $"/api/books/{b.Id}/cover" : null))
-                .ToList();
+                    b.CoverPath != null ? $"/api/books/{b.Id}/cover" : null,
+                    b.Duration,
+                    db.PlaybackProgress
+                        .Where(p => p.UserId == TemporaryUserId && p.BookId == b.Id)
+                        .Select(p => new ProgressSummaryDto(p.Position, p.Finished, p.UpdatedAt))
+                        .FirstOrDefault()))
+                .ToListAsync(ct);
 
             return Results.Ok(new SeriesDetailDto(series.Id, series.Name, series.Description, books));
         });
@@ -113,6 +123,8 @@ public record SeriesBookDto(
     string Title,
     List<string> Authors,
     decimal? Position,
-    string? CoverUrl);
+    string? CoverUrl,
+    TimeSpan Duration,
+    ProgressSummaryDto? Progress);
 
 public record SeriesRequest(string? Name, string? Description);

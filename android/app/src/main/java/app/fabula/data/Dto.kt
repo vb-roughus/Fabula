@@ -102,7 +102,9 @@ data class SeriesBookDto(
     val title: String,
     val authors: List<String> = emptyList(),
     val position: Double? = null,
-    val coverUrl: String? = null
+    val coverUrl: String? = null,
+    val duration: String = "00:00:00",
+    val progress: ProgressSummaryDto? = null
 )
 
 @Serializable

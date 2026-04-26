@@ -2,7 +2,11 @@ package app.fabula.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -16,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.LibraryBooks
@@ -49,6 +54,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -126,7 +132,7 @@ fun Navigation(
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
-            ModalDrawerSheet {
+            ModalDrawerSheet(modifier = Modifier.width(260.dp)) {
                 Spacer(Modifier.height(24.dp))
                 Text(
                     "Fabula",
@@ -159,10 +165,23 @@ fun Navigation(
             }
         }
     ) {
+        // App-wide background gradient: subtle accent tint at the top fading
+        // into the navy base. Applied to the outer Box so every screen --
+        // not just the FullPlayer -- shows the same gradient.
+        val baseColor = MaterialTheme.colorScheme.background
+        val tintTop = MaterialTheme.colorScheme.primary
+            .copy(alpha = 0.10f)
+            .compositeOver(baseColor)
+        val appBackground = Brush.verticalGradient(
+            0.0f to tintTop,
+            0.45f to baseColor,
+            1.0f to baseColor
+        )
+
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background)
+                .background(brush = appBackground)
         ) {
             // Content fills the entire screen including under the bottom overlay.
             // Each screen's scrollable content adds LocalContentBottomInset to its
@@ -170,10 +189,49 @@ fun Navigation(
             CompositionLocalProvider(
                 LocalContentBottomInset provides PaddingValues(bottom = bottomOverlayInset)
             ) {
+                val tabRoutes = Tab.entries.map { it.route }
+                fun tabDirection(from: String?, to: String?): Int {
+                    val f = tabRoutes.indexOf(from)
+                    val t = tabRoutes.indexOf(to)
+                    return if (f < 0 || t < 0) 0 else (t - f)
+                }
+
                 NavHost(
                     navController = navController,
                     startDestination = startRoute,
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize(),
+                    enterTransition = {
+                        val dir = tabDirection(initialState.destination.route, targetState.destination.route)
+                        when {
+                            dir > 0 -> slideInHorizontally(initialOffsetX = { it })
+                            dir < 0 -> slideInHorizontally(initialOffsetX = { -it })
+                            else -> fadeIn()
+                        }
+                    },
+                    exitTransition = {
+                        val dir = tabDirection(initialState.destination.route, targetState.destination.route)
+                        when {
+                            dir > 0 -> slideOutHorizontally(targetOffsetX = { -it })
+                            dir < 0 -> slideOutHorizontally(targetOffsetX = { it })
+                            else -> fadeOut()
+                        }
+                    },
+                    popEnterTransition = {
+                        val dir = tabDirection(initialState.destination.route, targetState.destination.route)
+                        when {
+                            dir > 0 -> slideInHorizontally(initialOffsetX = { it })
+                            dir < 0 -> slideInHorizontally(initialOffsetX = { -it })
+                            else -> fadeIn()
+                        }
+                    },
+                    popExitTransition = {
+                        val dir = tabDirection(initialState.destination.route, targetState.destination.route)
+                        when {
+                            dir > 0 -> slideOutHorizontally(targetOffsetX = { -it })
+                            dir < 0 -> slideOutHorizontally(targetOffsetX = { it })
+                            else -> fadeOut()
+                        }
+                    }
                 ) {
                     composable(Tab.Home.route) {
                         HomeScreen(
@@ -300,13 +358,18 @@ private fun FabulaNavigationBar(navController: NavHostController) {
             NavigationBarItem(
                 selected = selected,
                 onClick = {
-                    if (selected) return@NavigationBarItem
-                    navController.navigate(tab.route) {
-                        popUpTo(navController.graph.findStartDestination().id) {
-                            saveState = true
+                    if (selected) {
+                        // Already on this tab -- pop everything stacked on
+                        // top of it so we land back on its root screen.
+                        navController.popBackStack(tab.route, inclusive = false)
+                    } else {
+                        navController.navigate(tab.route) {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
                         }
-                        launchSingleTop = true
-                        restoreState = true
                     }
                 },
                 icon = { Icon(tab.icon, contentDescription = null) },
