@@ -260,9 +260,15 @@ class PlayerController(
         if (fileStarts.isEmpty()) return 0 to 0L
         val clamped = max(0.0, seconds)
         var index = fileStarts.size - 1
+        // Tolerance for FP drift between the server's exact OffsetInBook and
+        // the client's cumulative sum of parseTimeSpan(file.duration). Without
+        // it, seeking to the start of file N can land on the last millisecond
+        // of file N-1 if the cumulative sum overshoots the chapter start by a
+        // few microseconds.
+        val epsilon = 0.010
         for (i in fileStarts.indices) {
             val nextStart = if (i + 1 < fileStarts.size) fileStarts[i + 1] else Double.MAX_VALUE
-            if (clamped < nextStart) { index = i; break }
+            if (clamped + epsilon < nextStart) { index = i; break }
         }
         val localMs = ((clamped - fileStarts[index]) * 1000.0).toLong().coerceAtLeast(0L)
         return index to localMs

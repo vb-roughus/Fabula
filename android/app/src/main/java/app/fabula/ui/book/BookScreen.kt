@@ -137,9 +137,16 @@ fun BookScreen(
         }
     }
 
-    LaunchedEffect(book?.id) {
+    // Re-load the player whenever the book changes -- including when only the
+    // underlying file list changes. After a server rescan that upserted this
+    // book, the AudioFile rows are deleted and re-created with fresh IDs, so
+    // the previously loaded MediaItems point at /api/stream/<oldId> which now
+    // 404s. Keying on the file id list instead of just book.id catches that.
+    val fileIds = book?.files?.map { it.id }
+    LaunchedEffect(book?.id, fileIds) {
         val current = book ?: return@LaunchedEffect
-        if (playerState.book?.id != current.id) {
+        val activeFileIds = playerState.book?.files?.map { it.id }
+        if (playerState.book?.id != current.id || activeFileIds != current.files.map { it.id }) {
             player.loadBook(current)
         }
     }
