@@ -5,6 +5,7 @@ using Fabula.Core.Services;
 using Fabula.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting.WindowsServices;
+using NReco.Logging.File;
 
 var isWindowsService = WindowsServiceHelpers.IsWindowsService();
 
@@ -40,6 +41,13 @@ builder.Services.Configure<FabulaOptions>(o =>
 
 var dbPath = Path.Combine(dataDirectory, "fabula.db");
 var connectionString = $"Data Source={dbPath}";
+
+// Rolling text log alongside the data dir. Far easier to grep than the
+// Windows Event Viewer when something goes wrong during a scan. Path and
+// rotation are configured via "Logging:File" in appsettings.Production.json.
+var logsDirectory = Path.Combine(Path.GetDirectoryName(dataDirectory) ?? dataDirectory, "logs");
+Directory.CreateDirectory(logsDirectory);
+builder.Logging.AddFile(builder.Configuration.GetSection("Logging:File"));
 
 builder.Services.AddFabulaData(connectionString);
 builder.Services.AddScoped<ILibraryRepository, LibraryRepository>();
