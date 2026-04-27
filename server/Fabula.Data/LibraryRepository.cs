@@ -87,14 +87,18 @@ public class LibraryRepository(FabulaDbContext db) : ILibraryRepository
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task<int> RemoveBooksWithMissingFilesAsync(int libraryFolderId, CancellationToken cancellationToken)
+    public async Task<int> RemoveBooksWithMissingFilesAsync(int libraryFolderId, ISet<string> existingFiles, CancellationToken cancellationToken)
     {
         var books = await db.Books
             .Include(b => b.Files)
             .Where(b => b.LibraryFolderId == libraryFolderId)
             .ToListAsync(cancellationToken);
 
-        var toRemove = books.Where(b => b.Files.Count == 0 || b.Files.Any(f => !File.Exists(f.Path))).ToList();
+        // Trust the caller's enumeration of files on disk -- avoids per-file
+        // SMB round-trips that File.Exists would have caused.
+        var toRemove = books.Where(b =>
+            b.Files.Count == 0 ||
+            b.Files.Any(f => !existingFiles.Contains(f.Path))).ToList();
         if (toRemove.Count == 0) return 0;
 
         db.Books.RemoveRange(toRemove);

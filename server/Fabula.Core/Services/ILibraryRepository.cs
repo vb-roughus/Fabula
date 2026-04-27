@@ -16,6 +16,6 @@ public interface ILibraryRepository
         IReadOnlyList<AudioFile> files,
         IReadOnlyList<ChapterInfo> chapters,
         CancellationToken cancellationToken);
-    Task<int> RemoveBooksWithMissingFilesAsync(int libraryFolderId, CancellationToken cancellationToken);
+    Task<int> RemoveBooksWithMissingFilesAsync(int libraryFolderId, ISet<string> existingFiles, CancellationToken cancellationToken);
     Task MarkFolderScannedAsync(int libraryFolderId, DateTime scannedAt, CancellationToken cancellationToken);
 }

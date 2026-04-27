@@ -33,7 +33,7 @@ public class LibraryScanner(
             .GroupBy(f => Path.GetDirectoryName(f) ?? folder.Path)
             .ToList();
 
-        int added = 0, updated = 0;
+        int added = 0, updated = 0, unchanged = 0;
 
         foreach (var bookDir in grouped)
         {
@@ -43,8 +43,12 @@ public class LibraryScanner(
             try
             {
                 var result = await ProcessBookAsync(folder, bookDir.Key, files, cancellationToken);
-                if (result == BookScanOutcome.Added) added++;
-                else if (result == BookScanOutcome.Updated) updated++;
+                switch (result)
+                {
+                    case BookScanOutcome.Added: added++; break;
+                    case BookScanOutcome.Updated: updated++; break;
+                    case BookScanOutcome.Unchanged: unchanged++; break;
+                }
             }
             catch (Exception ex)
             {
@@ -52,9 +56,14 @@ public class LibraryScanner(
             }
         }
 
-        var removed = await repository.RemoveBooksWithMissingFilesAsync(folder.Id, cancellationToken);
+        var existingPaths = new HashSet<string>(audioFiles, StringComparer.OrdinalIgnoreCase);
+        var removed = await repository.RemoveBooksWithMissingFilesAsync(folder.Id, existingPaths, cancellationToken);
 
         await repository.MarkFolderScannedAsync(folder.Id, DateTime.UtcNow, cancellationToken);
+
+        logger.LogInformation(
+            "Scan finished for '{Name}': {Added} added, {Updated} updated, {Unchanged} unchanged, {Removed} removed ({Files} files)",
+            folder.Name, added, updated, unchanged, removed, audioFiles.Count);
 
         return new ScanResult(added, updated, removed, audioFiles.Count);
     }
@@ -65,13 +74,25 @@ public class LibraryScanner(
         List<string> files,
         CancellationToken cancellationToken)
     {
-        var firstMeta = metadataReader.Read(files[0]);
-        var title = firstMeta.Album ?? firstMeta.Title ?? Path.GetFileName(bookDir);
+        // Single stat per file (one SMB round-trip each). Used both for the
+        // "is this book unchanged?" fast path and for AudioFile.SizeBytes
+        // below, so we never stat the same file twice.
+        var stats = files.Select(f => new FileInfo(f)).ToList();
 
         var existing = await repository.FindBookByFolderAsync(folder.Id, bookDir, cancellationToken);
 
-        var allMetadata = files.Select(f => (Path: f, Meta: metadataReader.Read(f))).ToList();
+        // Fast skip: the existing DB row matches what's on disk (same paths,
+        // same sizes). Nothing to re-read or re-parse.
+        if (existing is not null && BookContentMatches(existing, stats))
+            return BookScanOutcome.Unchanged;
+
+        // Tag parsing dominates the per-book cost on network shares. Run it
+        // in parallel across the files of this book.
+        var allMetadata = await ReadMetadataParallelAsync(files, cancellationToken);
+        var firstMeta = allMetadata[0].Meta;
         var totalDuration = TimeSpan.FromTicks(allMetadata.Sum(m => m.Meta.Duration.Ticks));
+
+        var title = firstMeta.Album ?? firstMeta.Title ?? Path.GetFileName(bookDir);
 
         string? coverPath = null;
         var folderCover = FindFolderCover(bookDir);
@@ -103,7 +124,7 @@ public class LibraryScanner(
         book.CoverPath = coverPath;
         book.UpdatedAt = DateTime.UtcNow;
 
-        var audioFiles = BuildAudioFiles(allMetadata);
+        var audioFiles = BuildAudioFiles(allMetadata, stats);
         var chapters = BuildChapters(allMetadata, audioFiles);
 
         await repository.UpsertBookAsync(
@@ -118,6 +139,46 @@ public class LibraryScanner(
             cancellationToken);
 
         return existing is null ? BookScanOutcome.Added : BookScanOutcome.Updated;
+    }
+
+    private static bool BookContentMatches(Book book, List<FileInfo> stats)
+    {
+        if (book.Files.Count != stats.Count)
+            return false;
+
+        var byPath = new Dictionary<string, AudioFile>(book.Files.Count, StringComparer.OrdinalIgnoreCase);
+        foreach (var f in book.Files)
+            byPath[f.Path] = f;
+
+        foreach (var info in stats)
+        {
+            if (!byPath.TryGetValue(info.FullName, out var dbFile))
+                return false;
+            if (dbFile.SizeBytes != info.Length)
+                return false;
+        }
+        return true;
+    }
+
+    private async Task<List<(string Path, AudioMetadata Meta)>> ReadMetadataParallelAsync(
+        List<string> files,
+        CancellationToken cancellationToken)
+    {
+        var results = new (string Path, AudioMetadata Meta)[files.Count];
+        var options = new ParallelOptions
+        {
+            MaxDegreeOfParallelism = Math.Min(8, Environment.ProcessorCount * 2),
+            CancellationToken = cancellationToken
+        };
+        await Parallel.ForEachAsync(
+            Enumerable.Range(0, files.Count),
+            options,
+            (i, _) =>
+            {
+                results[i] = (files[i], metadataReader.Read(files[i]));
+                return ValueTask.CompletedTask;
+            });
+        return [.. results];
     }
 
     /// <summary>
@@ -156,19 +217,18 @@ public class LibraryScanner(
         return string.IsNullOrEmpty(name) ? null : name;
     }
 
-    private static List<AudioFile> BuildAudioFiles(List<(string Path, AudioMetadata Meta)> metadata)
+    private static List<AudioFile> BuildAudioFiles(List<(string Path, AudioMetadata Meta)> metadata, List<FileInfo> stats)
     {
         var result = new List<AudioFile>(metadata.Count);
         var offset = TimeSpan.Zero;
         for (int i = 0; i < metadata.Count; i++)
         {
             var (path, meta) = metadata[i];
-            var info = new FileInfo(path);
             result.Add(new AudioFile
             {
                 TrackIndex = i,
                 Path = path,
-                SizeBytes = info.Length,
+                SizeBytes = stats[i].Length,
                 Duration = meta.Duration,
                 Codec = meta.Codec,
                 BitrateKbps = meta.BitrateKbps,
@@ -255,5 +315,5 @@ public class LibraryScanner(
         _ => "image/jpeg"
     };
 
-    private enum BookScanOutcome { Added, Updated }
+    private enum BookScanOutcome { Added, Updated, Unchanged }
 }
