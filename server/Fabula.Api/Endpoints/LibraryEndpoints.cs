@@ -21,8 +21,9 @@ public static class LibraryEndpoints
             if (string.IsNullOrWhiteSpace(req.Name) || string.IsNullOrWhiteSpace(req.Path))
                 return Results.BadRequest(new { error = "Name and Path are required." });
 
-            if (!Directory.Exists(req.Path))
-                return Results.BadRequest(new { error = $"Path does not exist: {req.Path}" });
+            var (ok, error) = ValidateLibraryPath(req.Path);
+            if (!ok)
+                return Results.BadRequest(new { error });
 
             var folder = new LibraryFolder { Name = req.Name, Path = req.Path };
             db.LibraryFolders.Add(folder);
@@ -47,6 +48,65 @@ public static class LibraryEndpoints
         });
 
         return app;
+    }
+
+    private static (bool Ok, string? Error) ValidateLibraryPath(string path)
+    {
+        try
+        {
+            if (Directory.Exists(path))
+                return (true, null);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return (false, IsUncPath(path)
+                ? $"Access denied to {path}. The Fabula service account needs read access to that share."
+                : $"Access denied to {path}: {ex.Message}");
+        }
+        catch (IOException ex)
+        {
+            return (false, $"I/O error accessing {path}: {ex.Message}");
+        }
+
+        if (IsMappedDriveLetterNotVisible(path))
+        {
+            return (false,
+                $"Path \"{path}\" is not reachable. Mapped drive letters (e.g. Z:) belong to the interactive Windows session and are not available to a Windows service. " +
+                "Use the UNC path of the share instead, for example \\\\server\\share\\Audiobooks. The service account must also have read access to that share.");
+        }
+
+        if (IsUncPath(path))
+        {
+            return (false,
+                $"Path \"{path}\" is not reachable. Either the share name is wrong or the Fabula service account does not have read access to it. " +
+                "Configure the service to log on as a user that can access the share (services.msc -> Fabula -> Properties -> Log On).");
+        }
+
+        return (false, $"Path does not exist: {path}");
+    }
+
+    private static bool IsUncPath(string path) =>
+        path.StartsWith(@"\\", StringComparison.Ordinal) ||
+        path.StartsWith("//", StringComparison.Ordinal);
+
+    private static bool IsMappedDriveLetterNotVisible(string path)
+    {
+        if (path.Length < 2 || !char.IsLetter(path[0]) || path[1] != ':')
+            return false;
+        if (!OperatingSystem.IsWindows())
+            return false;
+
+        var letter = char.ToUpperInvariant(path[0]);
+        try
+        {
+            var visible = DriveInfo.GetDrives()
+                .Select(d => char.ToUpperInvariant(d.Name[0]));
+            return !visible.Contains(letter);
+        }
+        catch
+        {
+            return false;
+        }
     }
 }
 
