@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using Fabula.Api.Endpoints;
 using Fabula.Api.Infrastructure;
 using Fabula.Core.Services;
@@ -47,6 +48,11 @@ builder.Services.AddScoped<ILibraryScanner, LibraryScanner>();
 builder.Services.AddSingleton<IAudioMetadataReader, AtlAudioMetadataReader>();
 builder.Services.AddSingleton<ICoverStore, FileSystemCoverStore>();
 builder.Services.AddSingleton<ScanCoordinator>();
+
+// Serialise enums as their string names so the web client can compare
+// against e.g. "Running" instead of the underlying numeric value.
+builder.Services.ConfigureHttpJsonOptions(o =>
+    o.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 
 builder.Services.AddOpenApi();
 
