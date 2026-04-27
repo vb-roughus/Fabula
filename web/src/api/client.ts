@@ -17,7 +17,18 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    throw new Error(`${res.status} ${res.statusText}${text ? `: ${text}` : ''}`);
+    let detail = text;
+    if (text) {
+      try {
+        const parsed = JSON.parse(text);
+        if (parsed && typeof parsed === 'object' && typeof parsed.error === 'string') {
+          detail = parsed.error;
+        }
+      } catch {
+        // not JSON; fall back to the raw body
+      }
+    }
+    throw new Error(`${res.status} ${res.statusText}${detail ? `: ${detail}` : ''}`);
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
