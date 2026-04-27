@@ -57,6 +57,12 @@ using (var scope = app.Services.CreateScope())
     db.Database.Migrate();
 }
 
+// Static files have to be wired up BEFORE the API endpoints and the
+// SPA fallback, otherwise index.html and the /assets/*.js bundles
+// never reach the browser.
+app.UseDefaultFiles();
+app.UseStaticFiles();
+
 app.MapOpenApi();
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
@@ -69,7 +75,5 @@ app.MapProgressEndpoints();
 app.MapBookmarkEndpoints();
 
 app.MapFallbackToFile("index.html");
-app.UseDefaultFiles();
-app.UseStaticFiles();
 
 app.Run();

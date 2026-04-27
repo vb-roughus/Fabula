@@ -20,6 +20,9 @@ again. The data folder is preserved.
 - Windows with the **.NET 10 SDK** installed (`dotnet --version` ≥ 10).
   The installer ships the runtime self-contained, so the target machine
   doesn't need the SDK.
+- **Node.js 20+** (`npm --version`). The build script runs `npm ci` and
+  `npm run build` in `web/` so the Vite SPA gets bundled into
+  `server/Fabula.Api/wwwroot` before publish.
 - **Inno Setup 6** (https://jrsoftware.org/isinfo.php). The build script
   auto-detects `ISCC.exe` in the standard install locations.
 
@@ -31,6 +34,9 @@ cd installer
 ```
 
 Output: `artifacts\installer\Fabula-Setup-<version>.exe`.
+
+Pass `-SkipWebBuild` if you already have a fresh `wwwroot` and want to
+skip the npm step.
 
 ## Silent install / unattended
 

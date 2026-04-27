@@ -25,12 +25,15 @@
 param(
     [string]$Version = "0.1.0",
     [string]$Configuration = "Release",
-    [string]$InnoSetupCompiler
+    [string]$InnoSetupCompiler,
+    [switch]$SkipWebBuild
 )
 
 $ErrorActionPreference = "Stop"
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $serverProj = Join-Path $repoRoot "server\Fabula.Api\Fabula.Api.csproj"
+$webDir = Join-Path $repoRoot "web"
+$wwwroot = Join-Path $repoRoot "server\Fabula.Api\wwwroot"
 $publishDir = Join-Path $repoRoot "artifacts\publish\win-x64"
 $installerOut = Join-Path $repoRoot "artifacts\installer"
 $issScript = Join-Path $PSScriptRoot "Fabula.iss"
@@ -48,6 +51,33 @@ if (-not $InnoSetupCompiler) {
 }
 if (-not $InnoSetupCompiler -or -not (Test-Path $InnoSetupCompiler)) {
     throw "ISCC.exe not found. Install Inno Setup 6 from https://jrsoftware.org/isinfo.php or pass -InnoSetupCompiler."
+}
+
+if (-not $SkipWebBuild) {
+    if (-not (Test-Path (Join-Path $webDir "package.json"))) {
+        throw "Web project not found at $webDir."
+    }
+
+    Write-Host "==> Installing web dependencies (npm ci)" -ForegroundColor Cyan
+    Push-Location $webDir
+    try {
+        if (Test-Path (Join-Path $webDir "package-lock.json")) {
+            & npm ci
+        } else {
+            & npm install
+        }
+        if ($LASTEXITCODE -ne 0) { throw "npm install failed (exit $LASTEXITCODE)." }
+
+        Write-Host "==> Building web UI" -ForegroundColor Cyan
+        & npm run build
+        if ($LASTEXITCODE -ne 0) { throw "npm run build failed (exit $LASTEXITCODE)." }
+    } finally {
+        Pop-Location
+    }
+
+    if (-not (Test-Path (Join-Path $wwwroot "index.html"))) {
+        throw "Web build did not produce $wwwroot\index.html. Check the Vite build output."
+    }
 }
 
 Write-Host "==> Cleaning previous publish output" -ForegroundColor Cyan
@@ -70,6 +100,10 @@ $publishArgs = @(
 )
 & dotnet @publishArgs
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed (exit $LASTEXITCODE)." }
+
+if (-not (Test-Path (Join-Path $publishDir "wwwroot\index.html"))) {
+    throw "Publish output is missing wwwroot\index.html. The web UI build did not get bundled."
+}
 
 Write-Host "==> Compiling installer" -ForegroundColor Cyan
 & $InnoSetupCompiler `
