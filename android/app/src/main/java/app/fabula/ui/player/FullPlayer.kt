@@ -190,8 +190,9 @@ fun FullPlayer(
 
         Spacer(Modifier.weight(0.5f))
 
-        // Cover
-        Box(
+        // Cover -- left half drags the screen brightness, right half the
+        // music stream volume. See CoverGestureZone.kt.
+        CoverGestureZone(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(1f)
