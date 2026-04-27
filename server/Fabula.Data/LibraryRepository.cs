@@ -11,7 +11,14 @@ public class LibraryRepository(FabulaDbContext db) : ILibraryRepository
 
     public Task<Book?> FindBookByFolderAsync(int libraryFolderId, string bookDirectory, CancellationToken cancellationToken)
     {
-        var prefix = bookDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var trimmed = bookDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        // Append the path separator so that "…\Edition 03" only matches files
+        // inside that directory, not files in sibling directories whose names
+        // happen to share the same prefix (e.g. "…\Edition 030 - …",
+        // "…\Edition 033 - Old Man"). Match both separators so the lookup is
+        // robust against mixed-style paths in the DB.
+        var prefix = trimmed + Path.DirectorySeparatorChar;
+        var altPrefix = trimmed + Path.AltDirectorySeparatorChar;
         return db.Books
             .AsSplitQuery()
             .Include(b => b.Files)
@@ -20,7 +27,9 @@ public class LibraryRepository(FabulaDbContext db) : ILibraryRepository
             .Include(b => b.Narrators)
             .Include(b => b.Series)
             .Where(b => b.LibraryFolderId == libraryFolderId)
-            .FirstOrDefaultAsync(b => b.Files.Any(f => f.Path.StartsWith(prefix)), cancellationToken);
+            .FirstOrDefaultAsync(
+                b => b.Files.Any(f => f.Path.StartsWith(prefix) || f.Path.StartsWith(altPrefix)),
+                cancellationToken);
     }
 
     public async Task UpsertBookAsync(
