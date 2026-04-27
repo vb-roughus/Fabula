@@ -1,3 +1,4 @@
+using Fabula.Api.Infrastructure;
 using Fabula.Core.Domain;
 using Fabula.Core.Services;
 using Fabula.Data;
@@ -32,10 +33,26 @@ public static class LibraryEndpoints
                 new LibraryFolderDto(folder.Id, folder.Name, folder.Path, folder.LastScanAt));
         });
 
-        group.MapPost("/{id:int}/scan", async (int id, ILibraryScanner scanner, CancellationToken ct) =>
+        // Kick off the scan in the background and return immediately so the
+        // user can navigate away (or close the browser) without aborting it.
+        // Progress is exposed via GET /{id}/scan.
+        group.MapPost("/{id:int}/scan", async (int id, FabulaDbContext db, ScanCoordinator coordinator, CancellationToken ct) =>
         {
-            var result = await scanner.ScanAsync(id, ct);
-            return Results.Ok(result);
+            var folder = await db.LibraryFolders.FindAsync([id], ct);
+            if (folder is null) return Results.NotFound();
+
+            var status = coordinator.StartScan(id);
+            return Results.Accepted($"/api/libraries/{id}/scan", status);
+        });
+
+        group.MapGet("/{id:int}/scan", async (int id, FabulaDbContext db, ScanCoordinator coordinator, CancellationToken ct) =>
+        {
+            var folder = await db.LibraryFolders.FindAsync([id], ct);
+            if (folder is null) return Results.NotFound();
+
+            var status = coordinator.Get(id)
+                ?? new ScanStatus(id, ScanState.Idle, DateTime.MinValue, null, null, null);
+            return Results.Ok(status);
         });
 
         group.MapDelete("/{id:int}", async (int id, FabulaDbContext db, CancellationToken ct) =>

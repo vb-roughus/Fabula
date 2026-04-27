@@ -5,7 +5,7 @@ import type {
   LibraryFolder,
   PagedResult,
   Progress,
-  ScanResult,
+  ScanStatus,
   SeriesDetail,
   SeriesSummary
 } from './types';
@@ -44,7 +44,10 @@ export const api = {
     }),
 
   scanLibrary: (id: number) =>
-    request<ScanResult>(`/api/libraries/${id}/scan`, { method: 'POST' }),
+    request<ScanStatus>(`/api/libraries/${id}/scan`, { method: 'POST' }),
+
+  getScanStatus: (id: number) =>
+    request<ScanStatus>(`/api/libraries/${id}/scan`),
 
   deleteLibrary: (id: number) =>
     request<void>(`/api/libraries/${id}`, { method: 'DELETE' }),

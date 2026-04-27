@@ -72,6 +72,17 @@ export interface ScanResult {
   filesScanned: number;
 }
 
+export type ScanState = 'Idle' | 'Running' | 'Completed' | 'Failed' | 'Cancelled';
+
+export interface ScanStatus {
+  libraryFolderId: number;
+  state: ScanState;
+  startedAt: string;
+  finishedAt: string | null;
+  result: ScanResult | null;
+  error: string | null;
+}
+
 export interface Bookmark {
   id: number;
   bookId: number;

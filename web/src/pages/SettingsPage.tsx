@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api } from '../api/client';
+import type { LibraryFolder, ScanStatus } from '../api/types';
 
 export function SettingsPage() {
   const qc = useQueryClient();
@@ -18,14 +19,6 @@ export function SettingsPage() {
       setName('');
       setPath('');
       qc.invalidateQueries({ queryKey: ['libraries'] });
-    }
-  });
-
-  const scanMutation = useMutation({
-    mutationFn: (id: number) => api.scanLibrary(id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['libraries'] });
-      qc.invalidateQueries({ queryKey: ['books'] });
     }
   });
 
@@ -75,40 +68,108 @@ export function SettingsPage() {
         {libraries && libraries.length === 0 && <div className="text-ink-400">Noch keine Bibliotheken.</div>}
         <ul className="space-y-2">
           {libraries?.map((lib) => (
-            <li key={lib.id} className="bg-ink-800 ring-1 ring-ink-700 rounded-lg p-4 flex items-center gap-3 flex-wrap">
-              <div className="flex-1 min-w-0">
-                <div className="font-medium">{lib.name}</div>
-                <div className="text-ink-400 text-xs font-mono truncate">{lib.path}</div>
-                {lib.lastScanAt && (
-                  <div className="text-ink-400 text-xs mt-1">
-                    Zuletzt gescannt: {new Date(lib.lastScanAt).toLocaleString()}
-                  </div>
-                )}
-              </div>
-              <button
-                disabled={scanMutation.isPending}
-                onClick={() => scanMutation.mutate(lib.id)}
-                className="px-3 py-1.5 rounded bg-ink-700 hover:bg-ink-600 text-sm"
-              >
-                {scanMutation.isPending && scanMutation.variables === lib.id ? 'Scannt...' : 'Scannen'}
-              </button>
-              <button
-                onClick={() => {
-                  if (confirm(`Bibliothek "${lib.name}" wirklich entfernen?`)) deleteMutation.mutate(lib.id);
-                }}
-                className="px-3 py-1.5 rounded bg-ink-700 hover:bg-red-600 text-sm"
-              >
-                Löschen
-              </button>
-            </li>
+            <LibraryRow
+              key={lib.id}
+              lib={lib}
+              onDelete={() => {
+                if (confirm(`Bibliothek "${lib.name}" wirklich entfernen?`)) deleteMutation.mutate(lib.id);
+              }}
+            />
           ))}
         </ul>
-        {scanMutation.isSuccess && scanMutation.data && (
-          <div className="text-ink-300 text-sm mt-3">
-            Scan abgeschlossen: {scanMutation.data.booksAdded} neu, {scanMutation.data.booksUpdated} aktualisiert, {scanMutation.data.booksRemoved} entfernt ({scanMutation.data.filesScanned} Dateien).
-          </div>
-        )}
       </section>
     </div>
   );
+}
+
+function LibraryRow({ lib, onDelete }: { lib: LibraryFolder; onDelete: () => void }) {
+  const qc = useQueryClient();
+
+  const { data: status } = useQuery({
+    queryKey: ['scan-status', lib.id],
+    queryFn: () => api.getScanStatus(lib.id),
+    refetchInterval: (query) => (query.state.data?.state === 'Running' ? 1500 : false),
+    refetchOnWindowFocus: true
+  });
+
+  const scanMutation = useMutation({
+    mutationFn: () => api.scanLibrary(lib.id),
+    onSuccess: (data) => {
+      qc.setQueryData(['scan-status', lib.id], data);
+    }
+  });
+
+  // When the scan transitions out of Running, refresh the dependent data.
+  const finishedAt = status?.finishedAt ?? null;
+  const state = status?.state;
+  useEffect(() => {
+    if (state === 'Completed' || state === 'Failed' || state === 'Cancelled') {
+      qc.invalidateQueries({ queryKey: ['libraries'] });
+      qc.invalidateQueries({ queryKey: ['books'] });
+      qc.invalidateQueries({ queryKey: ['series'] });
+    }
+  }, [state, finishedAt, qc]);
+
+  const isRunning = state === 'Running' || scanMutation.isPending;
+
+  return (
+    <li className="bg-ink-800 ring-1 ring-ink-700 rounded-lg p-4">
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex-1 min-w-0">
+          <div className="font-medium">{lib.name}</div>
+          <div className="text-ink-400 text-xs font-mono truncate">{lib.path}</div>
+          {lib.lastScanAt && (
+            <div className="text-ink-400 text-xs mt-1">
+              Zuletzt gescannt: {new Date(lib.lastScanAt).toLocaleString()}
+            </div>
+          )}
+        </div>
+        <button
+          disabled={isRunning}
+          onClick={() => scanMutation.mutate()}
+          className="px-3 py-1.5 rounded bg-ink-700 hover:bg-ink-600 disabled:opacity-60 text-sm"
+        >
+          {isRunning ? 'Scannt...' : 'Scannen'}
+        </button>
+        <button
+          onClick={onDelete}
+          className="px-3 py-1.5 rounded bg-ink-700 hover:bg-red-600 text-sm"
+        >
+          Löschen
+        </button>
+      </div>
+      <ScanStatusLine status={status} />
+    </li>
+  );
+}
+
+function ScanStatusLine({ status }: { status: ScanStatus | undefined }) {
+  if (!status || status.state === 'Idle') return null;
+
+  if (status.state === 'Running') {
+    return (
+      <div className="text-ink-300 text-sm mt-3">
+        Scan läuft im Hintergrund... Du kannst die Seite verlassen, der Scan wird zu Ende geführt.
+      </div>
+    );
+  }
+
+  if (status.state === 'Completed' && status.result) {
+    const r = status.result;
+    return (
+      <div className="text-ink-300 text-sm mt-3">
+        Scan abgeschlossen: {r.booksAdded} neu, {r.booksUpdated} aktualisiert, {r.booksRemoved} entfernt ({r.filesScanned} Dateien).
+      </div>
+    );
+  }
+
+  if (status.state === 'Failed') {
+    return <div className="text-red-400 text-sm mt-3">Scan fehlgeschlagen: {status.error ?? 'Unbekannter Fehler'}</div>;
+  }
+
+  if (status.state === 'Cancelled') {
+    return <div className="text-ink-400 text-sm mt-3">Scan wurde abgebrochen.</div>;
+  }
+
+  return null;
 }

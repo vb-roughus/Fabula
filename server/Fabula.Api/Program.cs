@@ -46,6 +46,7 @@ builder.Services.AddScoped<IStreamingService, StreamingService>();
 builder.Services.AddScoped<ILibraryScanner, LibraryScanner>();
 builder.Services.AddSingleton<IAudioMetadataReader, AtlAudioMetadataReader>();
 builder.Services.AddSingleton<ICoverStore, FileSystemCoverStore>();
+builder.Services.AddSingleton<ScanCoordinator>();
 
 builder.Services.AddOpenApi();
 
