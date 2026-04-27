@@ -3,14 +3,41 @@ using Fabula.Api.Infrastructure;
 using Fabula.Core.Services;
 using Fabula.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Hosting.WindowsServices;
 
-var builder = WebApplication.CreateBuilder(args);
+var isWindowsService = WindowsServiceHelpers.IsWindowsService();
 
-builder.Services.Configure<FabulaOptions>(builder.Configuration.GetSection(FabulaOptions.SectionName));
-var fabulaOptions = builder.Configuration.GetSection(FabulaOptions.SectionName).Get<FabulaOptions>() ?? new FabulaOptions();
-Directory.CreateDirectory(fabulaOptions.DataDirectory);
+var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+{
+    Args = args,
+    // When started by the Windows SCM the working directory is %WINDIR%\System32;
+    // anchor everything to the install directory so relative paths in
+    // appsettings/Production resolve correctly.
+    ContentRootPath = isWindowsService ? AppContext.BaseDirectory : null
+});
 
-var dbPath = Path.Combine(fabulaOptions.DataDirectory, "fabula.db");
+builder.Host.UseWindowsService(o => o.ServiceName = "Fabula");
+
+var rawOptions = builder.Configuration.GetSection(FabulaOptions.SectionName).Get<FabulaOptions>() ?? new FabulaOptions();
+
+string ResolvePath(string path) => Path.IsPathRooted(path)
+    ? path
+    : Path.GetFullPath(Path.Combine(builder.Environment.ContentRootPath, path));
+
+var dataDirectory = ResolvePath(rawOptions.DataDirectory);
+var coversDirectory = string.IsNullOrWhiteSpace(rawOptions.CoversDirectory)
+    ? Path.Combine(dataDirectory, "covers")
+    : ResolvePath(rawOptions.CoversDirectory);
+Directory.CreateDirectory(dataDirectory);
+Directory.CreateDirectory(coversDirectory);
+
+builder.Services.Configure<FabulaOptions>(o =>
+{
+    o.DataDirectory = dataDirectory;
+    o.CoversDirectory = coversDirectory;
+});
+
+var dbPath = Path.Combine(dataDirectory, "fabula.db");
 var connectionString = $"Data Source={dbPath}";
 
 builder.Services.AddFabulaData(connectionString);
