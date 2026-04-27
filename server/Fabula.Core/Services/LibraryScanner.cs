@@ -87,8 +87,32 @@ public class LibraryScanner(
             return BookScanOutcome.Unchanged;
 
         // Tag parsing dominates the per-book cost on network shares. Run it
-        // in parallel across the files of this book.
-        var allMetadata = await ReadMetadataParallelAsync(files, cancellationToken);
+        // in parallel across the files of this book. Broken files (ATL throws
+        // on a malformed tag etc.) are logged and skipped so a single bad
+        // file doesn't make the whole book disappear.
+        var rawMetadata = await ReadMetadataParallelAsync(files, bookDir, cancellationToken);
+        var goodEntries = rawMetadata
+            .Select((entry, idx) => (entry, idx))
+            .Where(x => x.entry.Meta is not null)
+            .ToList();
+
+        if (goodEntries.Count == 0)
+        {
+            logger.LogWarning("All files in {Dir} failed to read; skipping book.", bookDir);
+            return BookScanOutcome.Unchanged;
+        }
+
+        if (goodEntries.Count < rawMetadata.Count)
+        {
+            logger.LogWarning(
+                "{Skipped} of {Total} files in {Dir} could not be read and were skipped.",
+                rawMetadata.Count - goodEntries.Count, rawMetadata.Count, bookDir);
+        }
+
+        var allMetadata = goodEntries
+            .Select(x => (Path: x.entry.Path, Meta: x.entry.Meta!))
+            .ToList();
+        var usableStats = goodEntries.Select(x => stats[x.idx]).ToList();
         var firstMeta = allMetadata[0].Meta;
         var totalDuration = TimeSpan.FromTicks(allMetadata.Sum(m => m.Meta.Duration.Ticks));
 
@@ -124,7 +148,7 @@ public class LibraryScanner(
         book.CoverPath = coverPath;
         book.UpdatedAt = DateTime.UtcNow;
 
-        var audioFiles = BuildAudioFiles(allMetadata, stats);
+        var audioFiles = BuildAudioFiles(allMetadata, usableStats);
         var chapters = BuildChapters(allMetadata, audioFiles);
 
         await repository.UpsertBookAsync(
@@ -160,11 +184,12 @@ public class LibraryScanner(
         return true;
     }
 
-    private async Task<List<(string Path, AudioMetadata Meta)>> ReadMetadataParallelAsync(
+    private async Task<List<(string Path, AudioMetadata? Meta)>> ReadMetadataParallelAsync(
         List<string> files,
+        string bookDir,
         CancellationToken cancellationToken)
     {
-        var results = new (string Path, AudioMetadata Meta)[files.Count];
+        var results = new (string Path, AudioMetadata? Meta)[files.Count];
         var options = new ParallelOptions
         {
             MaxDegreeOfParallelism = Math.Min(8, Environment.ProcessorCount * 2),
@@ -175,23 +200,41 @@ public class LibraryScanner(
             options,
             (i, _) =>
             {
-                results[i] = (files[i], metadataReader.Read(files[i]));
+                try
+                {
+                    results[i] = (files[i], metadataReader.Read(files[i]));
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex,
+                        "Failed to read metadata for {File} in {Dir}; the file will be skipped.",
+                        files[i], bookDir);
+                    results[i] = (files[i], null);
+                }
                 return ValueTask.CompletedTask;
             });
         return [.. results];
     }
 
     /// <summary>
-    /// Picks the series name for a book. Embedded metadata wins; if it is
-    /// missing, we treat the first sub-folder under the library root as the
-    /// series. Files that live directly under the root, or in a single
-    /// folder under it, are considered standalone (no series).
+    /// Picks the series name for a book. The first sub-folder under the
+    /// library root wins -- that matches a Plex/Jellyfin-style "one folder
+    /// per series" layout and is what users intuitively expect when they
+    /// organise their library by series. Embedded SeriesName tags only kick
+    /// in when the folder structure has nothing to say (book sits directly
+    /// under the root).
     /// </summary>
     internal static string? ResolveSeriesName(string libraryRoot, string bookDir, string? metadataSeriesName)
     {
-        if (!string.IsNullOrWhiteSpace(metadataSeriesName))
-            return metadataSeriesName.Trim();
+        var folderSeries = DeriveSeriesFromFolders(libraryRoot, bookDir);
+        if (folderSeries is not null)
+            return folderSeries;
 
+        return string.IsNullOrWhiteSpace(metadataSeriesName) ? null : metadataSeriesName.Trim();
+    }
+
+    private static string? DeriveSeriesFromFolders(string libraryRoot, string bookDir)
+    {
         var rootFull = Path.GetFullPath(libraryRoot)
             .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         var bookFull = Path.GetFullPath(bookDir)
