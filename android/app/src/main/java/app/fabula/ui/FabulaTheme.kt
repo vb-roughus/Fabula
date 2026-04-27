@@ -1,10 +1,12 @@
 package app.fabula.ui
 
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Color
 
 // Vita Brevis brand palette: deep navy (matches the wordmark) for backgrounds
@@ -53,8 +55,15 @@ fun FabulaTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {
-    MaterialTheme(
-        colorScheme = if (darkTheme) DarkScheme else LightScheme,
-        content = content
-    )
+    val scheme = if (darkTheme) DarkScheme else LightScheme
+    MaterialTheme(colorScheme = scheme) {
+        // Default LocalContentColor is Color.Black, which leaks through every
+        // Scaffold we configured with containerColor = Color.Transparent
+        // (Material3 falls back to LocalContentColor.current when
+        // contentColorFor can't resolve a transparent surface). Pin it to the
+        // theme's onBackground so titles are readable on the gradient.
+        CompositionLocalProvider(LocalContentColor provides scheme.onBackground) {
+            content()
+        }
+    }
 }
