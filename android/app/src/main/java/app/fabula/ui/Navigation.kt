@@ -2,6 +2,9 @@ package app.fabula.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -336,10 +339,22 @@ fun Navigation(
                 FabulaNavigationBar(navController = navController)
             }
 
+            // Slide + fade together. The combined motion masks the heavy
+            // first composition of the FullPlayer (large cover image, pulse
+            // animation, slider, chapter list) much better than a pure slide:
+            // even if a few frames are dropped while the player composes for
+            // the first time, the cross-fade keeps the transition feeling
+            // continuous rather than juddery.
             AnimatedVisibility(
                 visible = hasBook && fullPlayerOpen,
-                enter = slideInVertically(initialOffsetY = { it }),
-                exit = slideOutVertically(targetOffsetY = { it })
+                enter = slideInVertically(
+                    animationSpec = tween(durationMillis = 360, easing = FastOutSlowInEasing),
+                    initialOffsetY = { it / 3 }
+                ) + fadeIn(animationSpec = tween(durationMillis = 220)),
+                exit = slideOutVertically(
+                    animationSpec = tween(durationMillis = 280, easing = FastOutLinearInEasing),
+                    targetOffsetY = { it / 3 }
+                ) + fadeOut(animationSpec = tween(durationMillis = 180))
             ) {
                 BackHandler(enabled = true) { fullPlayerOpen = false }
                 FullPlayer(
