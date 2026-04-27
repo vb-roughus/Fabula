@@ -1,16 +1,16 @@
 package app.fabula.ui
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.slideOutVertically
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.zIndex
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -339,30 +339,45 @@ fun Navigation(
                 FabulaNavigationBar(navController = navController)
             }
 
-            // Slide + fade together. The combined motion masks the heavy
-            // first composition of the FullPlayer (large cover image, pulse
-            // animation, slider, chapter list) much better than a pure slide:
-            // even if a few frames are dropped while the player composes for
-            // the first time, the cross-fade keeps the transition feeling
-            // continuous rather than juddery.
-            AnimatedVisibility(
-                visible = hasBook && fullPlayerOpen,
-                enter = slideInVertically(
-                    animationSpec = tween(durationMillis = 360, easing = FastOutSlowInEasing),
-                    initialOffsetY = { it / 3 }
-                ) + fadeIn(animationSpec = tween(durationMillis = 220)),
-                exit = slideOutVertically(
-                    animationSpec = tween(durationMillis = 280, easing = FastOutLinearInEasing),
-                    targetOffsetY = { it / 3 }
-                ) + fadeOut(animationSpec = tween(durationMillis = 180))
-            ) {
-                BackHandler(enabled = true) { fullPlayerOpen = false }
-                FullPlayer(
-                    player = player,
-                    repository = repository,
-                    onCollapse = { fullPlayerOpen = false },
-                    modifier = Modifier.fillMaxSize()
+            // Pre-compose the FullPlayer the moment a book is loaded -- long
+            // before the user taps the mini player -- so the heavy first
+            // composition (Slider, AsyncImage cover, pulse InfiniteTransition)
+            // doesn't have to fight a 320 ms slide animation for the frame
+            // budget. Showing / hiding then runs purely on the compositor via
+            // graphicsLayer (alpha + translationY), which the GPU handles at
+            // 60+ fps regardless of how loaded the main thread is.
+            //
+            // When the player is fully closed we push it behind everything
+            // with zIndex(-1f) so taps reach the mini player and nav bar.
+            if (hasBook) {
+                val openProgress by animateFloatAsState(
+                    targetValue = if (fullPlayerOpen) 1f else 0f,
+                    animationSpec = tween(
+                        durationMillis = 320,
+                        easing = if (fullPlayerOpen) FastOutSlowInEasing else FastOutLinearInEasing
+                    ),
+                    label = "fullplayer-open"
                 )
+                val isFullyClosed = !fullPlayerOpen && openProgress < 0.001f
+                if (fullPlayerOpen) {
+                    BackHandler { fullPlayerOpen = false }
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .zIndex(if (isFullyClosed) -1f else 2f)
+                        .graphicsLayer {
+                            alpha = openProgress
+                            translationY = (1f - openProgress) * size.height * 0.25f
+                        }
+                ) {
+                    FullPlayer(
+                        player = player,
+                        repository = repository,
+                        onCollapse = { fullPlayerOpen = false },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
             }
         }
     }
