@@ -111,13 +111,49 @@ public class LibraryScanner(
             bookDir,
             firstMeta.Authors,
             firstMeta.Narrators,
-            firstMeta.SeriesName,
+            ResolveSeriesName(folder.Path, bookDir, firstMeta.SeriesName),
             firstMeta.SeriesPosition,
             audioFiles,
             chapters,
             cancellationToken);
 
         return existing is null ? BookScanOutcome.Added : BookScanOutcome.Updated;
+    }
+
+    /// <summary>
+    /// Picks the series name for a book. Embedded metadata wins; if it is
+    /// missing, we treat the first sub-folder under the library root as the
+    /// series. Files that live directly under the root, or in a single
+    /// folder under it, are considered standalone (no series).
+    /// </summary>
+    internal static string? ResolveSeriesName(string libraryRoot, string bookDir, string? metadataSeriesName)
+    {
+        if (!string.IsNullOrWhiteSpace(metadataSeriesName))
+            return metadataSeriesName.Trim();
+
+        var rootFull = Path.GetFullPath(libraryRoot)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var bookFull = Path.GetFullPath(bookDir)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+        if (!bookFull.StartsWith(rootFull, StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        var relative = bookFull[rootFull.Length..]
+            .TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        if (string.IsNullOrEmpty(relative))
+            return null;
+
+        var segments = relative.Split(
+            [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
+            StringSplitOptions.RemoveEmptyEntries);
+
+        // <root>/<book> -- one segment, standalone.
+        if (segments.Length < 2)
+            return null;
+
+        var name = segments[0].Trim();
+        return string.IsNullOrEmpty(name) ? null : name;
     }
 
     private static List<AudioFile> BuildAudioFiles(List<(string Path, AudioMetadata Meta)> metadata)
