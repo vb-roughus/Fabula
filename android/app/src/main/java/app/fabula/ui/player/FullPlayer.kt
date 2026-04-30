@@ -330,9 +330,12 @@ fun FullPlayer(
                     val fraction = if (range > 0f)
                         ((sliderState.value - sliderState.valueRange.start) / range).coerceIn(0f, 1f)
                     else 0f
-                    // Outer wrapper matches the thumb height so the slider
-                    // measures both at 20 dp and centres them on the same
-                    // baseline; the visible 2 dp line sits in the middle.
+                    // Material3 already measures the track at slider_width -
+                    // thumb_width and places it at thumb_width/2 -- so its full
+                    // inner width corresponds 1:1 to the thumb's travel range.
+                    // Don't inset the line again: that double-padding shifts
+                    // the fill end up to 10 dp away from the thumb centre and
+                    // only happens to align at exactly 50 %.
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -342,7 +345,6 @@ fun FullPlayer(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 10.dp)
                                 .height(2.dp)
                                 .clip(RoundedCornerShape(1.dp))
                                 .background(whiteText.copy(alpha = 0.25f))
