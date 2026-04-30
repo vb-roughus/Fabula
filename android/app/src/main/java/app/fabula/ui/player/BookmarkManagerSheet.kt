@@ -292,8 +292,8 @@ private fun EditBookmarkDialog(
 }
 
 private fun resolveChapterTitle(book: BookDetailDto, bookmark: BookmarkDto): String? {
-    val pos = parseTimeSpan(bookmark.position)
+    val probe = parseTimeSpan(bookmark.position) + 0.010  // FP boundary tolerance
     return book.chapters.firstOrNull {
-        pos >= parseTimeSpan(it.start) && pos < parseTimeSpan(it.end)
+        probe >= parseTimeSpan(it.start) && probe < parseTimeSpan(it.end)
     }?.title
 }

@@ -337,8 +337,14 @@ class PlayerController(
         )
     }
 
-    private fun chapterAt(book: BookDetailDto, seconds: Double): ChapterDto? =
-        book.chapters.firstOrNull {
-            seconds >= parseTimeSpan(it.start) && seconds < parseTimeSpan(it.end)
+    private fun chapterAt(book: BookDetailDto, seconds: Double): ChapterDto? {
+        // Tolerance for the same FP drift that mapBookToMedia compensates
+        // for: a seek to chapter N's start can read back as N's start minus
+        // a few microseconds, which would otherwise pin the highlight on
+        // chapter N-1.
+        val probe = seconds + 0.010
+        return book.chapters.firstOrNull {
+            probe >= parseTimeSpan(it.start) && probe < parseTimeSpan(it.end)
         }
+    }
 }

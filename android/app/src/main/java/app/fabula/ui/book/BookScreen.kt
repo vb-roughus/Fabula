@@ -684,10 +684,12 @@ private fun BookContent(
     }
 }
 
-private fun chapterAt(book: BookDetailDto, posSec: Double): ChapterDto? =
-    book.chapters.firstOrNull {
-        posSec >= parseTimeSpan(it.start) && posSec < parseTimeSpan(it.end)
+private fun chapterAt(book: BookDetailDto, posSec: Double): ChapterDto? {
+    val probe = posSec + 0.010  // see PlayerController.chapterAt
+    return book.chapters.firstOrNull {
+        probe >= parseTimeSpan(it.start) && probe < parseTimeSpan(it.end)
     }
+}
 
 @Composable
 private fun BookmarksSectionHeader(count: Int, expanded: Boolean, onToggle: () -> Unit) {
