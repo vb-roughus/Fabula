@@ -151,13 +151,19 @@ public class LibraryScanner(
         var audioFiles = BuildAudioFiles(allMetadata, usableStats);
         var chapters = BuildChapters(allMetadata, audioFiles);
 
+        var seriesAssignment = ResolveSeries(
+            folder.Path,
+            bookDir,
+            firstMeta.SeriesName,
+            firstMeta.SeriesPosition);
+
         await repository.UpsertBookAsync(
             book,
             bookDir,
             firstMeta.Authors,
             firstMeta.Narrators,
-            ResolveSeriesName(folder.Path, bookDir, firstMeta.SeriesName),
-            firstMeta.SeriesPosition,
+            seriesAssignment.Name,
+            seriesAssignment.Position,
             audioFiles,
             chapters,
             cancellationToken);
@@ -217,20 +223,73 @@ public class LibraryScanner(
     }
 
     /// <summary>
-    /// Picks the series name for a book. The first sub-folder under the
-    /// library root wins -- that matches a Plex/Jellyfin-style "one folder
-    /// per series" layout and is what users intuitively expect when they
-    /// organise their library by series. Embedded SeriesName tags only kick
-    /// in when the folder structure has nothing to say (book sits directly
-    /// under the root).
+    /// Picks the series name + position for a book.
+    ///
+    /// The first sub-folder under the library root wins as the series name
+    /// -- that matches a Plex/Jellyfin-style "one folder per series" layout
+    /// and is what users intuitively expect when they organise their library
+    /// by series. Embedded SeriesName tags only kick in when the folder
+    /// structure has nothing to say (book sits directly under the root).
+    ///
+    /// Position: when the folder structure provides the series, we look for
+    /// the first numeric token in the book folder name -- e.g. "Perry Rhodan
+    /// Silber Edition 028 - Lemuria" -> 28, "01 - Foo" -> 1, "Vol. 12.5" ->
+    /// 12.5. Falls back to the metadata SeriesPosition when the folder name
+    /// has no number; uses metadata position directly when metadata also
+    /// owns the series name.
     /// </summary>
-    internal static string? ResolveSeriesName(string libraryRoot, string bookDir, string? metadataSeriesName)
+    internal static (string? Name, decimal? Position) ResolveSeries(
+        string libraryRoot,
+        string bookDir,
+        string? metadataSeriesName,
+        decimal? metadataSeriesPosition)
     {
         var folderSeries = DeriveSeriesFromFolders(libraryRoot, bookDir);
         if (folderSeries is not null)
-            return folderSeries;
+        {
+            var fromFolder = ExtractPositionFromName(Path.GetFileName(bookDir));
+            return (folderSeries, fromFolder ?? metadataSeriesPosition);
+        }
 
-        return string.IsNullOrWhiteSpace(metadataSeriesName) ? null : metadataSeriesName.Trim();
+        if (!string.IsNullOrWhiteSpace(metadataSeriesName))
+            return (metadataSeriesName.Trim(), metadataSeriesPosition);
+
+        return (null, null);
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex PositionInName =
+        new(@"\d+(?:[.,]\d+)?", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// <summary>
+    /// Extracts a series position from a book folder / file name. Picks the
+    /// first numeric token, but skips an obvious year prefix (1900-2099) so
+    /// "2024 Edition 028 - Title" still resolves to 28 instead of 2024.
+    /// Accepts "1", "01", "012", "12.5", "12,5".
+    /// </summary>
+    internal static decimal? ExtractPositionFromName(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return null;
+        var matches = PositionInName.Matches(name);
+        foreach (System.Text.RegularExpressions.Match m in matches)
+        {
+            var raw = m.Value.Replace(',', '.');
+            if (!decimal.TryParse(
+                    raw,
+                    System.Globalization.NumberStyles.Number,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out var value))
+                continue;
+
+            // Skip year-like prefixes when there is another number behind
+            // them (e.g. "2024 Edition 028" -> 28). A single year-only token
+            // still resolves to itself so that books like "1984" don't lose
+            // a position they really do have.
+            if (m.Value.Length == 4 && value >= 1900m && value <= 2099m && matches.Count > 1)
+                continue;
+
+            return value;
+        }
+        return null;
     }
 
     private static string? DeriveSeriesFromFolders(string libraryRoot, string bookDir)
