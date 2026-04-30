@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Close
@@ -73,6 +74,7 @@ import app.fabula.data.formatDurationHuman
 import app.fabula.data.parseTimeSpan
 import app.fabula.data.toTimeSpanString
 import app.fabula.player.PlayerController
+import app.fabula.ui.player.BookmarkManagerSheet
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.launch
 
@@ -92,6 +94,7 @@ fun BookScreen(
     var addBookmarkOpen by remember { mutableStateOf(false) }
     var bookmarkNote by remember { mutableStateOf("") }
     var assignSeriesOpen by remember { mutableStateOf(false) }
+    var bookmarkManagerOpen by remember { mutableStateOf(false) }
     var seriesList by remember { mutableStateOf<List<SeriesSummaryDto>>(emptyList()) }
     val seriesRevision by repository.seriesRevision.collectAsState()
     var hasAutoScrolled by remember(bookId) { mutableStateOf(false) }
@@ -215,6 +218,16 @@ fun BookScreen(
                                     moreMenuOpen = false
                                     bookmarkNote = ""
                                     addBookmarkOpen = true
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Lesezeichen verwalten") },
+                                leadingIcon = {
+                                    Icon(Icons.AutoMirrored.Filled.List, contentDescription = null)
+                                },
+                                onClick = {
+                                    moreMenuOpen = false
+                                    bookmarkManagerOpen = true
                                 }
                             )
                             DropdownMenuItem(
@@ -364,6 +377,24 @@ fun BookScreen(
                         )
                         repository.bumpSeriesRevision()
                     }
+                }
+            }
+        )
+    }
+
+    if (bookmarkManagerOpen) {
+        BookmarkManagerSheet(
+            bookId = bookId,
+            book = book,
+            repository = repository,
+            onDismiss = { bookmarkManagerOpen = false },
+            onPlayBookmark = { bm ->
+                val current = book ?: return@BookmarkManagerSheet
+                scope.launch {
+                    if (playerState.book?.id != current.id) player.loadBook(current)
+                    player.seekInBook(parseTimeSpan(bm.position))
+                    player.play()
+                    onPlaybackStarted()
                 }
             }
         )

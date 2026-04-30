@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.BookmarkAdd
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Forward30
@@ -95,6 +96,8 @@ fun FullPlayer(
     var scrubFraction by remember { mutableStateOf<Float?>(null) }
     var currentSpeed by remember { mutableFloatStateOf(1.0f) }
     var speedMenuOpen by remember { mutableStateOf(false) }
+    var moreMenuOpen by remember { mutableStateOf(false) }
+    var bookmarkManagerOpen by remember { mutableStateOf(false) }
     var bookmarkSavedFlash by remember { mutableStateOf(false) }
     var pulseEnabled by remember { mutableStateOf(false) }
 
@@ -179,12 +182,29 @@ fun FullPlayer(
                     textAlign = TextAlign.Center
                 )
             }
-            IconButton(onClick = { /* more placeholder */ }) {
-                Icon(
-                    Icons.Filled.MoreHoriz,
-                    contentDescription = "Mehr",
-                    tint = whiteText
-                )
+            Box {
+                IconButton(onClick = { moreMenuOpen = true }) {
+                    Icon(
+                        Icons.Filled.MoreHoriz,
+                        contentDescription = "Mehr",
+                        tint = whiteText
+                    )
+                }
+                DropdownMenu(
+                    expanded = moreMenuOpen,
+                    onDismissRequest = { moreMenuOpen = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Lesezeichen verwalten") },
+                        leadingIcon = {
+                            Icon(Icons.AutoMirrored.Filled.List, contentDescription = null)
+                        },
+                        onClick = {
+                            moreMenuOpen = false
+                            bookmarkManagerOpen = true
+                        }
+                    )
+                }
             }
         }
 
@@ -512,5 +532,18 @@ fun FullPlayer(
                 }
             }
         }
+    }
+
+    if (bookmarkManagerOpen) {
+        BookmarkManagerSheet(
+            bookId = book.id,
+            book = book,
+            repository = repository,
+            onDismiss = { bookmarkManagerOpen = false },
+            onPlayBookmark = { bm ->
+                player.seekInBook(parseTimeSpan(bm.position))
+                player.play()
+            }
+        )
     }
 }
