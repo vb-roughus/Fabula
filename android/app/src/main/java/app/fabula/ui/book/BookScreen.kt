@@ -24,6 +24,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.LibraryBooks
@@ -53,6 +55,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -179,11 +182,12 @@ fun BookScreen(
         }
 
         // LazyColumn structure: cover, title, brand+duration, action,
-        // (optional description), (optional bookmarks header + bookmarks),
+        // (optional description), (optional bookmarks section header
+        // -- collapsed by default so it only contributes one item),
         // chapter header, chapters[N], spacer.
         var target = 4
         if (!current.description.isNullOrBlank()) target += 1
-        if (bookmarks.isNotEmpty()) target += 1 + bookmarks.size
+        if (bookmarks.isNotEmpty()) target += 1
         target += 1  // chapter header
         target += activeIdx
 
@@ -503,6 +507,15 @@ private fun BookContent(
     onBookmarkDelete: (BookmarkDto) -> Unit
 ) {
     val totalSeconds = parseTimeSpan(book.duration)
+    var bookmarksExpanded by rememberSaveable(book.id) { mutableStateOf(false) }
+    // Group by local date, oldest day first; within each day, oldest first.
+    // Newest bookmark therefore renders at the very bottom of the section.
+    val bookmarkGroups = remember(bookmarks) {
+        bookmarks
+            .sortedBy { it.createdAt }
+            .groupBy { localDateKey(it.createdAt) }
+            .toSortedMap()
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -620,21 +633,32 @@ private fun BookContent(
         }
 
         if (bookmarks.isNotEmpty()) {
-            item {
-                Text(
-                    "Lesezeichen",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp)
+            item("bookmarks-header") {
+                BookmarksSectionHeader(
+                    count = bookmarks.size,
+                    expanded = bookmarksExpanded,
+                    onToggle = { bookmarksExpanded = !bookmarksExpanded }
                 )
             }
-            items(items = bookmarks, key = { "bookmark-${it.id}" }) { bookmark ->
-                BookmarkRow(
-                    bookmark = bookmark,
-                    chapterTitle = chapterAt(book, parseTimeSpan(bookmark.position))?.title,
-                    onClick = { onBookmarkClick(bookmark) },
-                    onDelete = { onBookmarkDelete(bookmark) }
-                )
+            if (bookmarksExpanded) {
+                bookmarkGroups.forEach { (dateKey, dayBookmarks) ->
+                    item("bm-date-$dateKey") {
+                        Text(
+                            text = formatDayHeader(dateKey),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.outline,
+                            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp)
+                        )
+                    }
+                    items(items = dayBookmarks, key = { "bookmark-${it.id}" }) { bookmark ->
+                        BookmarkRow(
+                            bookmark = bookmark,
+                            chapterTitle = chapterAt(book, parseTimeSpan(bookmark.position))?.title,
+                            onClick = { onBookmarkClick(bookmark) },
+                            onDelete = { onBookmarkDelete(bookmark) }
+                        )
+                    }
+                }
             }
         }
 
@@ -664,6 +688,44 @@ private fun chapterAt(book: BookDetailDto, posSec: Double): ChapterDto? =
     book.chapters.firstOrNull {
         posSec >= parseTimeSpan(it.start) && posSec < parseTimeSpan(it.end)
     }
+
+@Composable
+private fun BookmarksSectionHeader(count: Int, expanded: Boolean, onToggle: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onToggle)
+            .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            "Lesezeichen ($count)",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.weight(1f)
+        )
+        Icon(
+            imageVector = if (expanded) Icons.Filled.KeyboardArrowDown else Icons.Filled.KeyboardArrowRight,
+            contentDescription = if (expanded) "Lesezeichen einklappen" else "Lesezeichen ausklappen",
+            tint = MaterialTheme.colorScheme.outline
+        )
+    }
+}
+
+private val DAY_HEADER_FORMATTER: java.time.format.DateTimeFormatter =
+    java.time.format.DateTimeFormatter.ofPattern("d. MMMM yyyy", java.util.Locale.GERMAN)
+
+private fun localDateKey(createdAt: String): java.time.LocalDate =
+    runCatching {
+        java.time.Instant.parse(createdAt).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
+    }.getOrElse {
+        // ISO offset / partial timestamps -- fall back to the date prefix.
+        runCatching { java.time.LocalDate.parse(createdAt.take(10)) }
+            .getOrDefault(java.time.LocalDate.MIN)
+    }
+
+private fun formatDayHeader(date: java.time.LocalDate): String =
+    if (date == java.time.LocalDate.MIN) "Unbekanntes Datum" else date.format(DAY_HEADER_FORMATTER)
 
 @Composable
 private fun ActionRow(onPlay: () -> Unit, isPlaying: Boolean) {
