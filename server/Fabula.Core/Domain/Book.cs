@@ -17,6 +17,11 @@ public class Book
     public Series? Series { get; set; }
     public decimal? SeriesPosition { get; set; }
 
+    // True when the user has explicitly set SeriesPosition through the API.
+    // The library scanner skips overwriting the position (and only the position)
+    // for these books on rescan -- folder/metadata still own series membership.
+    public bool SeriesPositionManuallySet { get; set; }
+
     public TimeSpan Duration { get; set; }
     public string? CoverPath { get; set; }
 
