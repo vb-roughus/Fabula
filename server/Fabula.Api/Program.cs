@@ -1,10 +1,15 @@
 using System.Text.Json.Serialization;
 using Fabula.Api.Endpoints;
 using Fabula.Api.Infrastructure;
+using Fabula.Core.Domain;
 using Fabula.Core.Services;
 using Fabula.Data;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting.WindowsServices;
+using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Tokens;
 using NReco.Logging.File;
 
 var isWindowsService = WindowsServiceHelpers.IsWindowsService();
@@ -62,6 +67,48 @@ builder.Services.AddSingleton<ScanCoordinator>();
 builder.Services.ConfigureHttpJsonOptions(o =>
     o.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 
+// --- Auth ---------------------------------------------------------------
+var jwtKeyBytes = JwtKeyProvider.LoadOrCreate(dataDirectory);
+builder.Services.Configure<JwtOptions>(o => o.SigningKey = Convert.ToBase64String(jwtKeyBytes));
+builder.Services.AddSingleton<IPasswordHasher<User>, PasswordHasher<User>>();
+builder.Services.AddSingleton<JwtTokenService>();
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(o =>
+    {
+        o.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = "fabula",
+            ValidateAudience = true,
+            ValidAudience = "fabula",
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(jwtKeyBytes),
+            ClockSkew = TimeSpan.FromMinutes(1)
+        };
+        o.Events = new JwtBearerEvents
+        {
+            // ?access_token=... is honored ONLY for /api/stream so the web
+            // <audio> element (which can't send Authorization headers) can
+            // still authenticate. Every other endpoint keeps requiring the
+            // header.
+            OnMessageReceived = ctx =>
+            {
+                if (ctx.HttpContext.Request.Path.StartsWithSegments("/api/stream") &&
+                    ctx.Request.Query.TryGetValue("access_token", out var token))
+                {
+                    ctx.Token = token;
+                }
+                return Task.CompletedTask;
+            }
+        };
+    });
+
+builder.Services.AddAuthorization(o =>
+    o.AddPolicy("Admin", p => p.RequireAuthenticatedUser().RequireClaim("admin", "true")));
+// ------------------------------------------------------------------------
+
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
@@ -78,10 +125,15 @@ using (var scope = app.Services.CreateScope())
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
+app.UseAuthentication();
+app.UseAuthorization();
+
 app.MapOpenApi();
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 
+app.MapAuthEndpoints();
+app.MapUserEndpoints();
 app.MapLibraryEndpoints();
 app.MapBookEndpoints();
 app.MapSeriesEndpoints();

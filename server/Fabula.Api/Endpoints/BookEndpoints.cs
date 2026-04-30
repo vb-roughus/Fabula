@@ -7,15 +7,13 @@ namespace Fabula.Api.Endpoints;
 
 public static class BookEndpoints
 {
-    // Temporary single-user id until JWT auth lands -- mirrors ProgressEndpoints.
-    private const int TemporaryUserId = 1;
-
     public static IEndpointRouteBuilder MapBookEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/books").WithTags("Books");
+        var group = app.MapGroup("/api/books").WithTags("Books").RequireAuthorization();
 
-        group.MapGet("/", async (FabulaDbContext db, string? search, int page, int pageSize, CancellationToken ct) =>
+        group.MapGet("/", async (HttpContext http, FabulaDbContext db, string? search, int page, int pageSize, CancellationToken ct) =>
         {
+            var uid = http.UserId();
             page = page <= 0 ? 1 : page;
             pageSize = pageSize is <= 0 or > 200 ? 50 : pageSize;
 
@@ -52,7 +50,7 @@ public static class BookEndpoints
                     b.Duration,
                     b.CoverPath != null ? $"/api/books/{b.Id}/cover" : null,
                     db.PlaybackProgress
-                        .Where(p => p.UserId == TemporaryUserId && p.BookId == b.Id)
+                        .Where(p => p.UserId == uid && p.BookId == b.Id)
                         .Select(p => new ProgressSummaryDto(p.Position, p.Finished, p.UpdatedAt))
                         .FirstOrDefault()))
                 .ToListAsync(ct);
@@ -60,8 +58,9 @@ public static class BookEndpoints
             return Results.Ok(new PagedResult<BookSummaryDto>(books, total, page, pageSize));
         });
 
-        group.MapGet("/{id:int}", async (int id, FabulaDbContext db, CancellationToken ct) =>
+        group.MapGet("/{id:int}", async (int id, HttpContext http, FabulaDbContext db, CancellationToken ct) =>
         {
+            var uid = http.UserId();
             var book = await db.Books
                 .AsSplitQuery()
                 .Include(b => b.Authors)
@@ -76,7 +75,7 @@ public static class BookEndpoints
 
             var progress = await db.PlaybackProgress
                 .AsNoTracking()
-                .Where(p => p.UserId == TemporaryUserId && p.BookId == id)
+                .Where(p => p.UserId == uid && p.BookId == id)
                 .Select(p => new ProgressSummaryDto(p.Position, p.Finished, p.UpdatedAt))
                 .FirstOrDefaultAsync(ct);
 
@@ -143,6 +142,9 @@ public static class BookEndpoints
             return Results.NoContent();
         });
 
+        // Covers are anonymous so &lt;img src=...&gt; in the browser and AsyncImage on
+        // Android can render them without juggling tokens. They expose only
+        // image data, not personal info.
         group.MapGet("/{id:int}/cover", async (int id, FabulaDbContext db, ICoverStore store, CancellationToken ct) =>
         {
             var book = await db.Books.AsNoTracking().FirstOrDefaultAsync(b => b.Id == id, ct);
@@ -158,7 +160,7 @@ public static class BookEndpoints
                 _ => "image/jpeg"
             };
             return Results.File(path, mime);
-        });
+        }).AllowAnonymous();
 
         return app;
     }

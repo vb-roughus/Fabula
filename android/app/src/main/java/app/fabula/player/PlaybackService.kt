@@ -8,6 +8,9 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import app.fabula.FabulaApp
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
 
 /**
@@ -22,7 +25,23 @@ class PlaybackService : MediaSessionService() {
     override fun onCreate() {
         super.onCreate()
 
-        val okHttp = OkHttpClient.Builder().build()
+        val prefs = (application as FabulaApp).preferences
+        val okHttp = OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                // Attach the JWT to every audio stream request. ExoPlayer's
+                // OkHttpDataSource invokes this interceptor on every HTTP
+                // request, including Range follow-ups, so seeks keep working.
+                val token = runBlocking { prefs.authToken.first() }
+                val req = if (!token.isNullOrBlank()) {
+                    chain.request().newBuilder()
+                        .header("Authorization", "Bearer $token")
+                        .build()
+                } else {
+                    chain.request()
+                }
+                chain.proceed(req)
+            }
+            .build()
         val dataSourceFactory = OkHttpDataSource.Factory(okHttp)
             .setUserAgent("Fabula/0.1 (Android)")
 

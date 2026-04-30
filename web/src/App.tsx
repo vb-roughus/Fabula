@@ -4,9 +4,25 @@ import { BookPage } from './pages/BookPage';
 import { SeriesPage } from './pages/SeriesPage';
 import { SeriesDetailPage } from './pages/SeriesDetailPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { LoginPage } from './pages/LoginPage';
+import { SetupPage } from './pages/SetupPage';
+import { AccountPage } from './pages/AccountPage';
+import { UserManagementPage } from './pages/UserManagementPage';
 import { PlayerBar } from './components/PlayerBar';
+import { useAuth } from './auth/AuthContext';
 
 export default function App() {
+  const auth = useAuth();
+
+  if (auth.loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-ink-400">Lade…</div>
+    );
+  }
+
+  if (auth.needsSetup) return <SetupPage />;
+  if (!auth.user) return <LoginPage />;
+
   return (
     <div className="min-h-full flex flex-col">
       <header className="bg-ink-800 border-b border-ink-700">
@@ -35,6 +51,29 @@ export default function App() {
               Einstellungen
             </NavLink>
           </nav>
+          <div className="flex-1" />
+          <nav className="flex gap-3 items-center text-sm">
+            {auth.user.isAdmin && (
+              <NavLink
+                to="/users"
+                className={({ isActive }) => (isActive ? 'text-ink-100' : 'text-ink-400 hover:text-ink-100')}
+              >
+                Benutzer
+              </NavLink>
+            )}
+            <NavLink
+              to="/account"
+              className={({ isActive }) => (isActive ? 'text-ink-100' : 'text-ink-400 hover:text-ink-100')}
+            >
+              {auth.user.username}
+            </NavLink>
+            <button
+              onClick={() => auth.logout()}
+              className="text-ink-400 hover:text-ink-100"
+            >
+              Abmelden
+            </button>
+          </nav>
         </div>
       </header>
 
@@ -45,6 +84,8 @@ export default function App() {
           <Route path="/series" element={<SeriesPage />} />
           <Route path="/series/:id" element={<SeriesDetailPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/account" element={<AccountPage />} />
+          {auth.user.isAdmin && <Route path="/users" element={<UserManagementPage />} />}
         </Routes>
       </main>
 

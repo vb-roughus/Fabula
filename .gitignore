@@ -15,6 +15,10 @@ obj/
 server/Fabula.Api/data/
 server/**/appsettings.Local.json
 
+# Auth signing key, auto-generated next to the data dir on first start.
+secrets.json
+**/secrets.json
+
 # Installer build output (publish + .exe)
 artifacts/
 

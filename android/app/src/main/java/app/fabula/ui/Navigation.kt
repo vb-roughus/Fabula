@@ -25,8 +25,11 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.LibraryBooks
+import androidx.compose.material.icons.outlined.PeopleAlt
+import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Style
 import androidx.compose.material.icons.outlined.Tune
@@ -46,10 +49,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -71,6 +74,10 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import app.fabula.data.FabulaRepository
 import app.fabula.player.PlayerController
+import app.fabula.ui.auth.AccountScreen
+import app.fabula.ui.auth.LoginScreen
+import app.fabula.ui.auth.SetupScreen
+import app.fabula.ui.auth.UserManagementScreen
 import app.fabula.ui.book.BookScreen
 import app.fabula.ui.home.HomeScreen
 import app.fabula.ui.library.LibraryScreen
@@ -103,24 +110,70 @@ private enum class Tab(
     }
 }
 
+private sealed class BootGate {
+    data object Loading : BootGate()
+    data object NeedsServer : BootGate()
+    data object NeedsSetup : BootGate()
+    data object NeedsLogin : BootGate()
+    data class Ready(val home: String) : BootGate()
+}
+
 @Composable
 fun Navigation(
     repository: FabulaRepository,
     player: PlayerController
 ) {
     val navController = rememberNavController()
-    val baseUrl by produceState<String?>(initialValue = null) {
-        value = repository.baseUrlFlow.first()
+    var gate by remember { mutableStateOf<BootGate>(BootGate.Loading) }
+    val authToken by repository.authTokenFlow.collectAsState(initial = null)
+    val baseUrlState by repository.baseUrlFlow.collectAsState(initial = "")
+
+    LaunchedEffect(baseUrlState, authToken) {
+        gate = BootGate.Loading
+        if (baseUrlState.isBlank()) {
+            gate = BootGate.NeedsServer
+            return@LaunchedEffect
+        }
+        val needsSetup = repository.checkNeedsSetup()
+        when {
+            needsSetup == null -> {
+                // Server unreachable -- fall back to login so the user can
+                // retry. The login screen surfaces the error.
+                gate = if (authToken.isNullOrBlank()) BootGate.NeedsLogin else BootGate.Ready(Tab.Home.route)
+            }
+            needsSetup -> gate = BootGate.NeedsSetup
+            authToken.isNullOrBlank() -> gate = BootGate.NeedsLogin
+            else -> {
+                val me = repository.me()
+                gate = if (me == null) {
+                    // Token invalid; clear and go to login.
+                    repository.logout()
+                    BootGate.NeedsLogin
+                } else BootGate.Ready(Tab.Home.route)
+            }
+        }
     }
 
-    if (baseUrl == null) {
+    LaunchedEffect(repository) {
+        repository.unauthorizedEvents.collect {
+            repository.logout()
+        }
+    }
+
+    if (gate is BootGate.Loading) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
         }
         return
     }
 
-    val startRoute = if (baseUrl!!.isBlank()) "settings" else Tab.Home.route
+    val startRoute = when (val g = gate) {
+        BootGate.Loading -> Tab.Home.route
+        BootGate.NeedsServer -> "settings"
+        BootGate.NeedsSetup -> "setup"
+        BootGate.NeedsLogin -> "login"
+        is BootGate.Ready -> g.home
+    }
     // Only read whether we have a book at all -- avoid recomposing Navigation
     // (and reallocating its gradients) every position tick.
     val hasBookFlow = remember(player) {
@@ -131,6 +184,11 @@ fun Navigation(
     var fullPlayerOpen by remember { mutableStateOf(false) }
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
+
+    var me by remember { mutableStateOf<app.fabula.data.AuthUserDto?>(null) }
+    LaunchedEffect(authToken) {
+        me = if (authToken.isNullOrBlank()) null else runCatching { repository.me() }.getOrNull()
+    }
 
     val openDrawer: () -> Unit = { scope.launch { drawerState.open() } }
 
@@ -162,12 +220,49 @@ fun Navigation(
                     modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
                 )
                 NavigationDrawerItem(
+                    icon = { Icon(Icons.Outlined.Person, contentDescription = null) },
+                    label = { Text("Mein Konto") },
+                    selected = false,
+                    onClick = {
+                        scope.launch { drawerState.close() }
+                        navController.navigate("account")
+                    },
+                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                )
+                if (me?.isAdmin == true) {
+                    NavigationDrawerItem(
+                        icon = { Icon(Icons.Outlined.PeopleAlt, contentDescription = null) },
+                        label = { Text("Benutzer verwalten") },
+                        selected = false,
+                        onClick = {
+                            scope.launch { drawerState.close() }
+                            navController.navigate("users")
+                        },
+                        modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                    )
+                }
+                NavigationDrawerItem(
                     icon = { Icon(Icons.Outlined.Settings, contentDescription = null) },
                     label = { Text("Einstellungen") },
                     selected = false,
                     onClick = {
                         scope.launch { drawerState.close() }
                         navController.navigate("settings")
+                    },
+                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                )
+                NavigationDrawerItem(
+                    icon = { Icon(Icons.AutoMirrored.Outlined.Logout, contentDescription = null) },
+                    label = { Text("Abmelden") },
+                    selected = false,
+                    onClick = {
+                        scope.launch {
+                            drawerState.close()
+                            repository.logout()
+                            navController.navigate("login") {
+                                popUpTo(0) { inclusive = true }
+                            }
+                        }
                     },
                     modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
                 )
@@ -303,6 +398,46 @@ fun Navigation(
                             player = player,
                             onBack = { navController.popBackStack() },
                             onPlaybackStarted = { fullPlayerOpen = true }
+                        )
+                    }
+                    composable("setup") {
+                        SetupScreen(
+                            repository = repository,
+                            onSetupDone = {
+                                navController.navigate(Tab.Home.route) {
+                                    popUpTo(0) { inclusive = true }
+                                }
+                            }
+                        )
+                    }
+                    composable("login") {
+                        LoginScreen(
+                            repository = repository,
+                            onLoggedIn = {
+                                navController.navigate(Tab.Home.route) {
+                                    popUpTo(0) { inclusive = true }
+                                }
+                            }
+                        )
+                    }
+                    composable("account") {
+                        AccountScreen(
+                            repository = repository,
+                            onBack = { navController.popBackStack() },
+                            onLogout = {
+                                scope.launch {
+                                    repository.logout()
+                                    navController.navigate("login") {
+                                        popUpTo(0) { inclusive = true }
+                                    }
+                                }
+                            }
+                        )
+                    }
+                    composable("users") {
+                        UserManagementScreen(
+                            repository = repository,
+                            onBack = { navController.popBackStack() }
                         )
                     }
                 }

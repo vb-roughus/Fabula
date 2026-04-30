@@ -1,4 +1,6 @@
 import type {
+  AuthResponse,
+  AuthUser,
   BookDetail,
   BookSummary,
   Bookmark,
@@ -7,14 +9,41 @@ import type {
   Progress,
   ScanStatus,
   SeriesDetail,
-  SeriesSummary
+  SeriesSummary,
+  SetupStatus,
+  UserDetail
 } from './types';
 
+const TOKEN_KEY = 'fabula.token';
+const UNAUTHORIZED_EVENT = 'fabula:unauthorized';
+
+export const tokenStore = {
+  get(): string | null {
+    return localStorage.getItem(TOKEN_KEY);
+  },
+  set(token: string | null) {
+    if (token) localStorage.setItem(TOKEN_KEY, token);
+    else localStorage.removeItem(TOKEN_KEY);
+  }
+};
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, {
-    headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
-    ...init
-  });
+  const token = tokenStore.get();
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(init?.headers as Record<string, string> | undefined)
+  };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const res = await fetch(url, { ...init, headers });
+
+  if (res.status === 401) {
+    // Don't fire on the auth probes themselves -- that would loop.
+    if (!url.startsWith('/api/auth/login') && !url.startsWith('/api/setup')) {
+      window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+    }
+  }
+
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     let detail = text;
@@ -34,7 +63,58 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
+export const onUnauthorized = (handler: () => void): (() => void) => {
+  window.addEventListener(UNAUTHORIZED_EVENT, handler);
+  return () => window.removeEventListener(UNAUTHORIZED_EVENT, handler);
+};
+
 export const api = {
+  // --- auth ----------------------------------------------------------------
+  getSetupStatus: () => request<SetupStatus>('/api/setup'),
+
+  setup: (username: string, password: string) =>
+    request<AuthResponse>('/api/setup', {
+      method: 'POST',
+      body: JSON.stringify({ username, password })
+    }),
+
+  login: (username: string, password: string) =>
+    request<AuthResponse>('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username, password })
+    }),
+
+  getMe: () => request<AuthUser>('/api/auth/me'),
+
+  changeMyPassword: (currentPassword: string, newPassword: string) =>
+    request<void>('/api/me/password', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword, newPassword })
+    }),
+
+  listUsers: () => request<UserDetail[]>('/api/users'),
+
+  createUser: (username: string, password: string, isAdmin: boolean) =>
+    request<UserDetail>('/api/users', {
+      method: 'POST',
+      body: JSON.stringify({ username, password, isAdmin })
+    }),
+
+  deleteUser: (id: number) => request<void>(`/api/users/${id}`, { method: 'DELETE' }),
+
+  setUserAdmin: (id: number, isAdmin: boolean) =>
+    request<void>(`/api/users/${id}/admin`, {
+      method: 'POST',
+      body: JSON.stringify({ isAdmin })
+    }),
+
+  adminResetPassword: (id: number, newPassword: string) =>
+    request<void>(`/api/users/${id}/password`, {
+      method: 'POST',
+      body: JSON.stringify({ newPassword })
+    }),
+
+  // --- libraries / scanning -----------------------------------------------
   listLibraries: () => request<LibraryFolder[]>('/api/libraries'),
 
   createLibrary: (name: string, path: string) =>
@@ -52,6 +132,7 @@ export const api = {
   deleteLibrary: (id: number) =>
     request<void>(`/api/libraries/${id}`, { method: 'DELETE' }),
 
+  // --- catalog ------------------------------------------------------------
   listBooks: (params: { search?: string; page: number; pageSize: number }) => {
     const qs = new URLSearchParams();
     if (params.search) qs.set('search', params.search);
@@ -114,4 +195,10 @@ export const api = {
     request<void>(`/api/bookmarks/${id}`, { method: 'DELETE' })
 };
 
-export const streamUrl = (audioFileId: number) => `/api/stream/${audioFileId}`;
+// `<audio src=...>` cannot send custom headers, so the JWT travels as a
+// query parameter. The server only honors ?access_token= for /api/stream.
+export const streamUrl = (audioFileId: number) => {
+  const t = tokenStore.get();
+  const base = `/api/stream/${audioFileId}`;
+  return t ? `${base}?access_token=${encodeURIComponent(t)}` : base;
+};

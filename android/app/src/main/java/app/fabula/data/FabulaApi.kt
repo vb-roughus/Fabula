@@ -70,4 +70,36 @@ interface FabulaApi {
 
     @DELETE("api/bookmarks/{id}")
     suspend fun deleteBookmark(@Path("id") id: Int)
+
+    // --- auth -------------------------------------------------------------
+
+    @GET("api/setup")
+    suspend fun getSetupStatus(): SetupStatusDto
+
+    @POST("api/setup")
+    suspend fun setup(@Body body: SetupRequest): AuthResponseDto
+
+    @POST("api/auth/login")
+    suspend fun login(@Body body: LoginRequest): AuthResponseDto
+
+    @GET("api/auth/me")
+    suspend fun getMe(): AuthUserDto
+
+    @POST("api/me/password")
+    suspend fun changeMyPassword(@Body body: ChangePasswordRequest)
+
+    @GET("api/users")
+    suspend fun listUsers(): List<UserDetailDto>
+
+    @POST("api/users")
+    suspend fun createUser(@Body body: CreateUserRequest): UserDetailDto
+
+    @DELETE("api/users/{id}")
+    suspend fun deleteUser(@Path("id") id: Int)
+
+    @POST("api/users/{id}/admin")
+    suspend fun setUserAdmin(@Path("id") id: Int, @Body body: SetAdminRequest)
+
+    @POST("api/users/{id}/password")
+    suspend fun adminResetPassword(@Path("id") id: Int, @Body body: AdminResetPasswordRequest)
 }

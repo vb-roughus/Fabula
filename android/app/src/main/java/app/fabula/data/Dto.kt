@@ -135,3 +135,40 @@ data class SeriesRequest(val name: String, val description: String? = null)
 
 @Serializable
 data class AssignSeriesRequest(val seriesId: Int? = null, val seriesPosition: Double? = null)
+
+// --- auth ----------------------------------------------------------------
+
+@Serializable
+data class SetupStatusDto(val needsSetup: Boolean)
+
+@Serializable
+data class AuthUserDto(val id: Int, val username: String, val isAdmin: Boolean)
+
+@Serializable
+data class AuthResponseDto(val token: String, val user: AuthUserDto)
+
+@Serializable
+data class LoginRequest(val username: String, val password: String)
+
+@Serializable
+data class SetupRequest(val username: String, val password: String)
+
+@Serializable
+data class ChangePasswordRequest(val currentPassword: String, val newPassword: String)
+
+@Serializable
+data class CreateUserRequest(val username: String, val password: String, val isAdmin: Boolean)
+
+@Serializable
+data class AdminResetPasswordRequest(val newPassword: String)
+
+@Serializable
+data class SetAdminRequest(val isAdmin: Boolean)
+
+@Serializable
+data class UserDetailDto(
+    val id: Int,
+    val username: String,
+    val isAdmin: Boolean,
+    val createdAt: String
+)

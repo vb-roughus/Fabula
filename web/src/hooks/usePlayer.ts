@@ -212,13 +212,23 @@ export function usePlayer() {
     const onHide = () => {
       if (!book) return;
       const finished = positionInBook >= durationInBook - 1;
-      navigator.sendBeacon?.(
-        `/api/progress/${book.id}`,
-        new Blob(
-          [JSON.stringify({ position: toTimeSpanString(positionInBook), finished, device: getDeviceId() })],
-          { type: 'application/json' }
-        )
-      );
+      // sendBeacon cannot attach Authorization headers, so use fetch with
+      // keepalive: true. Browsers keep the request alive past the unload
+      // even though the page is going away.
+      const token = localStorage.getItem('fabula.token');
+      fetch(`/api/progress/${book.id}`, {
+        method: 'PUT',
+        keepalive: true,
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({
+          position: toTimeSpanString(positionInBook),
+          finished,
+          device: getDeviceId()
+        })
+      }).catch(() => {});
     };
     document.addEventListener('visibilitychange', onHide);
     return () => {

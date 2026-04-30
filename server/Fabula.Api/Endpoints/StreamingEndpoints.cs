@@ -22,7 +22,7 @@ public static class StreamingEndpoints
                 contentType: contentType,
                 enableRangeProcessing: true,
                 fileDownloadName: null);
-        }).WithTags("Streaming");
+        }).WithTags("Streaming").RequireAuthorization();
 
         return app;
     }

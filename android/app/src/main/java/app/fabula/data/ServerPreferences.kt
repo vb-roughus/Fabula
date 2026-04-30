@@ -22,6 +22,16 @@ class ServerPreferences(private val context: Context) {
         context.dataStore.edit { it[BASE_URL_KEY] = url.trim() }
     }
 
+    /** Authentication token issued by /api/auth/login (or /api/setup). */
+    val authToken: Flow<String?> = context.dataStore.data.map { it[AUTH_TOKEN_KEY] }
+
+    suspend fun setAuthToken(token: String?) {
+        context.dataStore.edit { p ->
+            if (token.isNullOrBlank()) p.remove(AUTH_TOKEN_KEY)
+            else p[AUTH_TOKEN_KEY] = token
+        }
+    }
+
     val sleepRepeatEnabled: Flow<Boolean> = context.dataStore.data
         .map { it[SLEEP_REPEAT_KEY] ?: true }
 
@@ -50,5 +60,6 @@ class ServerPreferences(private val context: Context) {
         private val BASE_URL_KEY = stringPreferencesKey("base_url")
         private val SLEEP_REPEAT_KEY = booleanPreferencesKey("sleep_repeat_enabled")
         private val SLEEP_UNTIL_KEY = intPreferencesKey("sleep_repeat_until_minutes")
+        private val AUTH_TOKEN_KEY = stringPreferencesKey("auth_token")
     }
 }

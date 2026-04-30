@@ -113,3 +113,24 @@ export interface SeriesDetail {
   description: string | null;
   books: SeriesBook[];
 }
+
+// --- auth ----------------------------------------------------------------
+
+export interface AuthUser {
+  id: number;
+  username: string;
+  isAdmin: boolean;
+}
+
+export interface AuthResponse {
+  token: string;
+  user: AuthUser;
+}
+
+export interface SetupStatus {
+  needsSetup: boolean;
+}
+
+export interface UserDetail extends AuthUser {
+  createdAt: string;
+}

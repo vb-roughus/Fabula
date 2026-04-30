@@ -10,7 +10,12 @@ public static class LibraryEndpoints
 {
     public static IEndpointRouteBuilder MapLibraryEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/libraries").WithTags("Libraries");
+        // Library/folder management is admin-only -- regular users browse and
+        // play, only the operator should be able to add/remove sources or
+        // trigger scans.
+        var group = app.MapGroup("/api/libraries")
+            .WithTags("Libraries")
+            .RequireAuthorization("Admin");
 
         group.MapGet("/", async (FabulaDbContext db, CancellationToken ct) =>
             await db.LibraryFolders

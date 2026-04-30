@@ -1,3 +1,4 @@
+using Fabula.Api.Infrastructure;
 using Fabula.Core.Domain;
 using Fabula.Data;
 using Microsoft.EntityFrameworkCore;
@@ -6,12 +7,9 @@ namespace Fabula.Api.Endpoints;
 
 public static class SeriesEndpoints
 {
-    // Temporary single-user id until JWT auth lands -- mirrors ProgressEndpoints.
-    private const int TemporaryUserId = 1;
-
     public static IEndpointRouteBuilder MapSeriesEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/series").WithTags("Series");
+        var group = app.MapGroup("/api/series").WithTags("Series").RequireAuthorization();
 
         group.MapGet("/", async (FabulaDbContext db, CancellationToken ct) =>
         {
@@ -47,8 +45,9 @@ public static class SeriesEndpoints
                 .ToList();
         });
 
-        group.MapGet("/{id:int}", async (int id, FabulaDbContext db, CancellationToken ct) =>
+        group.MapGet("/{id:int}", async (int id, HttpContext http, FabulaDbContext db, CancellationToken ct) =>
         {
+            var uid = http.UserId();
             var series = await db.Series
                 .AsNoTracking()
                 .Where(s => s.Id == id)
@@ -71,7 +70,7 @@ public static class SeriesEndpoints
                     HasCover = b.CoverPath != null,
                     b.Duration,
                     Progress = db.PlaybackProgress
-                        .Where(p => p.UserId == TemporaryUserId && p.BookId == b.Id)
+                        .Where(p => p.UserId == uid && p.BookId == b.Id)
                         .Select(p => new ProgressSummaryDto(p.Position, p.Finished, p.UpdatedAt))
                         .FirstOrDefault(),
                     SortKey = b.SortTitle ?? b.Title
