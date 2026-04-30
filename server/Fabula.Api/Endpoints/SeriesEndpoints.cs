@@ -14,20 +14,38 @@ public static class SeriesEndpoints
         var group = app.MapGroup("/api/series").WithTags("Series");
 
         group.MapGet("/", async (FabulaDbContext db, CancellationToken ct) =>
-            await db.Series
+        {
+            // SQLite stores decimal as TEXT, so ORDER BY SeriesPosition would
+            // sort lexicographically ("10" < "2"). We materialise the candidate
+            // covers and pick the lowest position client-side instead.
+            var seriesRows = await db.Series
                 .AsNoTracking()
                 .OrderBy(s => s.Name)
+                .Select(s => new
+                {
+                    s.Id,
+                    s.Name,
+                    s.Description,
+                    BookCount = s.Books.Count,
+                    Covers = db.Books
+                        .Where(b => b.SeriesId == s.Id && b.CoverPath != null)
+                        .Select(b => new { b.Id, b.SeriesPosition })
+                        .ToList()
+                })
+                .ToListAsync(ct);
+
+            return seriesRows
                 .Select(s => new SeriesSummaryDto(
                     s.Id,
                     s.Name,
                     s.Description,
-                    s.Books.Count,
-                    db.Books
-                        .Where(b => b.SeriesId == s.Id && b.CoverPath != null)
-                        .OrderBy(b => b.SeriesPosition ?? 0m)
-                        .Select(b => (string?)("/api/books/" + b.Id + "/cover"))
+                    s.BookCount,
+                    s.Covers
+                        .OrderBy(c => c.SeriesPosition ?? decimal.MaxValue)
+                        .Select(c => (string?)$"/api/books/{c.Id}/cover")
                         .FirstOrDefault()))
-                .ToListAsync(ct));
+                .ToList();
+        });
 
         group.MapGet("/{id:int}", async (int id, FabulaDbContext db, CancellationToken ct) =>
         {
@@ -39,23 +57,39 @@ public static class SeriesEndpoints
 
             if (series is null) return Results.NotFound();
 
-            var books = await db.Books
+            // Materialise first, sort in memory: SQLite stores decimal as TEXT,
+            // so ORDER BY would sort positions lexicographically ("10" < "2").
+            var rows = await db.Books
                 .AsNoTracking()
                 .Where(b => b.SeriesId == id)
+                .Select(b => new
+                {
+                    b.Id,
+                    b.Title,
+                    Authors = b.Authors.Select(a => a.Name).ToList(),
+                    b.SeriesPosition,
+                    HasCover = b.CoverPath != null,
+                    b.Duration,
+                    Progress = db.PlaybackProgress
+                        .Where(p => p.UserId == TemporaryUserId && p.BookId == b.Id)
+                        .Select(p => new ProgressSummaryDto(p.Position, p.Finished, p.UpdatedAt))
+                        .FirstOrDefault(),
+                    SortKey = b.SortTitle ?? b.Title
+                })
+                .ToListAsync(ct);
+
+            var books = rows
                 .OrderBy(b => b.SeriesPosition ?? decimal.MaxValue)
-                .ThenBy(b => b.SortTitle ?? b.Title)
+                .ThenBy(b => b.SortKey, StringComparer.OrdinalIgnoreCase)
                 .Select(b => new SeriesBookDto(
                     b.Id,
                     b.Title,
-                    b.Authors.Select(a => a.Name).ToList(),
+                    b.Authors,
                     b.SeriesPosition,
-                    b.CoverPath != null ? $"/api/books/{b.Id}/cover" : null,
+                    b.HasCover ? $"/api/books/{b.Id}/cover" : null,
                     b.Duration,
-                    db.PlaybackProgress
-                        .Where(p => p.UserId == TemporaryUserId && p.BookId == b.Id)
-                        .Select(p => new ProgressSummaryDto(p.Position, p.Finished, p.UpdatedAt))
-                        .FirstOrDefault()))
-                .ToListAsync(ct);
+                    b.Progress))
+                .ToList();
 
             return Results.Ok(new SeriesDetailDto(series.Id, series.Name, series.Description, books));
         });
@@ -93,11 +127,15 @@ public static class SeriesEndpoints
             await db.SaveChangesAsync(ct);
 
             var count = await db.Books.CountAsync(b => b.SeriesId == id, ct);
-            var coverUrl = await db.Books
+            // Decimal-as-TEXT sort would be lexicographic; pick lowest position client-side.
+            var covers = await db.Books
                 .Where(b => b.SeriesId == id && b.CoverPath != null)
-                .OrderBy(b => b.SeriesPosition ?? 0m)
-                .Select(b => (string?)("/api/books/" + b.Id + "/cover"))
-                .FirstOrDefaultAsync(ct);
+                .Select(b => new { b.Id, b.SeriesPosition })
+                .ToListAsync(ct);
+            var coverUrl = covers
+                .OrderBy(c => c.SeriesPosition ?? decimal.MaxValue)
+                .Select(c => (string?)$"/api/books/{c.Id}/cover")
+                .FirstOrDefault();
             return Results.Ok(new SeriesSummaryDto(series.Id, series.Name, series.Description, count, coverUrl));
         });
 

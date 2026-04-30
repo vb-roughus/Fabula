@@ -48,14 +48,31 @@ public class LibraryRepository(FabulaDbContext db) : ILibraryRepository
 
         if (!string.IsNullOrWhiteSpace(seriesName))
         {
-            book.Series = await ResolveSeriesAsync(seriesName, cancellationToken);
-            book.SeriesPosition = seriesPosition;
+            var previousSeriesName = book.Series?.Name;
+            var resolvedSeries = await ResolveSeriesAsync(seriesName, cancellationToken);
+            var seriesChanged = !string.Equals(previousSeriesName, resolvedSeries.Name, StringComparison.Ordinal);
+            book.Series = resolvedSeries;
+
+            // Preserve a user's manual override on rescan, but only while the book
+            // stays in the same series -- moving a book to another series resets
+            // the override since the old position number is no longer meaningful.
+            if (book.SeriesPositionManuallySet && !seriesChanged)
+            {
+                // Keep book.SeriesPosition as-is.
+            }
+            else
+            {
+                book.SeriesPositionManuallySet = false;
+                book.SeriesPosition = seriesPosition
+                    ?? await NextSeriesPositionAsync(resolvedSeries, book.Id, cancellationToken);
+            }
         }
         else
         {
             book.Series = null;
             book.SeriesId = null;
             book.SeriesPosition = null;
+            book.SeriesPositionManuallySet = false;
         }
 
         if (book.Id == 0)
@@ -151,5 +168,25 @@ public class LibraryRepository(FabulaDbContext db) : ILibraryRepository
             db.Series.Add(series);
         }
         return series;
+    }
+
+    /// <summary>
+    /// Picks the next free integer position for a book that's about to join
+    /// <paramref name="series"/>. SQLite stores decimal as TEXT, so the max is
+    /// computed in memory after materialising existing positions. Brand-new
+    /// series (still pending an INSERT) get position 1.
+    /// </summary>
+    private async Task<decimal> NextSeriesPositionAsync(Series series, int bookId, CancellationToken ct)
+    {
+        if (series.Id == 0)
+            return 1m;
+
+        var positions = await db.Books
+            .Where(b => b.SeriesId == series.Id && b.Id != bookId && b.SeriesPosition != null)
+            .Select(b => b.SeriesPosition!.Value)
+            .ToListAsync(ct);
+
+        if (positions.Count == 0) return 1m;
+        return Math.Floor(positions.Max()) + 1m;
     }
 }

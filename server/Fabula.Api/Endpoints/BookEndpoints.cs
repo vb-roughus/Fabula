@@ -112,13 +112,31 @@ public static class BookEndpoints
                 if (!await db.Series.AnyAsync(s => s.Id == seriesId, ct))
                     return Results.BadRequest(new { error = $"Series {seriesId} does not exist." });
 
+                var seriesChanged = book.SeriesId != seriesId;
                 book.SeriesId = seriesId;
-                book.SeriesPosition = req.SeriesPosition;
+
+                if (req.SeriesPosition is decimal explicitPosition)
+                {
+                    book.SeriesPosition = explicitPosition;
+                    book.SeriesPositionManuallySet = true;
+                }
+                else if (seriesChanged || book.SeriesPosition is null)
+                {
+                    // No explicit position: auto-assign next free slot.
+                    // Sort/aggregate in memory because SeriesPosition is TEXT in SQLite.
+                    var positions = await db.Books
+                        .Where(b => b.SeriesId == seriesId && b.Id != id && b.SeriesPosition != null)
+                        .Select(b => b.SeriesPosition!.Value)
+                        .ToListAsync(ct);
+                    book.SeriesPosition = positions.Count == 0 ? 1m : Math.Floor(positions.Max()) + 1m;
+                    book.SeriesPositionManuallySet = false;
+                }
             }
             else
             {
                 book.SeriesId = null;
                 book.SeriesPosition = null;
+                book.SeriesPositionManuallySet = false;
             }
 
             await db.SaveChangesAsync(ct);
