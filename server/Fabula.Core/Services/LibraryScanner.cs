@@ -266,7 +266,7 @@ public class LibraryScanner(
     /// "2024 Edition 028 - Title" still resolves to 28 instead of 2024.
     /// Accepts "1", "01", "012", "12.5", "12,5".
     /// </summary>
-    internal static decimal? ExtractPositionFromName(string? name)
+    public static decimal? ExtractPositionFromName(string? name)
     {
         if (string.IsNullOrWhiteSpace(name)) return null;
         var matches = PositionInName.Matches(name);

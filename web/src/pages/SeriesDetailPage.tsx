@@ -1,15 +1,25 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../api/client';
 
 export function SeriesDetailPage() {
   const { id } = useParams<{ id: string }>();
   const seriesId = Number(id);
+  const qc = useQueryClient();
 
   const { data: series, isLoading, isError, error } = useQuery({
     queryKey: ['series', seriesId],
     queryFn: () => api.getSeries(seriesId),
     enabled: Number.isFinite(seriesId)
+  });
+
+  const reorder = useMutation({
+    mutationFn: () => api.reorderSeries(seriesId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['series', seriesId] });
+      qc.invalidateQueries({ queryKey: ['series'] });
+      qc.invalidateQueries({ queryKey: ['books'] });
+    }
   });
 
   if (isLoading) return <div className="p-6 text-ink-400">Lade...</div>;
@@ -27,9 +37,35 @@ export function SeriesDetailPage() {
       )}
 
       <section className="mt-6">
-        <h2 className="text-lg font-semibold mb-3">
-          Hörbücher ({series.books.length})
-        </h2>
+        <div className="flex items-baseline justify-between gap-3 mb-3 flex-wrap">
+          <h2 className="text-lg font-semibold">
+            Hörbücher ({series.books.length})
+          </h2>
+          {series.books.length > 0 && (
+            <div className="flex items-center gap-3">
+              {reorder.isSuccess && !reorder.isPending && (
+                <span className="text-ink-400 text-xs">
+                  {reorder.data.updated > 0
+                    ? `${reorder.data.updated} aktualisiert`
+                    : 'Bereits aktuell'}
+                </span>
+              )}
+              <button
+                onClick={() => reorder.mutate()}
+                disabled={reorder.isPending}
+                title="Positionen aus den Ordnernamen neu ableiten (manuelle Werte bleiben erhalten)."
+                className="text-sm px-3 py-1.5 rounded bg-ink-700 hover:bg-ink-600 disabled:bg-ink-800 disabled:text-ink-500"
+              >
+                {reorder.isPending ? 'Berechnet...' : 'Reihenfolge neu berechnen'}
+              </button>
+            </div>
+          )}
+        </div>
+        {reorder.isError && (
+          <div className="text-red-400 text-sm mb-3">
+            {(reorder.error as Error).message}
+          </div>
+        )}
         {series.books.length === 0 && (
           <div className="text-ink-400 text-sm">
             Noch keine Hörbücher zugeordnet. Zuweisung erfolgt auf der Detailseite eines Hörbuchs.
