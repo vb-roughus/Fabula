@@ -1,5 +1,6 @@
 using Fabula.Api.Infrastructure;
 using Fabula.Core.Domain;
+using Fabula.Core.Services;
 using Fabula.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -145,6 +146,71 @@ public static class SeriesEndpoints
             db.Series.Remove(series);
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
+        });
+
+        // Re-derives SeriesPosition for every book in the series from the
+        // current folder name. Cheaper than a full library scan because we
+        // never touch the audio files -- the folder paths are already in the
+        // DB. Manual overrides (SeriesPositionManuallySet) are preserved.
+        group.MapPost("/{id:int}/reorder", async (int id, FabulaDbContext db, CancellationToken ct) =>
+        {
+            if (!await db.Series.AnyAsync(s => s.Id == id, ct))
+                return Results.NotFound();
+
+            var books = await db.Books
+                .Include(b => b.Files)
+                .Where(b => b.SeriesId == id)
+                .ToListAsync(ct);
+
+            var derived = new Dictionary<int, decimal?>(books.Count);
+            foreach (var b in books)
+            {
+                if (b.SeriesPositionManuallySet)
+                    continue;
+
+                var anyFile = b.Files.OrderBy(f => f.TrackIndex).FirstOrDefault();
+                var bookDir = anyFile is null ? null : Path.GetDirectoryName(anyFile.Path);
+                derived[b.Id] = LibraryScanner.ExtractPositionFromName(
+                    bookDir is null ? null : Path.GetFileName(bookDir));
+            }
+
+            // Fill gaps deterministically: books without a derived position
+            // (and without a manual override) get the next free integer,
+            // ordered alphabetically by sort title for stability.
+            var taken = new HashSet<decimal>(
+                books
+                    .Where(b => b.SeriesPositionManuallySet && b.SeriesPosition is not null)
+                    .Select(b => b.SeriesPosition!.Value)
+                    .Concat(derived.Values.Where(p => p is not null).Select(p => p!.Value)));
+
+            var next = taken.Count == 0 ? 1m : Math.Floor(taken.Max()) + 1m;
+            var fillers = books
+                .Where(b => !b.SeriesPositionManuallySet && derived[b.Id] is null)
+                .OrderBy(b => b.SortTitle ?? b.Title, StringComparer.OrdinalIgnoreCase);
+            foreach (var b in fillers)
+            {
+                while (taken.Contains(next)) next += 1m;
+                derived[b.Id] = next;
+                taken.Add(next);
+                next += 1m;
+            }
+
+            int updated = 0;
+            foreach (var b in books)
+            {
+                if (b.SeriesPositionManuallySet) continue;
+                var newPos = derived[b.Id];
+                if (b.SeriesPosition != newPos)
+                {
+                    b.SeriesPosition = newPos;
+                    updated++;
+                }
+            }
+
+            if (updated > 0)
+                await db.SaveChangesAsync(ct);
+
+            return Results.Ok(new { updated });
         });
 
         return app;

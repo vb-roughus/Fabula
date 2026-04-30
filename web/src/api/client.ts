@@ -168,6 +168,9 @@ export const api = {
   deleteSeries: (id: number) =>
     request<void>(`/api/series/${id}`, { method: 'DELETE' }),
 
+  reorderSeries: (id: number) =>
+    request<{ updated: number }>(`/api/series/${id}/reorder`, { method: 'POST' }),
+
   getProgress: (bookId: number) => request<Progress>(`/api/progress/${bookId}`),
 
   saveProgress: (bookId: number, position: string, finished: boolean, device: string) =>
