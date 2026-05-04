@@ -27,8 +27,10 @@ import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.LibraryBooks
+import androidx.compose.material.icons.outlined.RemoveDone
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -72,6 +74,7 @@ import app.fabula.data.ChapterDto
 import app.fabula.data.CreateBookmarkRequest
 import app.fabula.data.FabulaRepository
 import app.fabula.data.SeriesSummaryDto
+import app.fabula.data.SetFinishedRequest
 import app.fabula.data.formatClock
 import app.fabula.data.formatDurationHuman
 import app.fabula.data.parseTimeSpan
@@ -232,6 +235,42 @@ fun BookScreen(
                                 onClick = {
                                     moreMenuOpen = false
                                     bookmarkManagerOpen = true
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        if (book?.progress?.finished == true) "Als ungehört markieren"
+                                        else "Als gehört markieren"
+                                    )
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        if (book?.progress?.finished == true)
+                                            Icons.Outlined.RemoveDone
+                                        else Icons.Filled.DoneAll,
+                                        contentDescription = null
+                                    )
+                                },
+                                onClick = {
+                                    moreMenuOpen = false
+                                    val current = book ?: return@DropdownMenuItem
+                                    val next = current.progress?.finished != true
+                                    scope.launch {
+                                        runCatching {
+                                            val api = repository.apiOrNull() ?: return@runCatching
+                                            api.setFinished(
+                                                current.id,
+                                                SetFinishedRequest(next, repository.deviceId())
+                                            )
+                                        }
+                                        // Refresh the book so the menu label
+                                        // and any inline progress UI update.
+                                        runCatching {
+                                            val api = repository.apiOrNull() ?: return@runCatching
+                                            book = api.getBook(current.id)
+                                        }
+                                    }
                                 }
                             )
                             DropdownMenuItem(

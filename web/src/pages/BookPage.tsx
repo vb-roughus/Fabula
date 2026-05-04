@@ -63,6 +63,14 @@ export function BookPage() {
     }
   });
 
+  const finishedMutation = useMutation({
+    mutationFn: (next: boolean) => api.setFinished(bookId, next, 'web'),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['book', bookId] });
+      qc.invalidateQueries({ queryKey: ['books'] });
+    }
+  });
+
   const startEditSeries = () => {
     if (!book) return;
     setSelectedSeriesId(book.seriesId != null ? String(book.seriesId) : '');
@@ -187,12 +195,27 @@ export function BookPage() {
             {book.publisher && <span>· {book.publisher}</span>}
           </div>
 
-          <button
-            onClick={play}
-            className="mt-6 bg-accent-500 hover:bg-accent-600 text-ink-900 font-medium px-6 py-2 rounded-lg"
-          >
-            {state.book?.id === book.id && state.isPlaying ? 'Wird abgespielt' : 'Abspielen'}
-          </button>
+          <div className="mt-6 flex flex-wrap gap-3 items-center">
+            <button
+              onClick={play}
+              className="bg-accent-500 hover:bg-accent-600 text-ink-900 font-medium px-6 py-2 rounded-lg"
+            >
+              {state.book?.id === book.id && state.isPlaying ? 'Wird abgespielt' : 'Abspielen'}
+            </button>
+            <button
+              disabled={finishedMutation.isPending}
+              onClick={() => finishedMutation.mutate(!book.progress?.finished)}
+              className="px-4 py-2 rounded-lg bg-ink-700 hover:bg-ink-600 disabled:opacity-60 text-sm"
+              title={book.progress?.finished
+                ? 'Markierung aufheben (setzt den Fortschritt zurück)'
+                : 'Als gehört markieren (setzt den Fortschritt auf das Ende)'}
+            >
+              {book.progress?.finished ? 'Als ungehört markieren' : 'Als gehört markieren'}
+            </button>
+            {book.progress?.finished && (
+              <span className="text-accent-400 text-sm">✓ Bereits gehört</span>
+            )}
+          </div>
 
           {book.description && (
             <p className="text-ink-300 mt-6 leading-relaxed whitespace-pre-wrap">{book.description}</p>

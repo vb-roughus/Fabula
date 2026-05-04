@@ -179,6 +179,12 @@ export const api = {
       body: JSON.stringify({ position, finished, device })
     }),
 
+  setFinished: (bookId: number, finished: boolean, device: string) =>
+    request<Progress>(`/api/progress/${bookId}/finished`, {
+      method: 'POST',
+      body: JSON.stringify({ finished, device })
+    }),
+
   listBookmarks: (bookId: number) =>
     request<Bookmark[]>(`/api/books/${bookId}/bookmarks`),
 

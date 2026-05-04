@@ -88,6 +88,12 @@ data class UpdateProgressRequest(
 )
 
 @Serializable
+data class SetFinishedRequest(
+    val finished: Boolean,
+    val device: String
+)
+
+@Serializable
 data class SeriesSummaryDto(
     val id: Int,
     val name: String,

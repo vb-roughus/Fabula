@@ -54,9 +54,42 @@ public static class ProgressEndpoints
             return Results.Ok(new ProgressDto(p.BookId, p.Position, p.Finished, p.UpdatedAt, p.LastDevice));
         });
 
+        // Convenience endpoint for "mark as already heard" / "mark as
+        // unheard" in the clients. Sets the position to the book's full
+        // duration when finishing, or back to zero when un-finishing, so the
+        // progress bar in the library reflects the new state.
+        group.MapPost("/{bookId:int}/finished", async (
+            int bookId,
+            SetFinishedRequest req,
+            HttpContext http,
+            FabulaDbContext db,
+            CancellationToken ct) =>
+        {
+            var book = await db.Books.AsNoTracking().FirstOrDefaultAsync(b => b.Id == bookId, ct);
+            if (book is null) return Results.NotFound();
+
+            var uid = http.UserId();
+            var p = await db.PlaybackProgress
+                .FirstOrDefaultAsync(x => x.UserId == uid && x.BookId == bookId, ct);
+            if (p is null)
+            {
+                p = new PlaybackProgress { UserId = uid, BookId = bookId };
+                db.PlaybackProgress.Add(p);
+            }
+
+            p.Finished = req.Finished;
+            p.Position = req.Finished ? book.Duration : TimeSpan.Zero;
+            p.LastDevice = req.Device;
+            p.UpdatedAt = DateTime.UtcNow;
+
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(new ProgressDto(p.BookId, p.Position, p.Finished, p.UpdatedAt, p.LastDevice));
+        });
+
         return app;
     }
 }
 
 public record ProgressDto(int BookId, TimeSpan Position, bool Finished, DateTime? UpdatedAt, string? Device);
 public record UpdateProgressRequest(TimeSpan Position, bool Finished, string? Device);
+public record SetFinishedRequest(bool Finished, string? Device);
