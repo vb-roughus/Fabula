@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.Home
@@ -304,6 +305,18 @@ fun Navigation(
                     return if (f < 0 || t < 0) 0 else (t - f)
                 }
 
+                // Slide a *short* horizontal distance (1/4 of the screen) and
+                // cross-fade in parallel. The fade hides the inevitable
+                // first-composition spike of the destination tab (LazyColumn
+                // measure pass, Coil cover loads, API LaunchedEffect kick-off)
+                // -- a long pure slide showed those frames as a stutter at
+                // the start of the motion. Same trick we use for the
+                // MiniPlayer -> FullPlayer transition.
+                val tabSlideEnter = tween<IntOffset>(durationMillis = 280, easing = FastOutSlowInEasing)
+                val tabSlideExit  = tween<IntOffset>(durationMillis = 220, easing = FastOutLinearInEasing)
+                val tabFadeEnter  = tween<Float>(durationMillis = 220)
+                val tabFadeExit   = tween<Float>(durationMillis = 160)
+
                 NavHost(
                     navController = navController,
                     startDestination = startRoute,
@@ -311,33 +324,33 @@ fun Navigation(
                     enterTransition = {
                         val dir = tabDirection(initialState.destination.route, targetState.destination.route)
                         when {
-                            dir > 0 -> slideInHorizontally(initialOffsetX = { it })
-                            dir < 0 -> slideInHorizontally(initialOffsetX = { -it })
-                            else -> fadeIn()
+                            dir > 0 -> slideInHorizontally(tabSlideEnter) { it / 4 } + fadeIn(tabFadeEnter)
+                            dir < 0 -> slideInHorizontally(tabSlideEnter) { -it / 4 } + fadeIn(tabFadeEnter)
+                            else -> fadeIn(tabFadeEnter)
                         }
                     },
                     exitTransition = {
                         val dir = tabDirection(initialState.destination.route, targetState.destination.route)
                         when {
-                            dir > 0 -> slideOutHorizontally(targetOffsetX = { -it })
-                            dir < 0 -> slideOutHorizontally(targetOffsetX = { it })
-                            else -> fadeOut()
+                            dir > 0 -> slideOutHorizontally(tabSlideExit) { -it / 4 } + fadeOut(tabFadeExit)
+                            dir < 0 -> slideOutHorizontally(tabSlideExit) { it / 4 } + fadeOut(tabFadeExit)
+                            else -> fadeOut(tabFadeExit)
                         }
                     },
                     popEnterTransition = {
                         val dir = tabDirection(initialState.destination.route, targetState.destination.route)
                         when {
-                            dir > 0 -> slideInHorizontally(initialOffsetX = { it })
-                            dir < 0 -> slideInHorizontally(initialOffsetX = { -it })
-                            else -> fadeIn()
+                            dir > 0 -> slideInHorizontally(tabSlideEnter) { it / 4 } + fadeIn(tabFadeEnter)
+                            dir < 0 -> slideInHorizontally(tabSlideEnter) { -it / 4 } + fadeIn(tabFadeEnter)
+                            else -> fadeIn(tabFadeEnter)
                         }
                     },
                     popExitTransition = {
                         val dir = tabDirection(initialState.destination.route, targetState.destination.route)
                         when {
-                            dir > 0 -> slideOutHorizontally(targetOffsetX = { -it })
-                            dir < 0 -> slideOutHorizontally(targetOffsetX = { it })
-                            else -> fadeOut()
+                            dir > 0 -> slideOutHorizontally(tabSlideExit) { -it / 4 } + fadeOut(tabFadeExit)
+                            dir < 0 -> slideOutHorizontally(tabSlideExit) { it / 4 } + fadeOut(tabFadeExit)
+                            else -> fadeOut(tabFadeExit)
                         }
                     }
                 ) {
