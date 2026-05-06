@@ -5,14 +5,15 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -26,7 +27,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -36,6 +36,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -44,6 +45,8 @@ import app.fabula.data.FabulaRepository
 import app.fabula.data.parseTimeSpan
 import app.fabula.ui.LocalContentBottomInset
 import coil3.compose.AsyncImage
+
+private val TileWidth = 140.dp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -71,12 +74,12 @@ fun HomeScreen(
     val continueListening = books
         ?.filter { it.progress != null && !it.progress.finished && parseTimeSpan(it.progress.position) > 1.0 }
         ?.sortedByDescending { it.progress?.updatedAt ?: "" }
-        ?.take(10)
+        ?.take(15)
         ?: emptyList()
 
     val recentlyAdded = books
         ?.sortedByDescending { it.id }
-        ?.take(10)
+        ?.take(15)
         ?: emptyList()
 
     Scaffold(
@@ -111,21 +114,25 @@ fun HomeScreen(
                     )
                 ) {
                     if (continueListening.isNotEmpty()) {
-                        item {
-                            SectionHeader("Weiter hören")
+                        item("h-continue") { SectionHeader("Weiter hören") }
+                        item("r-continue") {
+                            BookTilesRow(
+                                books = continueListening,
+                                repository = repository,
+                                onBookClick = onBookClick
+                            )
                         }
-                        items(items = continueListening, key = { it.id }) { book ->
-                            BookRow(book = book, repository = repository, onClick = { onBookClick(book.id) })
-                        }
-                        item { Spacer(Modifier.height(16.dp)) }
                     }
 
                     if (recentlyAdded.isNotEmpty()) {
-                        item {
-                            SectionHeader("Zuletzt hinzugefügt")
-                        }
-                        items(items = recentlyAdded, key = { "added-${it.id}" }) { book ->
-                            BookRow(book = book, repository = repository, onClick = { onBookClick(book.id) })
+                        item("h-added") { SectionHeader("Zuletzt hinzugefügt") }
+                        item("r-added") {
+                            BookTilesRow(
+                                books = recentlyAdded,
+                                repository = repository,
+                                onBookClick = onBookClick,
+                                keyPrefix = "added"
+                            )
                         }
                     }
                 }
@@ -140,12 +147,33 @@ private fun SectionHeader(title: String) {
         text = title,
         style = MaterialTheme.typography.titleLarge,
         fontWeight = FontWeight.Bold,
-        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp)
+        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp)
     )
 }
 
 @Composable
-private fun BookRow(
+private fun BookTilesRow(
+    books: List<BookSummaryDto>,
+    repository: FabulaRepository,
+    onBookClick: (Int) -> Unit,
+    keyPrefix: String = "tile"
+) {
+    LazyRow(
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        items(items = books, key = { "$keyPrefix-${it.id}" }) { book ->
+            BookTile(
+                book = book,
+                repository = repository,
+                onClick = { onBookClick(book.id) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun BookTile(
     book: BookSummaryDto,
     repository: FabulaRepository,
     onClick: () -> Unit
@@ -153,19 +181,19 @@ private fun BookRow(
     val durationSec = parseTimeSpan(book.duration)
     val positionSec = book.progress?.let { parseTimeSpan(it.position) } ?: 0.0
     val pct = if (durationSec > 0) (positionSec / durationSec).toFloat().coerceIn(0f, 1f) else 0f
-    val started = positionSec > 1.0
+    val started = positionSec > 1.0 && book.progress?.finished != true
+    val finished = book.progress?.finished == true
 
-    Row(
+    Column(
         modifier = Modifier
-            .fillMaxWidth()
+            .width(TileWidth)
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
             modifier = Modifier
-                .size(64.dp)
-                .clip(RoundedCornerShape(4.dp))
+                .fillMaxWidth()
+                .aspectRatio(1f)
+                .clip(RoundedCornerShape(8.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant)
         ) {
             repository.coverUrl(book)?.let { url ->
@@ -173,42 +201,55 @@ private fun BookRow(
                     model = url,
                     contentDescription = book.title,
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.size(64.dp)
+                    modifier = Modifier.fillMaxSize()
                 )
             }
-        }
-        Spacer(Modifier.size(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                book.title,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1
-            )
-            if (book.authors.isNotEmpty()) {
+
+            if (finished) {
                 Text(
-                    book.authors.joinToString(", "),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.outline,
-                    maxLines = 1
+                    "FERTIG",
+                    color = MaterialTheme.colorScheme.onPrimary,
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(6.dp)
+                        .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp))
+                        .padding(horizontal = 4.dp, vertical = 2.dp)
                 )
             }
+
             if (started) {
-                Spacer(Modifier.size(4.dp))
                 Box(
                     modifier = Modifier
+                        .align(Alignment.BottomStart)
                         .fillMaxWidth()
-                        .height(2.dp)
-                        .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(1.dp))
+                        .height(3.dp)
+                        .background(MaterialTheme.colorScheme.background.copy(alpha = 0.6f))
                 ) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth(pct)
-                            .height(2.dp)
-                            .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(1.dp))
+                            .height(3.dp)
+                            .background(MaterialTheme.colorScheme.primary)
                     )
                 }
             }
+        }
+
+        Spacer(Modifier.height(6.dp))
+        Text(
+            book.title,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Medium,
+            maxLines = 2
+        )
+        if (book.authors.isNotEmpty()) {
+            Text(
+                book.authors.joinToString(", "),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.outline,
+                maxLines = 1
+            )
         }
     }
 }
