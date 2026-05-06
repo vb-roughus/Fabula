@@ -1,7 +1,10 @@
+export type LibraryType = 'Audiobook' | 'RadioPlay';
+
 export interface LibraryFolder {
   id: number;
   name: string;
   path: string;
+  type: LibraryType;
   lastScanAt: string | null;
 }
 
@@ -16,6 +19,7 @@ export interface BookSummary {
   seriesPosition: number | null;
   duration: string; // "HH:MM:SS" TimeSpan
   coverUrl: string | null;
+  type: LibraryType;
   progress: ProgressSummary | null;
 }
 
@@ -35,6 +39,11 @@ export interface BookDetail extends BookSummary {
   chapters: Chapter[];
   files: AudioFileInfo[];
 }
+
+export const LIBRARY_TYPE_LABEL: Record<LibraryType, string> = {
+  Audiobook: 'Hörbücher',
+  RadioPlay: 'Hörspiele'
+};
 
 export interface Chapter {
   index: number;

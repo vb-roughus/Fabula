@@ -19,7 +19,7 @@ public static class LibraryEndpoints
 
         group.MapGet("/", async (FabulaDbContext db, CancellationToken ct) =>
             await db.LibraryFolders
-                .Select(f => new LibraryFolderDto(f.Id, f.Name, f.Path, f.LastScanAt))
+                .Select(f => new LibraryFolderDto(f.Id, f.Name, f.Path, f.Type, f.LastScanAt))
                 .ToListAsync(ct));
 
         group.MapPost("/", async (FabulaDbContext db, CreateLibraryFolderRequest req, CancellationToken ct) =>
@@ -31,11 +31,28 @@ public static class LibraryEndpoints
             if (!ok)
                 return Results.BadRequest(new { error });
 
-            var folder = new LibraryFolder { Name = req.Name, Path = req.Path };
+            var folder = new LibraryFolder
+            {
+                Name = req.Name,
+                Path = req.Path,
+                Type = req.Type ?? LibraryType.Audiobook
+            };
             db.LibraryFolders.Add(folder);
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/libraries/{folder.Id}",
-                new LibraryFolderDto(folder.Id, folder.Name, folder.Path, folder.LastScanAt));
+                new LibraryFolderDto(folder.Id, folder.Name, folder.Path, folder.Type, folder.LastScanAt));
+        });
+
+        group.MapPatch("/{id:int}", async (int id, FabulaDbContext db, UpdateLibraryFolderRequest req, CancellationToken ct) =>
+        {
+            var folder = await db.LibraryFolders.FindAsync([id], ct);
+            if (folder is null) return Results.NotFound();
+
+            if (req.Name is { } name && !string.IsNullOrWhiteSpace(name)) folder.Name = name.Trim();
+            if (req.Type is { } type) folder.Type = type;
+
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(new LibraryFolderDto(folder.Id, folder.Name, folder.Path, folder.Type, folder.LastScanAt));
         });
 
         // Kick off the scan in the background and return immediately so the
@@ -132,5 +149,6 @@ public static class LibraryEndpoints
     }
 }
 
-public record LibraryFolderDto(int Id, string Name, string Path, DateTime? LastScanAt);
-public record CreateLibraryFolderRequest(string Name, string Path);
+public record LibraryFolderDto(int Id, string Name, string Path, LibraryType Type, DateTime? LastScanAt);
+public record CreateLibraryFolderRequest(string Name, string Path, LibraryType? Type);
+public record UpdateLibraryFolderRequest(string? Name, LibraryType? Type);

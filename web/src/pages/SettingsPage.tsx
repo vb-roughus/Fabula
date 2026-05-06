@@ -1,12 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import type { LibraryFolder, ScanStatus } from '../api/types';
+import type { LibraryFolder, LibraryType, ScanStatus } from '../api/types';
+import { LIBRARY_TYPE_LABEL } from '../api/types';
 
 export function SettingsPage() {
   const qc = useQueryClient();
   const [name, setName] = useState('');
   const [path, setPath] = useState('');
+  const [type, setType] = useState<LibraryType>('Audiobook');
 
   const { data: libraries, isLoading } = useQuery({
     queryKey: ['libraries'],
@@ -14,11 +16,21 @@ export function SettingsPage() {
   });
 
   const createMutation = useMutation({
-    mutationFn: () => api.createLibrary(name.trim(), path.trim()),
+    mutationFn: () => api.createLibrary(name.trim(), path.trim(), type),
     onSuccess: () => {
       setName('');
       setPath('');
+      setType('Audiobook');
       qc.invalidateQueries({ queryKey: ['libraries'] });
+    }
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: (args: { id: number; type: LibraryType }) =>
+      api.updateLibrary(args.id, { type: args.type }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['libraries'] });
+      qc.invalidateQueries({ queryKey: ['books'] });
     }
   });
 
@@ -49,6 +61,14 @@ export function SettingsPage() {
             onChange={(e) => setPath(e.target.value)}
             className="bg-ink-900 ring-1 ring-ink-600 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-accent-500"
           />
+          <select
+            value={type}
+            onChange={(e) => setType(e.target.value as LibraryType)}
+            className="bg-ink-900 ring-1 ring-ink-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-accent-500"
+          >
+            <option value="Audiobook">Hörbücher</option>
+            <option value="RadioPlay">Hörspiele</option>
+          </select>
           <button
             disabled={createMutation.isPending || !name.trim() || !path.trim()}
             onClick={() => createMutation.mutate()}
@@ -71,6 +91,7 @@ export function SettingsPage() {
             <LibraryRow
               key={lib.id}
               lib={lib}
+              onChangeType={(t) => updateMutation.mutate({ id: lib.id, type: t })}
               onDelete={() => {
                 if (confirm(`Bibliothek "${lib.name}" wirklich entfernen?`)) deleteMutation.mutate(lib.id);
               }}
@@ -82,7 +103,15 @@ export function SettingsPage() {
   );
 }
 
-function LibraryRow({ lib, onDelete }: { lib: LibraryFolder; onDelete: () => void }) {
+function LibraryRow({
+  lib,
+  onChangeType,
+  onDelete
+}: {
+  lib: LibraryFolder;
+  onChangeType: (type: LibraryType) => void;
+  onDelete: () => void;
+}) {
   const qc = useQueryClient();
 
   const { data: status } = useQuery({
@@ -118,12 +147,22 @@ function LibraryRow({ lib, onDelete }: { lib: LibraryFolder; onDelete: () => voi
         <div className="flex-1 min-w-0">
           <div className="font-medium">{lib.name}</div>
           <div className="text-ink-400 text-xs font-mono truncate">{lib.path}</div>
+          <div className="text-ink-400 text-xs mt-1">{LIBRARY_TYPE_LABEL[lib.type]}</div>
           {lib.lastScanAt && (
             <div className="text-ink-400 text-xs mt-1">
               Zuletzt gescannt: {new Date(lib.lastScanAt).toLocaleString()}
             </div>
           )}
         </div>
+        <select
+          value={lib.type}
+          onChange={(e) => onChangeType(e.target.value as LibraryType)}
+          className="bg-ink-900 ring-1 ring-ink-600 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-accent-500"
+          title="Typ ändern"
+        >
+          <option value="Audiobook">Hörbücher</option>
+          <option value="RadioPlay">Hörspiele</option>
+        </select>
         <button
           disabled={isRunning}
           onClick={() => scanMutation.mutate()}

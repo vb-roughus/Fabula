@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -41,6 +42,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.fabula.data.BookSummaryDto
 import app.fabula.data.FabulaRepository
+import app.fabula.data.LibraryType
 import app.fabula.data.formatDurationHuman
 import app.fabula.data.parseTimeSpan
 import app.fabula.ui.LocalContentBottomInset
@@ -61,6 +63,7 @@ fun LibraryScreen(
     onBookClick: (Int) -> Unit
 ) {
     var state by remember { mutableStateOf<LibraryState>(LibraryState.Loading) }
+    var filter by remember { mutableStateOf<LibraryType?>(null) }
 
     LaunchedEffect(Unit) {
         state = try {
@@ -90,24 +93,71 @@ fun LibraryScreen(
         containerColor = Color.Transparent,
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0.dp)
     ) { insets ->
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(insets),
-            contentAlignment = Alignment.Center
+                .padding(insets)
         ) {
-            when (val s = state) {
-                LibraryState.Loading -> CircularProgressIndicator()
-                is LibraryState.Error -> Text(s.message, color = MaterialTheme.colorScheme.error)
-                is LibraryState.Loaded -> {
-                    if (s.books.isEmpty()) {
-                        Text("Noch keine Hörbücher. Lege eine Bibliothek auf dem Server an und starte einen Scan.")
-                    } else {
-                        BookGrid(books = s.books, repository = repository, onClick = onBookClick)
+            FilterChipsRow(filter = filter, onFilterChange = { filter = it })
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                when (val s = state) {
+                    LibraryState.Loading -> CircularProgressIndicator()
+                    is LibraryState.Error -> Text(s.message, color = MaterialTheme.colorScheme.error)
+                    is LibraryState.Loaded -> {
+                        val visible = if (filter == null) s.books else s.books.filter { it.type == filter }
+                        when {
+                            s.books.isEmpty() -> Text(
+                                "Noch nichts in der Bibliothek. Lege eine Bibliothek auf dem Server an und starte einen Scan."
+                            )
+                            visible.isEmpty() -> Text(
+                                "In dieser Kategorie ist noch nichts vorhanden.",
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                            else -> BookGrid(books = visible, repository = repository, onClick = onBookClick)
+                        }
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun FilterChipsRow(
+    filter: LibraryType?,
+    onFilterChange: (LibraryType?) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        FilterChipPill(label = "Alle", active = filter == null) { onFilterChange(null) }
+        FilterChipPill(label = "Hörbücher", active = filter == LibraryType.Audiobook) {
+            onFilterChange(LibraryType.Audiobook)
+        }
+        FilterChipPill(label = "Hörspiele", active = filter == LibraryType.RadioPlay) {
+            onFilterChange(LibraryType.RadioPlay)
+        }
+    }
+}
+
+@Composable
+private fun FilterChipPill(label: String, active: Boolean, onClick: () -> Unit) {
+    val bg = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface
+    val fg = if (active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(bg)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 6.dp)
+    ) {
+        Text(label, style = MaterialTheme.typography.labelLarge, color = fg)
     }
 }
 

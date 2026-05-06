@@ -5,6 +5,7 @@ import type {
   BookSummary,
   Bookmark,
   LibraryFolder,
+  LibraryType,
   PagedResult,
   Progress,
   ScanStatus,
@@ -117,10 +118,16 @@ export const api = {
   // --- libraries / scanning -----------------------------------------------
   listLibraries: () => request<LibraryFolder[]>('/api/libraries'),
 
-  createLibrary: (name: string, path: string) =>
+  createLibrary: (name: string, path: string, type: LibraryType = 'Audiobook') =>
     request<LibraryFolder>('/api/libraries', {
       method: 'POST',
-      body: JSON.stringify({ name, path })
+      body: JSON.stringify({ name, path, type })
+    }),
+
+  updateLibrary: (id: number, payload: { name?: string; type?: LibraryType }) =>
+    request<LibraryFolder>(`/api/libraries/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload)
     }),
 
   scanLibrary: (id: number) =>

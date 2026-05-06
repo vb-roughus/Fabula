@@ -1,4 +1,5 @@
 using Fabula.Api.Infrastructure;
+using Fabula.Core.Domain;
 using Fabula.Core.Services;
 using Fabula.Data;
 using Microsoft.EntityFrameworkCore;
@@ -49,6 +50,7 @@ public static class BookEndpoints
                     b.SeriesPosition,
                     b.Duration,
                     b.CoverPath != null ? $"/api/books/{b.Id}/cover" : null,
+                    b.LibraryFolder.Type,
                     db.PlaybackProgress
                         .Where(p => p.UserId == uid && p.BookId == b.Id)
                         .Select(p => new ProgressSummaryDto(p.Position, p.Finished, p.UpdatedAt))
@@ -66,6 +68,7 @@ public static class BookEndpoints
                 .Include(b => b.Authors)
                 .Include(b => b.Narrators)
                 .Include(b => b.Series)
+                .Include(b => b.LibraryFolder)
                 .Include(b => b.Chapters.OrderBy(c => c.Index))
                 .Include(b => b.Files.OrderBy(f => f.TrackIndex))
                 .AsNoTracking()
@@ -96,6 +99,7 @@ public static class BookEndpoints
                 book.Asin,
                 book.Duration,
                 book.CoverPath != null ? $"/api/books/{book.Id}/cover" : null,
+                book.LibraryFolder.Type,
                 progress,
                 book.Chapters.Select(c => new ChapterDto(c.Index, c.Title, c.Start, c.End)).ToList(),
                 book.Files.Select(f => new AudioFileDto(f.Id, f.TrackIndex, f.Duration, f.OffsetInBook)).ToList()));
@@ -177,6 +181,7 @@ public record BookSummaryDto(
     decimal? SeriesPosition,
     TimeSpan Duration,
     string? CoverUrl,
+    LibraryType Type,
     ProgressSummaryDto? Progress);
 
 public record ProgressSummaryDto(TimeSpan Position, bool Finished, DateTime UpdatedAt);
@@ -198,6 +203,7 @@ public record BookDetailDto(
     string? Asin,
     TimeSpan Duration,
     string? CoverUrl,
+    LibraryType Type,
     ProgressSummaryDto? Progress,
     List<ChapterDto> Chapters,
     List<AudioFileDto> Files);

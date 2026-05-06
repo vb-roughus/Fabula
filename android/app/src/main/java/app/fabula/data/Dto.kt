@@ -2,6 +2,8 @@ package app.fabula.data
 
 import kotlinx.serialization.Serializable
 
+enum class LibraryType { Audiobook, RadioPlay }
+
 @Serializable
 data class BookSummaryDto(
     val id: Int,
@@ -14,6 +16,7 @@ data class BookSummaryDto(
     val seriesPosition: Double? = null,
     val duration: String,
     val coverUrl: String? = null,
+    val type: LibraryType = LibraryType.Audiobook,
     val progress: ProgressSummaryDto? = null
 )
 
@@ -42,6 +45,7 @@ data class BookDetailDto(
     val asin: String? = null,
     val duration: String,
     val coverUrl: String? = null,
+    val type: LibraryType = LibraryType.Audiobook,
     val progress: ProgressSummaryDto? = null,
     val chapters: List<ChapterDto> = emptyList(),
     val files: List<AudioFileDto> = emptyList()
