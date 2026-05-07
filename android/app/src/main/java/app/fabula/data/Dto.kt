@@ -17,6 +17,8 @@ data class BookSummaryDto(
     val duration: String,
     val coverUrl: String? = null,
     val type: LibraryType = LibraryType.Audiobook,
+    val libraryFolderId: Int = 0,
+    val libraryFolderName: String = "",
     val progress: ProgressSummaryDto? = null
 )
 
@@ -46,6 +48,8 @@ data class BookDetailDto(
     val duration: String,
     val coverUrl: String? = null,
     val type: LibraryType = LibraryType.Audiobook,
+    val libraryFolderId: Int = 0,
+    val libraryFolderName: String = "",
     val progress: ProgressSummaryDto? = null,
     val chapters: List<ChapterDto> = emptyList(),
     val files: List<AudioFileDto> = emptyList()

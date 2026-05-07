@@ -20,6 +20,8 @@ export interface BookSummary {
   duration: string; // "HH:MM:SS" TimeSpan
   coverUrl: string | null;
   type: LibraryType;
+  libraryFolderId: number;
+  libraryFolderName: string;
   progress: ProgressSummary | null;
 }
 

@@ -48,6 +48,12 @@ import coil3.compose.AsyncImage
 
 private val TileWidth = 140.dp
 
+private data class RecentSection(
+    val folderId: Int,
+    val folderName: String,
+    val books: List<BookSummaryDto>
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
@@ -77,9 +83,21 @@ fun HomeScreen(
         ?.take(15)
         ?: emptyList()
 
-    val recentlyAdded = books
-        ?.sortedByDescending { it.id }
-        ?.take(15)
+    // Group recent additions by their library folder so each library gets
+    // its own "Zuletzt hinzugefügt in <name>" row. Folders are ordered by
+    // name, books inside each by descending id (newest first), capped to
+    // 15 per library.
+    val recentlyAddedSections = books
+        ?.groupBy { it.libraryFolderId to it.libraryFolderName }
+        ?.toSortedMap(compareBy { it.second.lowercase() })
+        ?.map { (key, list) ->
+            RecentSection(
+                folderId = key.first,
+                folderName = key.second,
+                books = list.sortedByDescending { it.id }.take(15)
+            )
+        }
+        ?.filter { it.books.isNotEmpty() }
         ?: emptyList()
 
     Scaffold(
@@ -124,14 +142,16 @@ fun HomeScreen(
                         }
                     }
 
-                    if (recentlyAdded.isNotEmpty()) {
-                        item("h-added") { SectionHeader("Zuletzt hinzugefügt") }
-                        item("r-added") {
+                    recentlyAddedSections.forEach { section ->
+                        item("h-added-${section.folderId}") {
+                            SectionHeader("Zuletzt hinzugefügt in ${section.folderName}")
+                        }
+                        item("r-added-${section.folderId}") {
                             BookTilesRow(
-                                books = recentlyAdded,
+                                books = section.books,
                                 repository = repository,
                                 onBookClick = onBookClick,
-                                keyPrefix = "added"
+                                keyPrefix = "added-${section.folderId}"
                             )
                         }
                     }

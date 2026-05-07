@@ -51,6 +51,8 @@ public static class BookEndpoints
                     b.Duration,
                     b.CoverPath != null ? $"/api/books/{b.Id}/cover" : null,
                     b.LibraryFolder.Type,
+                    b.LibraryFolderId,
+                    b.LibraryFolder.Name,
                     db.PlaybackProgress
                         .Where(p => p.UserId == uid && p.BookId == b.Id)
                         .Select(p => new ProgressSummaryDto(p.Position, p.Finished, p.UpdatedAt))
@@ -100,6 +102,8 @@ public static class BookEndpoints
                 book.Duration,
                 book.CoverPath != null ? $"/api/books/{book.Id}/cover" : null,
                 book.LibraryFolder.Type,
+                book.LibraryFolderId,
+                book.LibraryFolder.Name,
                 progress,
                 book.Chapters.Select(c => new ChapterDto(c.Index, c.Title, c.Start, c.End)).ToList(),
                 book.Files.Select(f => new AudioFileDto(f.Id, f.TrackIndex, f.Duration, f.OffsetInBook)).ToList()));
@@ -182,6 +186,8 @@ public record BookSummaryDto(
     TimeSpan Duration,
     string? CoverUrl,
     LibraryType Type,
+    int LibraryFolderId,
+    string LibraryFolderName,
     ProgressSummaryDto? Progress);
 
 public record ProgressSummaryDto(TimeSpan Position, bool Finished, DateTime UpdatedAt);
@@ -204,6 +210,8 @@ public record BookDetailDto(
     TimeSpan Duration,
     string? CoverUrl,
     LibraryType Type,
+    int LibraryFolderId,
+    string LibraryFolderName,
     ProgressSummaryDto? Progress,
     List<ChapterDto> Chapters,
     List<AudioFileDto> Files);
