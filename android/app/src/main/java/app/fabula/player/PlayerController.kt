@@ -37,6 +37,11 @@ data class PlayerUiState(
     val positionInBook: Double = 0.0,
     val durationInBook: Double = 0.0,
     val currentChapter: ChapterDto? = null,
+    /** Source of truth for the `finished` flag we send to the server.
+     *  Initialised from the saved server progress on loadBook, flipped to
+     *  true by Player.STATE_ENDED, flipped back to false when the user seeks
+     *  more than a minute back from the end. */
+    val finished: Boolean = false,
     /** Remaining sleep timer in milliseconds. Null when the timer is off. */
     val sleepTimerRemainingMs: Long? = null
 )
@@ -134,7 +139,9 @@ class PlayerController(
 
         if (items.isEmpty()) return
 
-        val savedPosition = runCatching { api?.getProgress(book.id)?.position }.getOrNull()
+        val savedProgress = runCatching { api?.getProgress(book.id) }.getOrNull()
+        val savedPosition = savedProgress?.position
+        val savedFinished = savedProgress?.finished == true
         val startSec = parseTimeSpan(savedPosition)
         val (startIndex, startOffsetMs) = mapBookToMedia(startSec)
 
@@ -146,7 +153,8 @@ class PlayerController(
             isPlaying = false,
             positionInBook = startSec,
             durationInBook = parseTimeSpan(book.duration),
-            currentChapter = chapterAt(book, startSec)
+            currentChapter = chapterAt(book, startSec),
+            finished = savedFinished
         )
     }
 
@@ -161,6 +169,12 @@ class PlayerController(
         val c = controller ?: return
         val (index, offsetMs) = mapBookToMedia(seconds)
         c.seekTo(index, offsetMs)
+        // If the user just seeked well back from the end, clear the
+        // sticky "finished" flag so the book reappears in "Weiter hören".
+        val s = _state.value
+        if (s.finished && s.durationInBook > 0 && seconds + 60.0 < s.durationInBook) {
+            _state.value = s.copy(finished = false)
+        }
         updateStateFromController()
     }
 
@@ -289,6 +303,14 @@ class PlayerController(
             updateStateFromController()
         }
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) { updateStateFromController() }
+        override fun onPlaybackStateChanged(playbackState: Int) {
+            // Natural end of the last MediaItem: mark the book as finished
+            // exactly once. The auto-save below picks this up on the next
+            // tick and persists it.
+            if (playbackState == Player.STATE_ENDED) {
+                _state.value = _state.value.copy(finished = true)
+            }
+        }
     }
 
     private fun startPolling() {
@@ -307,13 +329,18 @@ class PlayerController(
                 val book = s.book ?: continue
                 if (book.id == lastBookId && abs(lastSaved - s.positionInBook) < 2.0) continue
                 val api = repository.apiOrNull() ?: continue
-                val finished = s.positionInBook >= s.durationInBook - 1
+                // `finished` is no longer derived from the position -- it
+                // would be sticky once true, because every subsequent
+                // auto-save near the end re-sent finished=true. Instead the
+                // flag lives on PlayerUiState and is flipped by either
+                // STATE_ENDED, the user's "Als gehört markieren" menu, or
+                // (back to false) a seek that goes well past the end zone.
                 runCatching {
                     api.saveProgress(
                         book.id,
                         UpdateProgressRequest(
                             position = toTimeSpanString(s.positionInBook),
-                            finished = finished,
+                            finished = s.finished,
                             device = repository.deviceId()
                         )
                     )

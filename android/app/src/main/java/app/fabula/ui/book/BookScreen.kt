@@ -393,6 +393,8 @@ fun BookScreen(
                                 )
                             )
                             repository.bumpBookmarksRevision()
+                        }.onFailure { t ->
+                            repository.logFailure("BookScreen.createBookmark book=$bookId pos=$pos", t)
                         }
                     }
                 }) { Text("Speichern") }
