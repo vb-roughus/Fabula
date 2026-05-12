@@ -17,7 +17,10 @@ import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
 import java.util.concurrent.TimeUnit
 
-class FabulaRepository(private val preferences: ServerPreferences) {
+class FabulaRepository(
+    private val preferences: ServerPreferences,
+    private val logStore: LogStore
+) {
 
     private val _baseUrl = MutableStateFlow("")
     val baseUrl: StateFlow<String> = _baseUrl.asStateFlow()
@@ -33,6 +36,14 @@ class FabulaRepository(private val preferences: ServerPreferences) {
     private val _seriesRevision = MutableStateFlow(0)
     val seriesRevision: StateFlow<Int> = _seriesRevision.asStateFlow()
     fun bumpSeriesRevision() { _seriesRevision.value = _seriesRevision.value + 1 }
+
+    /** Funnel for UI-layer `runCatching {}` swallowed errors. The HTTP
+     *  interceptor already logs all non-2xx responses, but exceptions
+     *  thrown after a successful response (JSON parsing, serialization
+     *  surprises) would otherwise vanish silently. */
+    fun logFailure(context: String, t: Throwable) {
+        logStore.e("Ui", "$context: ${t.javaClass.simpleName}: ${t.message ?: ""}", t)
+    }
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -56,9 +67,30 @@ class FabulaRepository(private val preferences: ServerPreferences) {
             } else {
                 chain.request()
             }
-            val response = chain.proceed(request)
+            val started = System.currentTimeMillis()
+            val response = try {
+                chain.proceed(request)
+            } catch (t: Throwable) {
+                // Network-level failure (DNS, timeout, TLS, server down).
+                // Surface to LogStore so a user-shared log makes the cause
+                // diagnosable; the original throwable propagates as before.
+                logStore.e(
+                    "Http",
+                    "${request.method} ${request.url} -> network error after ${System.currentTimeMillis() - started} ms",
+                    t
+                )
+                throw t
+            }
             if (response.code == 401 && !token.isNullOrBlank()) {
                 _unauthorizedEvents.tryEmit(Unit)
+            }
+            if (!response.isSuccessful) {
+                val snippet = runCatching { response.peekBody(2048).string() }.getOrDefault("")
+                logStore.w(
+                    "Http",
+                    "${request.method} ${request.url} -> ${response.code} ${response.message} (${System.currentTimeMillis() - started} ms)" +
+                        if (snippet.isNotBlank()) " body=$snippet" else ""
+                )
             }
             response
         }
@@ -72,6 +104,8 @@ class FabulaRepository(private val preferences: ServerPreferences) {
     val authTokenFlow: Flow<String?> = preferences.authToken
     val sleepRepeatEnabled: Flow<Boolean> = preferences.sleepRepeatEnabled
     val sleepRepeatUntilMinutes: Flow<Int> = preferences.sleepRepeatUntilMinutes
+    val diagnosticsEnabled: Flow<Boolean> = preferences.diagnosticsEnabled
+    suspend fun setDiagnosticsEnabled(enabled: Boolean) = preferences.setDiagnosticsEnabled(enabled)
     suspend fun setSleepRepeatEnabled(enabled: Boolean) =
         preferences.setSleepRepeatEnabled(enabled)
     suspend fun setSleepRepeatUntilMinutes(minutes: Int) =

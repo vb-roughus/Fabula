@@ -265,6 +265,11 @@ fun FullPlayer(
                             )
                             repository.bumpBookmarksRevision()
                             bookmarkSavedFlash = true
+                        }.onFailure { t ->
+                            repository.logFailure(
+                                "FullPlayer.createBookmark book=${book.id} pos=${state.positionInBook}",
+                                t
+                            )
                         }
                     }
                 }

@@ -32,6 +32,15 @@ class ServerPreferences(private val context: Context) {
         }
     }
 
+    /** When on, LogStore persists warn/error entries to a rolling text file
+     *  under context.filesDir/logs/ so the user can share it for support. */
+    val diagnosticsEnabled: Flow<Boolean> = context.dataStore.data
+        .map { it[DIAGNOSTICS_KEY] ?: false }
+
+    suspend fun setDiagnosticsEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[DIAGNOSTICS_KEY] = enabled }
+    }
+
     val sleepRepeatEnabled: Flow<Boolean> = context.dataStore.data
         .map { it[SLEEP_REPEAT_KEY] ?: true }
 
@@ -61,5 +70,6 @@ class ServerPreferences(private val context: Context) {
         private val SLEEP_REPEAT_KEY = booleanPreferencesKey("sleep_repeat_enabled")
         private val SLEEP_UNTIL_KEY = intPreferencesKey("sleep_repeat_until_minutes")
         private val AUTH_TOKEN_KEY = stringPreferencesKey("auth_token")
+        private val DIAGNOSTICS_KEY = booleanPreferencesKey("diagnostics_enabled")
     }
 }
