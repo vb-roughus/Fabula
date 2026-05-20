@@ -24,7 +24,7 @@ export function PlayerBar() {
   const pct = durationInBook > 0 ? (positionInBook / durationInBook) * 100 : 0;
 
   return (
-    <div className="sticky bottom-0 bg-ink-800 ring-1 ring-ink-700 text-ink-100 px-4 py-3">
+    <div className="shrink-0 bg-ink-800 ring-1 ring-ink-700 text-ink-100 px-4 py-3">
       <div className="max-w-7xl mx-auto flex items-center gap-4 flex-wrap md:flex-nowrap">
         <Link to={`/book/${book.id}`} className="flex items-center gap-3 min-w-0">
           {book.coverUrl ? (
