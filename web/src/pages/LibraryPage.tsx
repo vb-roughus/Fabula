@@ -13,7 +13,8 @@ export function LibraryPage() {
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['books', search, page],
-    queryFn: () => api.listBooks({ search, page, pageSize: 60 })
+    queryFn: () => api.listBooks({ search, page, pageSize: 60 }),
+    staleTime: 0
   });
 
   const filtered = useMemo(() => {
