@@ -24,8 +24,8 @@ export default function App() {
   if (!auth.user) return <LoginPage />;
 
   return (
-    <div className="min-h-full flex flex-col">
-      <header className="bg-ink-800 border-b border-ink-700">
+    <div className="h-full flex flex-col">
+      <header className="bg-ink-800 border-b border-ink-700 shrink-0">
         <div className="max-w-7xl mx-auto px-4 flex items-center gap-6 h-14">
           <NavLink to="/" className="text-accent-400 font-serif text-xl font-semibold">
             Fabula
@@ -77,7 +77,7 @@ export default function App() {
         </div>
       </header>
 
-      <main className="flex-1 overflow-y-auto">
+      <main className="flex-1 min-h-0 overflow-y-auto">
         <Routes>
           <Route path="/" element={<LibraryPage />} />
           <Route path="/book/:id" element={<BookPage />} />
