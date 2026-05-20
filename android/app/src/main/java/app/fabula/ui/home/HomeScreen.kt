@@ -104,14 +104,18 @@ fun HomeScreen(
     // Overlay the live player position onto the active book so "Weiter
     // hören" reflects the current session immediately -- no need to wait
     // for the background progress save to round-trip through the server.
+    // `finished` comes from PlayerUiState (not a position heuristic) so a
+    // book that just hit the end zone but hasn't actually ended yet still
+    // shows up here.
     val activeBookId = playerState.book?.id
     val livePosition = playerState.positionInBook
+    val liveFinished = playerState.finished
     val booksWithLiveProgress = books?.map { b ->
         if (b.id == activeBookId && livePosition > 1.0) {
             b.copy(
                 progress = ProgressSummaryDto(
                     position = toTimeSpanString(livePosition),
-                    finished = livePosition >= parseTimeSpan(b.duration) - 1,
+                    finished = liveFinished,
                     updatedAt = b.progress?.updatedAt
                 )
             )

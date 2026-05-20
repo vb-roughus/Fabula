@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Exposes filesDir/logs/ to the share intent so the user can send the
+         diagnostic log file to email, chat, etc. -->
+    <files-path name="logs" path="logs/" />
+</paths>

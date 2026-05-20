@@ -25,7 +25,9 @@ class PlaybackService : MediaSessionService() {
     override fun onCreate() {
         super.onCreate()
 
-        val prefs = (application as FabulaApp).preferences
+        val app = application as FabulaApp
+        val prefs = app.preferences
+        val logStore = app.logStore
         val okHttp = OkHttpClient.Builder()
             .addInterceptor { chain ->
                 // Attach the JWT to every audio stream request. ExoPlayer's
@@ -39,7 +41,24 @@ class PlaybackService : MediaSessionService() {
                 } else {
                     chain.request()
                 }
-                chain.proceed(req)
+                val started = System.currentTimeMillis()
+                val response = try {
+                    chain.proceed(req)
+                } catch (t: Throwable) {
+                    logStore.e(
+                        "Stream",
+                        "${req.method} ${req.url} -> network error after ${System.currentTimeMillis() - started} ms",
+                        t
+                    )
+                    throw t
+                }
+                if (!response.isSuccessful) {
+                    logStore.w(
+                        "Stream",
+                        "${req.method} ${req.url} -> ${response.code} ${response.message}"
+                    )
+                }
+                response
             }
             .build()
         val dataSourceFactory = OkHttpDataSource.Factory(okHttp)
