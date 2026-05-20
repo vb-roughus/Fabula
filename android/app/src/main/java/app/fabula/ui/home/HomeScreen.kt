@@ -28,8 +28,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -40,6 +42,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import app.fabula.data.BookSummaryDto
 import app.fabula.data.FabulaRepository
 import app.fabula.data.parseTimeSpan
@@ -63,14 +68,27 @@ fun HomeScreen(
 ) {
     var books by remember { mutableStateOf<List<BookSummaryDto>?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    // Tick this counter on every ON_RESUME so books -- including their
+    // playback progress -- are refetched when the user returns to the
+    // home screen after listening or marking a book read.
+    var refreshTick by remember { mutableIntStateOf(0) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) refreshTick++
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(refreshTick) {
         try {
             val api = repository.apiOrNull()
             if (api == null) {
                 error = "Kein Server konfiguriert."
             } else {
                 books = api.listBooks(page = 1, pageSize = 500).items
+                error = null
             }
         } catch (t: Throwable) {
             error = t.message
