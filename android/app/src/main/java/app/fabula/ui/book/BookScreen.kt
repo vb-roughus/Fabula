@@ -34,6 +34,7 @@ import androidx.compose.material.icons.outlined.RemoveDone
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -75,6 +76,7 @@ import app.fabula.data.CreateBookmarkRequest
 import app.fabula.data.FabulaRepository
 import app.fabula.data.SeriesSummaryDto
 import app.fabula.data.SetFinishedRequest
+import app.fabula.data.UpdateProgressRequest
 import app.fabula.data.formatClock
 import app.fabula.data.formatDurationHuman
 import app.fabula.data.parseTimeSpan
@@ -101,6 +103,7 @@ fun BookScreen(
     var bookmarkNote by remember { mutableStateOf("") }
     var assignSeriesOpen by remember { mutableStateOf(false) }
     var bookmarkManagerOpen by remember { mutableStateOf(false) }
+    var resetProgressConfirmOpen by remember { mutableStateOf(false) }
     var seriesList by remember { mutableStateOf<List<SeriesSummaryDto>>(emptyList()) }
     val seriesRevision by repository.seriesRevision.collectAsState()
     var hasAutoScrolled by remember(bookId) { mutableStateOf(false) }
@@ -274,6 +277,16 @@ fun BookScreen(
                                 }
                             )
                             DropdownMenuItem(
+                                text = { Text("Fortschritt zurücksetzen") },
+                                leadingIcon = {
+                                    Icon(Icons.Filled.Refresh, contentDescription = null)
+                                },
+                                onClick = {
+                                    moreMenuOpen = false
+                                    resetProgressConfirmOpen = true
+                                }
+                            )
+                            DropdownMenuItem(
                                 text = {
                                     Text(
                                         if (book?.series.isNullOrBlank()) "Serie zuweisen"
@@ -352,6 +365,54 @@ fun BookScreen(
                 )
             }
         }
+    }
+
+    if (resetProgressConfirmOpen) {
+        AlertDialog(
+            onDismissRequest = { resetProgressConfirmOpen = false },
+            title = { Text("Fortschritt zurücksetzen?") },
+            text = {
+                Text(
+                    "Die gespeicherte Hörposition wird auf den Anfang " +
+                    "zurückgesetzt. Lesezeichen bleiben erhalten."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val current = book ?: return@TextButton
+                    resetProgressConfirmOpen = false
+                    scope.launch {
+                        runCatching {
+                            val api = repository.apiOrNull() ?: return@runCatching
+                            api.saveProgress(
+                                current.id,
+                                UpdateProgressRequest(
+                                    position = "00:00:00",
+                                    finished = false,
+                                    device = repository.deviceId()
+                                )
+                            )
+                        }
+                        // If this book is the one in the player, rewind it
+                        // too so the UI doesn't snap back on the next save.
+                        if (playerState.book?.id == current.id) {
+                            player.seekInBook(0.0)
+                        }
+                        // Refresh the book so the inline progress UI and the
+                        // "Als gehört markieren" toggle reflect the new state.
+                        runCatching {
+                            val api = repository.apiOrNull() ?: return@runCatching
+                            book = api.getBook(current.id)
+                        }
+                    }
+                }) { Text("Zurücksetzen") }
+            },
+            dismissButton = {
+                TextButton(onClick = { resetProgressConfirmOpen = false }) {
+                    Text("Abbrechen")
+                }
+            }
+        )
     }
 
     if (addBookmarkOpen) {
