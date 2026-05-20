@@ -357,6 +357,7 @@ fun Navigation(
                     composable(Tab.Home.route) {
                         HomeScreen(
                             repository = repository,
+                            player = player,
                             onMenuClick = openDrawer,
                             onBookClick = { id -> navController.navigate("book/$id") }
                         )

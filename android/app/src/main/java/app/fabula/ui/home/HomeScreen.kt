@@ -30,6 +30,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -47,7 +48,10 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import app.fabula.data.BookSummaryDto
 import app.fabula.data.FabulaRepository
+import app.fabula.data.ProgressSummaryDto
 import app.fabula.data.parseTimeSpan
+import app.fabula.data.toTimeSpanString
+import app.fabula.player.PlayerController
 import app.fabula.ui.LocalContentBottomInset
 import coil3.compose.AsyncImage
 
@@ -63,11 +67,13 @@ private data class RecentSection(
 @Composable
 fun HomeScreen(
     repository: FabulaRepository,
+    player: PlayerController,
     onMenuClick: () -> Unit,
     onBookClick: (Int) -> Unit
 ) {
     var books by remember { mutableStateOf<List<BookSummaryDto>?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    val playerState by player.state.collectAsState()
     // Tick this counter on every ON_RESUME so books -- including their
     // playback progress -- are refetched when the user returns to the
     // home screen after listening or marking a book read.
@@ -95,9 +101,30 @@ fun HomeScreen(
         }
     }
 
-    val continueListening = books
+    // Overlay the live player position onto the active book so "Weiter
+    // hören" reflects the current session immediately -- no need to wait
+    // for the background progress save to round-trip through the server.
+    val activeBookId = playerState.book?.id
+    val livePosition = playerState.positionInBook
+    val booksWithLiveProgress = books?.map { b ->
+        if (b.id == activeBookId && livePosition > 1.0) {
+            b.copy(
+                progress = ProgressSummaryDto(
+                    position = toTimeSpanString(livePosition),
+                    finished = livePosition >= parseTimeSpan(b.duration) - 1,
+                    updatedAt = b.progress?.updatedAt
+                )
+            )
+        } else b
+    }
+
+    val continueListening = booksWithLiveProgress
         ?.filter { it.progress != null && !it.progress.finished && parseTimeSpan(it.progress.position) > 1.0 }
-        ?.sortedByDescending { it.progress?.updatedAt ?: "" }
+        ?.sortedWith(
+            // Active book first, then by descending updatedAt.
+            compareByDescending<BookSummaryDto> { it.id == activeBookId }
+                .thenByDescending { it.progress?.updatedAt ?: "" }
+        )
         ?.take(15)
         ?: emptyList()
 

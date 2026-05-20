@@ -287,8 +287,32 @@ class PlayerController(
                 }
             }
             updateStateFromController()
+            // Flush progress immediately on pause/stop so the home screen
+            // ("Weiter hören") and library reflect the new position the
+            // moment the user navigates away -- the 4s background save
+            // would otherwise race the navigation.
+            if (!isPlaying) flushProgress()
         }
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) { updateStateFromController() }
+    }
+
+    private fun flushProgress() {
+        val s = _state.value
+        val book = s.book ?: return
+        scope.launch {
+            val api = repository.apiOrNull() ?: return@launch
+            val finished = s.positionInBook >= s.durationInBook - 1
+            runCatching {
+                api.saveProgress(
+                    book.id,
+                    UpdateProgressRequest(
+                        position = toTimeSpanString(s.positionInBook),
+                        finished = finished,
+                        device = repository.deviceId()
+                    )
+                )
+            }
+        }
     }
 
     private fun startPolling() {
