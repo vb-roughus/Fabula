@@ -259,6 +259,10 @@ fun BookScreen(
                                     moreMenuOpen = false
                                     val current = book ?: return@DropdownMenuItem
                                     val next = current.progress?.finished != true
+                                    // Keep the player's local finished flag
+                                    // in sync, otherwise the next 4s auto-save
+                                    // would overwrite the server value.
+                                    player.setFinishedFlag(current.id, next)
                                     scope.launch {
                                         runCatching {
                                             val api = repository.apiOrNull() ?: return@runCatching
@@ -394,9 +398,12 @@ fun BookScreen(
                             )
                         }
                         // If this book is the one in the player, rewind it
-                        // too so the UI doesn't snap back on the next save.
+                        // too so the UI doesn't snap back on the next save,
+                        // and clear the finished flag explicitly (a fresh
+                        // load wouldn't run otherwise).
                         if (playerState.book?.id == current.id) {
                             player.seekInBook(0.0)
+                            player.setFinishedFlag(current.id, false)
                         }
                         // Refresh the book so the inline progress UI and the
                         // "Als gehört markieren" toggle reflect the new state.
@@ -454,6 +461,8 @@ fun BookScreen(
                                 )
                             )
                             repository.bumpBookmarksRevision()
+                        }.onFailure { t ->
+                            repository.logFailure("BookScreen.createBookmark book=$bookId pos=$pos", t)
                         }
                     }
                 }) { Text("Speichern") }
