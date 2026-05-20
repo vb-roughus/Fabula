@@ -77,7 +77,7 @@ export default function App() {
         </div>
       </header>
 
-      <main className="flex-1">
+      <main className="flex-1 overflow-y-auto">
         <Routes>
           <Route path="/" element={<LibraryPage />} />
           <Route path="/book/:id" element={<BookPage />} />
