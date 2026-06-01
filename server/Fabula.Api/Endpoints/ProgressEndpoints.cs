@@ -16,15 +16,20 @@ public static class ProgressEndpoints
             var uid = http.UserId();
             var threshold = TimeSpan.FromSeconds(5);
 
-            // Two-step query: first get the ordered IDs, then load full book data.
-            // This preserves the UpdatedAt ordering (most recent first) while still
-            // being able to use AsSplitQuery for the collection Includes.
-            var bookIds = await db.PlaybackProgress
-                .Where(p => p.UserId == uid && !p.Finished && p.Position > threshold)
-                .OrderByDescending(p => p.UpdatedAt)
+            // Position is a TimeSpan stored as TEXT in SQLite, so a `> threshold`
+            // comparison can't be translated to SQL. Filter unfinished rows in
+            // the DB (Finished/UpdatedAt translate fine), then apply the
+            // position threshold in memory. The number of in-progress rows per
+            // user is small, so loading them all is cheap.
+            var bookIds = (await db.PlaybackProgress
+                    .Where(p => p.UserId == uid && !p.Finished)
+                    .OrderByDescending(p => p.UpdatedAt)
+                    .Select(p => new { p.BookId, p.Position })
+                    .ToListAsync(ct))
+                .Where(p => p.Position > threshold)
                 .Take(20)
                 .Select(p => p.BookId)
-                .ToListAsync(ct);
+                .ToList();
 
             if (bookIds.Count == 0) return Results.Ok(Array.Empty<BookSummaryDto>());
 
