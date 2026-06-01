@@ -72,6 +72,7 @@ fun HomeScreen(
     onBookClick: (Int) -> Unit
 ) {
     var books by remember { mutableStateOf<List<BookSummaryDto>?>(null) }
+    var inProgressBooks by remember { mutableStateOf<List<BookSummaryDto>>(emptyList()) }
     var error by remember { mutableStateOf<String?>(null) }
     val playerState by player.state.collectAsState()
     // Tick this counter on every ON_RESUME so books -- including their
@@ -93,7 +94,9 @@ fun HomeScreen(
             if (api == null) {
                 error = "Kein Server konfiguriert."
             } else {
-                books = api.listBooks(page = 1, pageSize = 500).items
+                inProgressBooks = api.getInProgressBooks()
+                // pageSize=200 is the server-enforced maximum.
+                books = api.listBooks(page = 1, pageSize = 200).items
                 error = null
             }
         } catch (t: Throwable) {
@@ -101,36 +104,60 @@ fun HomeScreen(
         }
     }
 
-    // Overlay the live player position onto the active book so "Weiter
-    // hören" reflects the current session immediately -- no need to wait
-    // for the background progress save to round-trip through the server.
+    // Overlay the live player position onto the in-progress list so "Weiter
+    // hören" reflects the current session immediately -- no need to wait for
+    // the background progress save to round-trip through the server.
     // `finished` comes from PlayerUiState (not a position heuristic) so a
     // book that just hit the end zone but hasn't actually ended yet still
     // shows up here.
     val activeBookId = playerState.book?.id
     val livePosition = playerState.positionInBook
     val liveFinished = playerState.finished
-    val booksWithLiveProgress = books?.map { b ->
-        if (b.id == activeBookId && livePosition > 1.0) {
-            b.copy(
-                progress = ProgressSummaryDto(
-                    position = toTimeSpanString(livePosition),
-                    finished = liveFinished,
-                    updatedAt = b.progress?.updatedAt
-                )
-            )
-        } else b
-    }
 
-    val continueListening = booksWithLiveProgress
-        ?.filter { it.progress != null && !it.progress.finished && parseTimeSpan(it.progress.position) > 1.0 }
-        ?.sortedWith(
-            // Active book first, then by descending updatedAt.
-            compareByDescending<BookSummaryDto> { it.id == activeBookId }
-                .thenByDescending { it.progress?.updatedAt ?: "" }
-        )
-        ?.take(15)
-        ?: emptyList()
+    // Apply live overlay to in-progress list and prepend the active book if
+    // it is not already present (e.g. playback started in this session before
+    // the server progress was saved).
+    val continueListening: List<BookSummaryDto> = run {
+        val withLive = inProgressBooks.map { b ->
+            if (b.id == activeBookId && livePosition > 1.0) {
+                b.copy(
+                    progress = ProgressSummaryDto(
+                        position = toTimeSpanString(livePosition),
+                        finished = liveFinished,
+                        updatedAt = b.progress?.updatedAt
+                    )
+                )
+            } else b
+        }.filter { !it.progress!!.finished }
+
+        // If the currently playing book isn't in the server list yet (progress
+        // not yet saved), prepend it so it appears at the top immediately.
+        val activeInList = withLive.any { it.id == activeBookId }
+        if (!activeInList && activeBookId != null && livePosition > 1.0 && !liveFinished) {
+            val liveEntry = books?.find { it.id == activeBookId }
+            if (liveEntry != null) {
+                listOf(
+                    liveEntry.copy(
+                        progress = ProgressSummaryDto(
+                            position = toTimeSpanString(livePosition),
+                            finished = false,
+                            updatedAt = null
+                        )
+                    )
+                ) + withLive
+            } else withLive
+        } else {
+            // Active book first, rest already ordered by updatedAt DESC from server.
+            if (activeBookId != null && withLive.firstOrNull()?.id != activeBookId) {
+                val idx = withLive.indexOfFirst { it.id == activeBookId }
+                if (idx > 0) {
+                    val mutable = withLive.toMutableList()
+                    mutable.add(0, mutable.removeAt(idx))
+                    mutable
+                } else withLive
+            } else withLive
+        }
+    }
 
     // Group recent additions by their library folder so each library gets
     // its own "Zuletzt hinzugefügt in <name>" row. Folders are ordered by
