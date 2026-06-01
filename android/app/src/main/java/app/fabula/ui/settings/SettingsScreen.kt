@@ -43,6 +43,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.fabula.FabulaApp
 import app.fabula.data.FabulaRepository
+import app.fabula.ui.LocalContentBottomInset
 import java.io.File
 import kotlinx.coroutines.launch
 
@@ -87,12 +88,16 @@ fun SettingsScreen(
         containerColor = Color.Transparent,
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0.dp)
     ) { insets ->
+        // Extend the scrollable content past the translucent bottom nav bar
+        // and mini player so the last sections (e.g. Diagnose) can scroll
+        // fully into view instead of being hidden behind the overlay.
+        val bottomInset = LocalContentBottomInset.current.calculateBottomPadding()
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(insets)
                 .verticalScroll(rememberScrollState())
-                .padding(16.dp),
+                .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 16.dp + bottomInset),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Text("Server", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
