@@ -25,10 +25,12 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -52,13 +54,19 @@ fun SeriesScreen(
 ) {
     var series by remember { mutableStateOf<List<SeriesSummaryDto>?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    var isRefreshing by remember { mutableStateOf(false) }
+    var refreshTrigger by remember { mutableIntStateOf(0) }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(refreshTrigger) {
         try {
             val api = repository.apiOrNull()
             if (api == null) error = "Kein Server konfiguriert."
-            else series = api.listSeries()
+            else {
+                series = api.listSeries()
+                error = null
+            }
         } catch (t: Throwable) { error = t.message }
+        finally { isRefreshing = false }
     }
 
     Scaffold(
@@ -76,7 +84,15 @@ fun SeriesScreen(
         containerColor = Color.Transparent,
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0.dp)
     ) { insets ->
-        Box(modifier = Modifier.fillMaxSize().padding(insets), contentAlignment = Alignment.Center) {
+        PullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh = {
+                isRefreshing = true
+                refreshTrigger++
+            },
+            modifier = Modifier.fillMaxSize().padding(insets)
+        ) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             when {
                 error != null -> Text(error!!, color = MaterialTheme.colorScheme.error)
                 series == null -> CircularProgressIndicator()
@@ -97,6 +113,7 @@ fun SeriesScreen(
                         SeriesCard(series = s, repository = repository, onClick = { onSeriesClick(s.id) })
                     }
                 }
+            }
             }
         }
     }

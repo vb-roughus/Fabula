@@ -25,6 +25,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -74,6 +75,7 @@ fun HomeScreen(
     var books by remember { mutableStateOf<List<BookSummaryDto>?>(null) }
     var inProgressBooks by remember { mutableStateOf<List<BookSummaryDto>>(emptyList()) }
     var error by remember { mutableStateOf<String?>(null) }
+    var isRefreshing by remember { mutableStateOf(false) }
     val playerState by player.state.collectAsState()
     // Tick this counter on every ON_RESUME so books -- including their
     // playback progress -- are refetched when the user returns to the
@@ -101,6 +103,8 @@ fun HomeScreen(
             }
         } catch (t: Throwable) {
             error = t.message
+        } finally {
+            isRefreshing = false
         }
     }
 
@@ -191,11 +195,19 @@ fun HomeScreen(
         containerColor = Color.Transparent,
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0.dp)
     ) { insets ->
-        Box(modifier = Modifier
-            .fillMaxSize()
-            .padding(insets),
-            contentAlignment = Alignment.Center
+        PullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh = {
+                isRefreshing = true
+                refreshTick++
+            },
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(insets)
         ) {
+            Box(modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
             when {
                 error != null -> Text(error!!, color = MaterialTheme.colorScheme.error)
                 books == null -> CircularProgressIndicator()
@@ -232,6 +244,7 @@ fun HomeScreen(
                         }
                     }
                 }
+            }
             }
         }
     }

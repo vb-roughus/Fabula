@@ -28,9 +28,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -64,17 +66,23 @@ fun LibraryScreen(
 ) {
     var state by remember { mutableStateOf<LibraryState>(LibraryState.Loading) }
     var filter by remember { mutableStateOf<LibraryType?>(null) }
+    var isRefreshing by remember { mutableStateOf(false) }
+    var refreshTrigger by remember { mutableIntStateOf(0) }
 
-    LaunchedEffect(Unit) {
-        state = try {
+    LaunchedEffect(refreshTrigger) {
+        // On a pull-to-refresh we keep the current list visible (don't fall
+        // back to the Loading spinner) and only swap it once the reload lands.
+        try {
             val api = repository.apiOrNull()
-            if (api == null) {
+            state = if (api == null) {
                 LibraryState.Error("Kein Server konfiguriert.")
             } else {
                 LibraryState.Loaded(api.listBooks(page = 1, pageSize = 200).items)
             }
         } catch (t: Throwable) {
-            LibraryState.Error(t.message ?: "Unbekannter Fehler")
+            state = LibraryState.Error(t.message ?: "Unbekannter Fehler")
+        } finally {
+            isRefreshing = false
         }
     }
 
@@ -99,24 +107,33 @@ fun LibraryScreen(
                 .padding(insets)
         ) {
             FilterChipsRow(filter = filter, onFilterChange = { filter = it })
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
+            PullToRefreshBox(
+                isRefreshing = isRefreshing,
+                onRefresh = {
+                    isRefreshing = true
+                    refreshTrigger++
+                },
+                modifier = Modifier.fillMaxSize()
             ) {
-                when (val s = state) {
-                    LibraryState.Loading -> CircularProgressIndicator()
-                    is LibraryState.Error -> Text(s.message, color = MaterialTheme.colorScheme.error)
-                    is LibraryState.Loaded -> {
-                        val visible = if (filter == null) s.books else s.books.filter { it.type == filter }
-                        when {
-                            s.books.isEmpty() -> Text(
-                                "Noch nichts in der Bibliothek. Lege eine Bibliothek auf dem Server an und starte einen Scan."
-                            )
-                            visible.isEmpty() -> Text(
-                                "In dieser Kategorie ist noch nichts vorhanden.",
-                                color = MaterialTheme.colorScheme.outline
-                            )
-                            else -> BookGrid(books = visible, repository = repository, onClick = onBookClick)
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    when (val s = state) {
+                        LibraryState.Loading -> CircularProgressIndicator()
+                        is LibraryState.Error -> Text(s.message, color = MaterialTheme.colorScheme.error)
+                        is LibraryState.Loaded -> {
+                            val visible = if (filter == null) s.books else s.books.filter { it.type == filter }
+                            when {
+                                s.books.isEmpty() -> Text(
+                                    "Noch nichts in der Bibliothek. Lege eine Bibliothek auf dem Server an und starte einen Scan."
+                                )
+                                visible.isEmpty() -> Text(
+                                    "In dieser Kategorie ist noch nichts vorhanden.",
+                                    color = MaterialTheme.colorScheme.outline
+                                )
+                                else -> BookGrid(books = visible, repository = repository, onClick = onBookClick)
+                            }
                         }
                     }
                 }
