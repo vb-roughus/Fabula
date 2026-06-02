@@ -252,7 +252,15 @@ public class LibraryScanner(
         }
 
         if (!string.IsNullOrWhiteSpace(metadataSeriesName))
-            return (metadataSeriesName.Trim(), metadataSeriesPosition);
+        {
+            // Even when the series name comes from the tag, prefer the folder
+            // name as the position source. Commercial releases (e.g. Audible)
+            // embed SeriesPosition = 1 for every single-disc title, so the tag
+            // value is useless. The folder name (e.g. "Perry Rhodan Silber
+            // Edition 071 - Foo") reliably encodes the correct position.
+            var fromFolder = ExtractPositionFromName(Path.GetFileName(bookDir));
+            return (metadataSeriesName.Trim(), fromFolder ?? metadataSeriesPosition);
+        }
 
         return (null, null);
     }

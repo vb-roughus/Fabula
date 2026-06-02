@@ -165,8 +165,12 @@ public static class SeriesEndpoints
             var derived = new Dictionary<int, decimal?>(books.Count);
             foreach (var b in books)
             {
-                if (b.SeriesPositionManuallySet)
-                    continue;
+                // Clear the manual-override flag so the folder-derived position
+                // wins. The whole point of this endpoint is to re-derive from
+                // the folder name, so a stale ManuallySet = true (e.g. set by a
+                // previous import that embedded position = 1 for every title)
+                // must not block the update.
+                b.SeriesPositionManuallySet = false;
 
                 var anyFile = b.Files.OrderBy(f => f.TrackIndex).FirstOrDefault();
                 var bookDir = anyFile is null ? null : Path.GetDirectoryName(anyFile.Path);
