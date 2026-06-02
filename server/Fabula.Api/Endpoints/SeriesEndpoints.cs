@@ -163,6 +163,9 @@ public static class SeriesEndpoints
                 .ToListAsync(ct);
 
             var derived = new Dictionary<int, decimal?>(books.Count);
+            // Diagnostics: capture what we read from disk paths so we can see
+            // why positions are (not) derived. Returned in the response.
+            var samples = new List<object>();
             foreach (var b in books)
             {
                 // Clear the manual-override flag so the folder-derived position
@@ -174,8 +177,21 @@ public static class SeriesEndpoints
 
                 var anyFile = b.Files.OrderBy(f => f.TrackIndex).FirstOrDefault();
                 var bookDir = anyFile is null ? null : Path.GetDirectoryName(anyFile.Path);
-                derived[b.Id] = LibraryScanner.ExtractPositionFromName(
-                    bookDir is null ? null : Path.GetFileName(bookDir));
+                var folderName = bookDir is null ? null : Path.GetFileName(bookDir);
+                var pos = LibraryScanner.ExtractPositionFromName(folderName);
+                derived[b.Id] = pos;
+
+                if (samples.Count < 12)
+                {
+                    samples.Add(new
+                    {
+                        title = b.Title,
+                        rawPath = anyFile?.Path,
+                        folderName,
+                        derived = pos,
+                        storedBefore = b.SeriesPosition
+                    });
+                }
             }
 
             // Fill gaps deterministically: books without a derived position
@@ -214,7 +230,7 @@ public static class SeriesEndpoints
             if (updated > 0)
                 await db.SaveChangesAsync(ct);
 
-            return Results.Ok(new { updated });
+            return Results.Ok(new { updated, total = books.Count, samples });
         });
 
         return app;
