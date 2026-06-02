@@ -6,6 +6,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -57,6 +58,14 @@ class ServerPreferences(private val context: Context) {
         context.dataStore.edit { it[SLEEP_UNTIL_KEY] = minutes.coerceIn(0, 24 * 60 - 1) }
     }
 
+    /** Extra gain (dB) applied by LoudnessEnhancer during shower mode. 0 = off. */
+    val showerBoostDb: Flow<Float> = context.dataStore.data
+        .map { it[SHOWER_BOOST_KEY] ?: 0f }
+
+    suspend fun setShowerBoostDb(db: Float) {
+        context.dataStore.edit { it[SHOWER_BOOST_KEY] = db.coerceIn(0f, 15f) }
+    }
+
     /** Stable id for this device, used when reporting progress back to the server. */
     fun deviceId(): String {
         val androidId = runCatching {
@@ -71,5 +80,6 @@ class ServerPreferences(private val context: Context) {
         private val SLEEP_UNTIL_KEY = intPreferencesKey("sleep_repeat_until_minutes")
         private val AUTH_TOKEN_KEY = stringPreferencesKey("auth_token")
         private val DIAGNOSTICS_KEY = booleanPreferencesKey("diagnostics_enabled")
+        private val SHOWER_BOOST_KEY = floatPreferencesKey("shower_boost_db")
     }
 }

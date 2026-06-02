@@ -38,8 +38,10 @@ import androidx.compose.material.icons.filled.Replay30
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material.icons.outlined.GraphicEq
+import androidx.compose.material.icons.outlined.WaterDrop
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -440,6 +442,17 @@ fun FullPlayer(
 
         Spacer(Modifier.weight(0.3f))
 
+        // Shower mode row: boost slider 0–15 dB, auto-disables on headphones.
+        ShowerModeRow(
+            boostDb = state.showerBoostDb,
+            speakerOnly = state.showerSpeakerOnly,
+            onBoostChange = { player.setShowerBoostDb(it) },
+            whiteText = whiteText,
+            mutedText = mutedText
+        )
+
+        Spacer(Modifier.height(8.dp))
+
         // Bottom utility row: speed picker on left, sleep timer on right.
         Row(
             modifier = Modifier
@@ -551,6 +564,74 @@ fun FullPlayer(
                 player.seekInBook(parseTimeSpan(bm.position))
                 player.play()
             }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ShowerModeRow(
+    boostDb: Float,
+    speakerOnly: Boolean,
+    onBoostChange: (Float) -> Unit,
+    whiteText: Color,
+    mutedText: Color
+) {
+    val active = boostDb > 0f
+    val effectivelyOn = active && speakerOnly
+    val iconTint = when {
+        effectivelyOn -> MaterialTheme.colorScheme.primary
+        active && !speakerOnly -> whiteText.copy(alpha = 0.35f)
+        else -> whiteText.copy(alpha = 0.7f)
+    }
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = if (effectivelyOn) Icons.Filled.WaterDrop else Icons.Outlined.WaterDrop,
+                contentDescription = null,
+                tint = iconTint,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                "Dusch-Modus",
+                style = MaterialTheme.typography.labelLarge,
+                color = if (effectivelyOn) whiteText else mutedText
+            )
+            if (active && !speakerOnly) {
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    "· Nur Lautsprecher",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = whiteText.copy(alpha = 0.4f)
+                )
+            }
+            Spacer(Modifier.weight(1f))
+            Text(
+                if (boostDb <= 0f) "AUS" else "+${boostDb.toInt()} dB",
+                style = MaterialTheme.typography.labelMedium,
+                color = if (effectivelyOn) MaterialTheme.colorScheme.primary else mutedText
+            )
+        }
+        Slider(
+            value = boostDb,
+            onValueChange = onBoostChange,
+            valueRange = 0f..15f,
+            steps = 14,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 0.dp),
+            colors = SliderDefaults.colors(
+                thumbColor = if (effectivelyOn) MaterialTheme.colorScheme.primary else whiteText.copy(alpha = 0.5f),
+                activeTrackColor = if (effectivelyOn) MaterialTheme.colorScheme.primary else whiteText.copy(alpha = 0.5f),
+                inactiveTrackColor = whiteText.copy(alpha = 0.15f),
+                activeTickColor = Color.Transparent,
+                inactiveTickColor = Color.Transparent
+            )
         )
     }
 }
