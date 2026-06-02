@@ -30,7 +30,7 @@ public class LibraryScanner(
             .ToList();
 
         var grouped = audioFiles
-            .GroupBy(f => Path.GetDirectoryName(f) ?? folder.Path)
+            .GroupBy(f => GetBookDirectory(folder.Path, Path.GetDirectoryName(f) ?? folder.Path))
             .ToList();
 
         int added = 0, updated = 0, unchanged = 0;
@@ -298,6 +298,54 @@ public class LibraryScanner(
             return value;
         }
         return null;
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex DiscFolderRegex =
+        new(@"\b(?:cd|dvd|disc|disk|teil|part|folge)\s*[-_.]?\s*\d{1,3}\b",
+            System.Text.RegularExpressions.RegexOptions.Compiled |
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+    private static readonly System.Text.RegularExpressions.Regex BareNumberRegex =
+        new(@"^\d{1,3}$", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// <summary>
+    /// True when a folder name denotes a single disc/part of a multi-disc
+    /// audiobook rather than the book itself -- e.g. "CD 01", "CD1",
+    /// "Silber Edition 70 CD-01", "CD 13 - Bonus ...", "Disc 2", "Teil 3",
+    /// or a bare number like "01". Such folders are collapsed onto their
+    /// parent so all discs of a title form a single book.
+    /// </summary>
+    internal static bool IsDiscFolderName(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return false;
+        name = name.Trim();
+        return BareNumberRegex.IsMatch(name) || DiscFolderRegex.IsMatch(name);
+    }
+
+    /// <summary>
+    /// Maps the directory that directly contains an audio file to the book it
+    /// belongs to. Multi-disc audiobooks keep each disc in a "CD 01"-style
+    /// sub-folder; those collapse onto the parent so every disc forms one
+    /// book. A disc-looking folder sitting directly under the library root is
+    /// left as-is -- it is the book, not a disc of one.
+    /// </summary>
+    internal static string GetBookDirectory(string libraryRoot, string fileDirectory)
+    {
+        char[] seps = [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar];
+        var dir = fileDirectory.TrimEnd(seps);
+        var name = Path.GetFileName(dir);
+        if (!IsDiscFolderName(name)) return dir;
+
+        var parent = Path.GetDirectoryName(dir);
+        if (string.IsNullOrEmpty(parent)) return dir;
+
+        // Never collapse the disc folder up to (or above) the library root:
+        // a numeric/disc-named folder directly under the root is its own book.
+        var root = libraryRoot.TrimEnd(seps);
+        var parentTrim = parent.TrimEnd(seps);
+        if (parentTrim.Length <= root.Length) return dir;
+
+        return parent;
     }
 
     private static string? DeriveSeriesFromFolders(string libraryRoot, string bookDir)

@@ -46,6 +46,24 @@ public class LibraryRepository(FabulaDbContext db) : ILibraryRepository
         book.Authors = await ResolveAuthorsAsync(authorNames, cancellationToken);
         book.Narrators = await ResolveNarratorsAsync(narratorNames, cancellationToken);
 
+        // Merge previously fragmented entries: if other books in this folder
+        // own any of the file paths we're about to (re)assign -- e.g. one book
+        // per "CD 01" sub-folder that existed before multi-disc grouping was
+        // introduced -- delete them first. Otherwise the unique index on
+        // AudioFile.Path clashes when this single book claims all the discs.
+        // Done in its own SaveChanges so the deletes commit before the inserts.
+        var incomingPaths = files.Select(f => f.Path).ToHashSet();
+        var conflicting = await db.Books
+            .Include(b => b.Files)
+            .Where(b => b.LibraryFolderId == book.LibraryFolderId && b.Id != book.Id)
+            .Where(b => b.Files.Any(f => incomingPaths.Contains(f.Path)))
+            .ToListAsync(cancellationToken);
+        if (conflicting.Count > 0)
+        {
+            db.Books.RemoveRange(conflicting);
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
         if (!string.IsNullOrWhiteSpace(seriesName))
         {
             var previousSeriesName = book.Series?.Name;
