@@ -165,7 +165,7 @@ public static class SeriesEndpoints
             var derived = new Dictionary<int, decimal?>(books.Count);
             // Diagnostics: capture what we read from disk paths so we can see
             // why positions are (not) derived. Returned in the response.
-            var samples = new List<object>();
+            var diag = new List<(string Title, string? SortTitle, string? Folder, string? Path, decimal? Derived, decimal? Stored)>();
             foreach (var b in books)
             {
                 // Clear the manual-override flag so the folder-derived position
@@ -180,18 +180,7 @@ public static class SeriesEndpoints
                 var folderName = bookDir is null ? null : Path.GetFileName(bookDir);
                 var pos = LibraryScanner.ExtractPositionFromName(folderName);
                 derived[b.Id] = pos;
-
-                if (samples.Count < 12)
-                {
-                    samples.Add(new
-                    {
-                        title = b.Title,
-                        rawPath = anyFile?.Path,
-                        folderName,
-                        derived = pos,
-                        storedBefore = b.SeriesPosition
-                    });
-                }
+                diag.Add((b.Title, b.SortTitle, folderName, anyFile?.Path, pos, b.SeriesPosition));
             }
 
             // Fill gaps deterministically: books without a derived position
@@ -230,7 +219,51 @@ public static class SeriesEndpoints
             if (updated > 0)
                 await db.SaveChangesAsync(ct);
 
-            return Results.Ok(new { updated, total = books.Count, samples });
+            // Diagnostics: surface the books that are NOT cleanly derived.
+            // - collisions: positions claimed by more than one book (the real
+            //   bug shows up here -- e.g. many books all landing on 1).
+            // - nullDerived: books whose folder name yields no number.
+            // - samplesByTitle: first 20 books in title order (matches the UI
+            //   list), so the problematic titles from the screenshot appear.
+            object Shape((string Title, string? SortTitle, string? Folder, string? Path, decimal? Derived, decimal? Stored) d) => new
+            {
+                title = d.Title,
+                folderName = d.Folder,
+                rawPath = d.Path,
+                derived = d.Derived,
+                stored = d.Stored
+            };
+
+            var collisions = diag
+                .Where(d => d.Derived is not null)
+                .GroupBy(d => d.Derived!.Value)
+                .Where(g => g.Count() > 1)
+                .OrderByDescending(g => g.Count())
+                .Take(10)
+                .Select(g => new { position = g.Key, count = g.Count(), titles = g.Select(x => x.Title).Take(8).ToList() })
+                .ToList();
+
+            var nullDerived = diag
+                .Where(d => d.Derived is null)
+                .Take(20)
+                .Select(Shape)
+                .ToList();
+
+            var samplesByTitle = diag
+                .OrderBy(d => d.SortTitle ?? d.Title, StringComparer.OrdinalIgnoreCase)
+                .Take(20)
+                .Select(Shape)
+                .ToList();
+
+            return Results.Ok(new
+            {
+                updated,
+                total = books.Count,
+                nullDerivedCount = diag.Count(d => d.Derived is null),
+                collisions,
+                nullDerived,
+                samplesByTitle
+            });
         });
 
         return app;
