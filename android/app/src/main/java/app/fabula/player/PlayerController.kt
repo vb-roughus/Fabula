@@ -2,12 +2,16 @@ package app.fabula.player
 
 import android.content.ComponentName
 import android.content.Context
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
 import android.media.RingtoneManager
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
+import app.fabula.FabulaApp
 import app.fabula.data.BookDetailDto
 import app.fabula.data.ChapterDto
 import app.fabula.data.CreateBookmarkRequest
@@ -43,7 +47,11 @@ data class PlayerUiState(
      *  more than a minute back from the end. */
     val finished: Boolean = false,
     /** Remaining sleep timer in milliseconds. Null when the timer is off. */
-    val sleepTimerRemainingMs: Long? = null
+    val sleepTimerRemainingMs: Long? = null,
+    /** Configured shower boost in dB (0 = off). Persisted in DataStore. */
+    val showerBoostDb: Float = 0f,
+    /** True when the built-in speaker is the only active audio output. */
+    val showerSpeakerOnly: Boolean = true
 )
 
 /**
@@ -74,6 +82,29 @@ class PlayerController(
     private var sleepRepeatEnabled: Boolean = true
     private var sleepRepeatUntilMinutes: Int = 7 * 60
 
+    private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    private val audioDeviceCallback = object : AudioDeviceCallback() {
+        override fun onAudioDevicesAdded(added: Array<AudioDeviceInfo>) = refreshSpeakerState()
+        override fun onAudioDevicesRemoved(removed: Array<AudioDeviceInfo>) = refreshSpeakerState()
+    }
+
+    private fun isSpeakerOnly(): Boolean {
+        val outputs = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+        return outputs.none { d ->
+            d.type in setOf(
+                AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+                AudioDeviceInfo.TYPE_WIRED_HEADSET,
+                AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
+                AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+                AudioDeviceInfo.TYPE_USB_HEADSET
+            )
+        }
+    }
+
+    private fun refreshSpeakerState() {
+        _state.value = _state.value.copy(showerSpeakerOnly = isSpeakerOnly())
+    }
+
     init {
         scope.launch {
             repository.sleepRepeatEnabled.collect { sleepRepeatEnabled = it }
@@ -81,6 +112,13 @@ class PlayerController(
         scope.launch {
             repository.sleepRepeatUntilMinutes.collect { sleepRepeatUntilMinutes = it }
         }
+        scope.launch {
+            repository.showerBoostDb.collect { db ->
+                _state.value = _state.value.copy(showerBoostDb = db)
+            }
+        }
+        audioManager.registerAudioDeviceCallback(audioDeviceCallback, null)
+        _state.value = _state.value.copy(showerSpeakerOnly = isSpeakerOnly())
     }
 
     private val _state = MutableStateFlow(PlayerUiState())
@@ -101,12 +139,19 @@ class PlayerController(
     }
 
     fun release() {
+        audioManager.unregisterAudioDeviceCallback(audioDeviceCallback)
         pollJob?.cancel()
         progressJob?.cancel()
         sleepJob?.cancel()
         controller?.release()
         controller = null
         scope.cancel()
+    }
+
+    fun setShowerBoostDb(db: Float) {
+        val clamped = db.coerceIn(0f, 15f)
+        (context.applicationContext as FabulaApp).setShowerBoostLive(clamped)
+        scope.launch { repository.setShowerBoostDb(clamped) }
     }
 
     suspend fun loadBook(book: BookDetailDto) {
