@@ -105,6 +105,9 @@ class PlayerController(
         _state.value = _state.value.copy(showerSpeakerOnly = isSpeakerOnly())
     }
 
+    private val _state = MutableStateFlow(PlayerUiState())
+    val state: StateFlow<PlayerUiState> = _state.asStateFlow()
+
     init {
         scope.launch {
             repository.sleepRepeatEnabled.collect { sleepRepeatEnabled = it }
@@ -120,9 +123,6 @@ class PlayerController(
         audioManager.registerAudioDeviceCallback(audioDeviceCallback, null)
         _state.value = _state.value.copy(showerSpeakerOnly = isSpeakerOnly())
     }
-
-    private val _state = MutableStateFlow(PlayerUiState())
-    val state: StateFlow<PlayerUiState> = _state.asStateFlow()
 
     /** Cumulative start second of each MediaItem, matching BookDetail.files order. */
     private var fileStarts: DoubleArray = DoubleArray(0)
