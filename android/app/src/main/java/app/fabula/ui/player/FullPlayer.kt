@@ -1,11 +1,16 @@
 package app.fabula.ui.player
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -103,6 +108,10 @@ fun FullPlayer(
     var bookmarkManagerOpen by remember { mutableStateOf(false) }
     var bookmarkSavedFlash by remember { mutableStateOf(false) }
     var pulseEnabled by remember { mutableStateOf(false) }
+    // Dusch-Modus controls live behind the water-drop toggle in the bottom
+    // utility row and roll out on demand, so the player stays uncluttered.
+    var showerExpanded by remember { mutableStateOf(false) }
+    val showerEffectivelyOn = state.showerBoostDb > 0f && state.showerSpeakerOnly
 
     // Aggressive breathing for the gradient when pulse mode is active.
     val pulseTransition = rememberInfiniteTransition(label = "pulse")
@@ -452,16 +461,27 @@ fun FullPlayer(
 
         Spacer(Modifier.weight(0.3f))
 
-        // Shower mode row: boost slider 0–15 dB, auto-disables on headphones.
-        ShowerModeRow(
-            boostDb = state.showerBoostDb,
-            speakerOnly = state.showerSpeakerOnly,
-            onBoostChange = { player.setShowerBoostDb(it) },
-            whiteText = whiteText,
-            mutedText = mutedText
-        )
-
-        Spacer(Modifier.height(8.dp))
+        // Shower mode boost slider -- hidden until the water-drop toggle below
+        // is tapped, then rolls out (expand + fade) so it doesn't crowd the
+        // controls for everyone who never uses it.
+        AnimatedVisibility(
+            visible = showerExpanded,
+            enter = expandVertically(tween(220, easing = FastOutSlowInEasing)) +
+                fadeIn(tween(180)),
+            exit = shrinkVertically(tween(180, easing = FastOutSlowInEasing)) +
+                fadeOut(tween(120))
+        ) {
+            Column {
+                ShowerModeRow(
+                    boostDb = state.showerBoostDb,
+                    speakerOnly = state.showerSpeakerOnly,
+                    onBoostChange = { player.setShowerBoostDb(it) },
+                    whiteText = whiteText,
+                    mutedText = mutedText
+                )
+                Spacer(Modifier.height(8.dp))
+            }
+        }
 
         // Bottom utility row: speed picker on left, sleep timer on right.
         Row(
@@ -502,6 +522,22 @@ fun FullPlayer(
                 }
             }
             Spacer(Modifier.weight(1f))
+
+            IconButton(
+                onClick = { showerExpanded = !showerExpanded },
+                modifier = Modifier.size(40.dp)
+            ) {
+                Icon(
+                    imageVector = if (showerEffectivelyOn) Icons.Filled.WaterDrop else Icons.Outlined.WaterDrop,
+                    contentDescription = if (showerExpanded) "Dusch-Modus ausblenden" else "Dusch-Modus einblenden",
+                    tint = when {
+                        showerEffectivelyOn -> MaterialTheme.colorScheme.primary
+                        showerExpanded -> whiteText
+                        else -> whiteText.copy(alpha = 0.7f)
+                    },
+                    modifier = Modifier.size(20.dp)
+                )
+            }
 
             IconButton(
                 onClick = { pulseEnabled = !pulseEnabled },
