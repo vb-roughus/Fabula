@@ -73,6 +73,7 @@ fun HomeScreen(
     onBookClick: (Int) -> Unit
 ) {
     var books by remember { mutableStateOf<List<BookSummaryDto>?>(null) }
+    var recentBooks by remember { mutableStateOf<List<BookSummaryDto>?>(null) }
     var inProgressBooks by remember { mutableStateOf<List<BookSummaryDto>>(emptyList()) }
     var error by remember { mutableStateOf<String?>(null) }
     var isRefreshing by remember { mutableStateOf(false) }
@@ -97,6 +98,11 @@ fun HomeScreen(
                 error = "Kein Server konfiguriert."
             } else {
                 inProgressBooks = api.getInProgressBooks()
+                // Dedicated newest-per-folder feed for "Zuletzt hinzugefügt".
+                // runCatching keeps the screen working against an older server
+                // that predates the endpoint -- we then fall back to deriving
+                // recents from the (alphabetical) book list below.
+                recentBooks = runCatching { api.getRecentBooks(perFolder = 15) }.getOrNull()
                 // pageSize=200 is the server-enforced maximum.
                 books = api.listBooks(page = 1, pageSize = 200).items
                 error = null
@@ -165,16 +171,24 @@ fun HomeScreen(
 
     // Group recent additions by their library folder so each library gets
     // its own "Zuletzt hinzugefügt in <name>" row. Folders are ordered by
-    // name, books inside each by descending id (newest first), capped to
-    // 15 per library.
-    val recentlyAddedSections = books
+    // name; books inside each by AddedAt descending (newest first), capped
+    // to 15 per library. The dedicated /recent feed is already ordered and
+    // per-folder capped server-side; falling back to the alphabetical book
+    // list (older servers) we still sort by addedAt so the newest surface.
+    val recentSource = recentBooks ?: books
+    val recentlyAddedSections = recentSource
         ?.groupBy { it.libraryFolderId to it.libraryFolderName }
         ?.toSortedMap(compareBy { it.second.lowercase() })
         ?.map { (key, list) ->
             RecentSection(
                 folderId = key.first,
                 folderName = key.second,
-                books = list.sortedByDescending { it.id }.take(15)
+                books = list
+                    .sortedWith(
+                        compareByDescending<BookSummaryDto> { it.addedAt ?: "" }
+                            .thenByDescending { it.id }
+                    )
+                    .take(15)
             )
         }
         ?.filter { it.books.isNotEmpty() }

@@ -20,6 +20,12 @@ interface FabulaApi {
     @GET("api/books/{id}")
     suspend fun getBook(@Path("id") id: Int): BookDetailDto
 
+    /** Newest additions per library folder, ordered by AddedAt descending.
+     *  Backs the home screen's "Zuletzt hinzugefügt" sections so freshly
+     *  scanned books surface regardless of where their title sorts. */
+    @GET("api/books/recent")
+    suspend fun getRecentBooks(@Query("perFolder") perFolder: Int = 15): List<BookSummaryDto>
+
     @GET("api/progress/in-progress")
     suspend fun getInProgressBooks(): List<BookSummaryDto>
 

@@ -19,6 +19,9 @@ data class BookSummaryDto(
     val type: LibraryType = LibraryType.Audiobook,
     val libraryFolderId: Int = 0,
     val libraryFolderName: String = "",
+    /** ISO-8601 timestamp of when the scanner first discovered this book.
+     *  Used to order the home screen's "Zuletzt hinzugefügt" rows. */
+    val addedAt: String? = null,
     val progress: ProgressSummaryDto? = null
 )
 

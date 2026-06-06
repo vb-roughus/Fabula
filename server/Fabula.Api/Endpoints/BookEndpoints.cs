@@ -39,27 +39,40 @@ public static class BookEndpoints
                 .OrderBy(b => b.SortTitle ?? b.Title)
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
-                .Select(b => new BookSummaryDto(
-                    b.Id,
-                    b.Title,
-                    b.Subtitle,
-                    b.Authors.Select(a => a.Name).ToList(),
-                    b.Narrators.Select(n => n.Name).ToList(),
-                    b.SeriesId,
-                    b.Series != null ? b.Series.Name : null,
-                    b.SeriesPosition,
-                    b.Duration,
-                    b.CoverPath != null ? $"/api/books/{b.Id}/cover" : null,
-                    b.LibraryFolder.Type,
-                    b.LibraryFolderId,
-                    b.LibraryFolder.Name,
-                    db.PlaybackProgress
-                        .Where(p => p.UserId == uid && p.BookId == b.Id)
-                        .Select(p => new ProgressSummaryDto(p.Position, p.Finished, p.UpdatedAt))
-                        .FirstOrDefault()))
+                .SelectSummary(db, uid)
                 .ToListAsync(ct);
 
             return Results.Ok(new PagedResult<BookSummaryDto>(books, total, page, pageSize));
+        });
+
+        // Newest additions for the home screen. Returns each library folder's
+        // own most-recently-added books (by AddedAt) so a huge library can't
+        // crowd out a small one -- the alphabetical, page-capped /api/books
+        // list would never surface a freshly added book whose title sorts past
+        // the first page. AddedAt is a DateTime and translates to a SQL ORDER
+        // BY fine (unlike Position/SeriesPosition, which are TEXT in SQLite).
+        group.MapGet("/recent", async (HttpContext http, FabulaDbContext db, int? perFolder, CancellationToken ct) =>
+        {
+            var uid = http.UserId();
+            var cap = perFolder is null or <= 0 or > 50 ? 15 : perFolder.Value;
+
+            var folderIds = await db.LibraryFolders.Select(f => f.Id).ToListAsync(ct);
+
+            var result = new List<BookSummaryDto>(folderIds.Count * cap);
+            foreach (var fid in folderIds)
+            {
+                var top = await db.Books
+                    .AsNoTracking()
+                    .Where(b => b.LibraryFolderId == fid)
+                    .OrderByDescending(b => b.AddedAt)
+                    .ThenByDescending(b => b.Id)
+                    .Take(cap)
+                    .SelectSummary(db, uid)
+                    .ToListAsync(ct);
+                result.AddRange(top);
+            }
+
+            return Results.Ok(result);
         });
 
         group.MapGet("/{id:int}", async (int id, HttpContext http, FabulaDbContext db, CancellationToken ct) =>
@@ -172,6 +185,33 @@ public static class BookEndpoints
 
         return app;
     }
+
+    // Shared book -> summary projection used by the listing, in-progress, and
+    // recent endpoints. Keeping it in one place means every list carries the
+    // same fields (including the per-user progress sub-select and AddedAt).
+    // EF Core translates the captured db/uid into the SQL query just as it
+    // does for an inline projection.
+    internal static IQueryable<BookSummaryDto> SelectSummary(
+        this IQueryable<Book> query, FabulaDbContext db, int uid) =>
+        query.Select(b => new BookSummaryDto(
+            b.Id,
+            b.Title,
+            b.Subtitle,
+            b.Authors.Select(a => a.Name).ToList(),
+            b.Narrators.Select(n => n.Name).ToList(),
+            b.SeriesId,
+            b.Series != null ? b.Series.Name : null,
+            b.SeriesPosition,
+            b.Duration,
+            b.CoverPath != null ? $"/api/books/{b.Id}/cover" : null,
+            b.LibraryFolder.Type,
+            b.LibraryFolderId,
+            b.LibraryFolder.Name,
+            b.AddedAt,
+            db.PlaybackProgress
+                .Where(p => p.UserId == uid && p.BookId == b.Id)
+                .Select(p => new ProgressSummaryDto(p.Position, p.Finished, p.UpdatedAt))
+                .FirstOrDefault()));
 }
 
 public record BookSummaryDto(
@@ -188,6 +228,7 @@ public record BookSummaryDto(
     LibraryType Type,
     int LibraryFolderId,
     string LibraryFolderName,
+    DateTime AddedAt,
     ProgressSummaryDto? Progress);
 
 public record ProgressSummaryDto(TimeSpan Position, bool Finished, DateTime UpdatedAt);
