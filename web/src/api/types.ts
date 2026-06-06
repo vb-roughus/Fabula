@@ -22,6 +22,9 @@ export interface BookSummary {
   type: LibraryType;
   libraryFolderId: number;
   libraryFolderName: string;
+  /** ISO-8601 timestamp the scanner first discovered the book. Present on
+   *  list/summary responses; omitted from the book detail payload. */
+  addedAt?: string;
   progress: ProgressSummary | null;
 }
 

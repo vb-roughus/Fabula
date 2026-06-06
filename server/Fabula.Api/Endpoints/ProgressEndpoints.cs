@@ -34,31 +34,9 @@ public static class ProgressEndpoints
             if (bookIds.Count == 0) return Results.Ok(Array.Empty<BookSummaryDto>());
 
             var books = await db.Books
-                .AsSplitQuery()
-                .Include(b => b.Authors)
-                .Include(b => b.Narrators)
-                .Include(b => b.Series)
-                .Include(b => b.LibraryFolder)
                 .AsNoTracking()
                 .Where(b => bookIds.Contains(b.Id))
-                .Select(b => new BookSummaryDto(
-                    b.Id,
-                    b.Title,
-                    b.Subtitle,
-                    b.Authors.Select(a => a.Name).ToList(),
-                    b.Narrators.Select(n => n.Name).ToList(),
-                    b.SeriesId,
-                    b.Series != null ? b.Series.Name : null,
-                    b.SeriesPosition,
-                    b.Duration,
-                    b.CoverPath != null ? $"/api/books/{b.Id}/cover" : null,
-                    b.LibraryFolder.Type,
-                    b.LibraryFolderId,
-                    b.LibraryFolder.Name,
-                    db.PlaybackProgress
-                        .Where(p => p.UserId == uid && p.BookId == b.Id)
-                        .Select(p => new ProgressSummaryDto(p.Position, p.Finished, p.UpdatedAt))
-                        .FirstOrDefault()))
+                .SelectSummary(db, uid)
                 .ToListAsync(ct);
 
             var order = bookIds.Select((id, i) => (id, i)).ToDictionary(x => x.id, x => x.i);
