@@ -8,6 +8,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -149,6 +150,15 @@ fun FullPlayer(
         modifier = modifier
             .fillMaxSize()
             .background(brush = backgroundGradient)
+            // Absorb taps on empty areas (spacers, padding) so they cannot
+            // fall through to the NavHost content rendered behind the player.
+            // clickable with requireUnconsumed=true (the default) means child
+            // controls still receive and consume their own events normally.
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = {}
+            )
             .systemBarsPadding()
             .padding(horizontal = 24.dp)
     ) {
