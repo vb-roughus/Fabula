@@ -82,9 +82,17 @@ public class LibraryScanner(
         var existing = await repository.FindBookByFolderAsync(folder.Id, bookDir, cancellationToken);
 
         // Fast skip: the existing DB row matches what's on disk (same paths,
-        // same sizes). Nothing to re-read or re-parse.
+        // same sizes). The audio is unchanged, so we avoid re-reading every
+        // tag -- but a folder cover image the user dropped in (or replaced)
+        // since the last scan doesn't touch any audio file, so the content
+        // check above can't see it. Catch that cheaply here before declaring
+        // the book unchanged.
         if (existing is not null && BookContentMatches(existing, stats))
+        {
+            if (await TryRefreshFolderCoverAsync(existing, bookDir, cancellationToken))
+                return BookScanOutcome.Updated;
             return BookScanOutcome.Unchanged;
+        }
 
         // Tag parsing dominates the per-book cost on network shares. Run it
         // in parallel across the files of this book. Broken files (ATL throws
@@ -187,6 +195,32 @@ public class LibraryScanner(
             if (dbFile.SizeBytes != info.Length)
                 return false;
         }
+        return true;
+    }
+
+    /// <summary>
+    /// On the unchanged-audio fast path, pick up a folder cover image the user
+    /// added or replaced since the last scan -- something the audio-only
+    /// content check can't see. Returns true when the cover was (re)written.
+    /// Cheap: one directory listing, with a byte read only when there's work.
+    /// </summary>
+    private async Task<bool> TryRefreshFolderCoverAsync(Book book, string bookDir, CancellationToken cancellationToken)
+    {
+        var folderCover = FindFolderCover(bookDir);
+        if (folderCover is null) return false;
+
+        // A book that already has a cover only needs refreshing when the source
+        // image is newer than the last time we wrote the book; a book with no
+        // cover always takes the image. After writing, UpdatedAt is bumped past
+        // the file's timestamp so the next scan skips it again.
+        if (book.CoverPath is not null &&
+            File.GetLastWriteTimeUtc(folderCover) <= book.UpdatedAt)
+            return false;
+
+        var bytes = await File.ReadAllBytesAsync(folderCover, cancellationToken);
+        var coverPath = await coverStore.SaveCoverAsync(
+            bookDir, bytes, GetImageMimeType(folderCover), cancellationToken);
+        await repository.SetBookCoverAsync(book.Id, coverPath, cancellationToken);
         return true;
     }
 
