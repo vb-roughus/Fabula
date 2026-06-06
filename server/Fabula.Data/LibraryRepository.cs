@@ -149,6 +149,18 @@ public class LibraryRepository(FabulaDbContext db) : ILibraryRepository
         await db.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task SetBookCoverAsync(int bookId, string? coverPath, CancellationToken cancellationToken)
+    {
+        // FindAsync returns the already-tracked instance when the scan loaded
+        // it earlier, so this updates the same entity without a second query
+        // and changes only the two scalar columns (no navigation churn).
+        var book = await db.Books.FindAsync([bookId], cancellationToken);
+        if (book is null) return;
+        book.CoverPath = coverPath;
+        book.UpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
     private async Task<List<Author>> ResolveAuthorsAsync(IReadOnlyList<string> names, CancellationToken ct)
     {
         if (names.Count == 0) return [];
