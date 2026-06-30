@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Highlight
 import androidx.compose.material.icons.filled.LibraryBooks
 import androidx.compose.material.icons.outlined.RemoveDone
 import androidx.compose.material.icons.filled.MoreHoriz
@@ -74,6 +75,7 @@ import app.fabula.data.BookmarkDto
 import app.fabula.data.ChapterDto
 import app.fabula.data.CreateBookmarkRequest
 import app.fabula.data.FabulaRepository
+import app.fabula.data.HighlightDto
 import app.fabula.data.SeriesSummaryDto
 import app.fabula.data.SetFinishedRequest
 import app.fabula.data.UpdateProgressRequest
@@ -83,6 +85,8 @@ import app.fabula.data.parseTimeSpan
 import app.fabula.data.toTimeSpanString
 import app.fabula.player.PlayerController
 import app.fabula.ui.player.BookmarkManagerSheet
+import app.fabula.ui.player.HighlightColor
+import app.fabula.ui.player.HighlightManagerSheet
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.launch
 
@@ -97,12 +101,15 @@ fun BookScreen(
 ) {
     var book by remember { mutableStateOf<BookDetailDto?>(null) }
     var bookmarks by remember { mutableStateOf<List<BookmarkDto>>(emptyList()) }
+    var highlights by remember { mutableStateOf<List<HighlightDto>>(emptyList()) }
     var error by remember { mutableStateOf<String?>(null) }
     var moreMenuOpen by remember { mutableStateOf(false) }
     var addBookmarkOpen by remember { mutableStateOf(false) }
     var bookmarkNote by remember { mutableStateOf("") }
     var assignSeriesOpen by remember { mutableStateOf(false) }
     var bookmarkManagerOpen by remember { mutableStateOf(false) }
+    var highlightManagerOpen by remember { mutableStateOf(false) }
+    val highlightsRevision by repository.highlightsRevision.collectAsState()
     var resetProgressConfirmOpen by remember { mutableStateOf(false) }
     var seriesList by remember { mutableStateOf<List<SeriesSummaryDto>>(emptyList()) }
     val seriesRevision by repository.seriesRevision.collectAsState()
@@ -136,6 +143,13 @@ fun BookScreen(
         runCatching {
             val api = repository.apiOrNull() ?: return@runCatching
             bookmarks = api.listBookmarks(bookId)
+        }
+    }
+
+    LaunchedEffect(bookId, highlightsRevision) {
+        runCatching {
+            val api = repository.apiOrNull() ?: return@runCatching
+            highlights = api.listHighlights(bookId)
         }
     }
 
@@ -241,6 +255,16 @@ fun BookScreen(
                                 }
                             )
                             DropdownMenuItem(
+                                text = { Text("Markierungen verwalten") },
+                                leadingIcon = {
+                                    Icon(Icons.Filled.Highlight, contentDescription = null)
+                                },
+                                onClick = {
+                                    moreMenuOpen = false
+                                    highlightManagerOpen = true
+                                }
+                            )
+                            DropdownMenuItem(
                                 text = {
                                     Text(
                                         if (book?.progress?.finished == true) "Als ungehört markieren"
@@ -329,6 +353,7 @@ fun BookScreen(
                     isPlaying = playerState.isPlaying,
                     currentChapterIndex = playerState.currentChapter?.index,
                     bookmarks = bookmarks,
+                    highlights = highlights,
                     listState = listState,
                     onPlay = {
                         scope.launch {
@@ -512,6 +537,24 @@ fun BookScreen(
             }
         )
     }
+
+    if (highlightManagerOpen) {
+        HighlightManagerSheet(
+            bookId = bookId,
+            book = book,
+            repository = repository,
+            onDismiss = { highlightManagerOpen = false },
+            onPlayHighlight = { h ->
+                val current = book ?: return@HighlightManagerSheet
+                scope.launch {
+                    if (playerState.book?.id != current.id) player.loadBook(current)
+                    player.seekInBook(parseTimeSpan(h.start))
+                    player.play()
+                    onPlaybackStarted()
+                }
+            }
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -609,6 +652,7 @@ private fun BookContent(
     isPlaying: Boolean,
     currentChapterIndex: Int?,
     bookmarks: List<BookmarkDto>,
+    highlights: List<HighlightDto>,
     listState: androidx.compose.foundation.lazy.LazyListState,
     onPlay: () -> Unit,
     onChapterClick: (ChapterDto) -> Unit,
@@ -784,6 +828,7 @@ private fun BookContent(
                 ChapterRow(
                     chapter = chapter,
                     isActive = isCurrent && currentChapterIndex == chapter.index,
+                    hasHighlight = chapterHasHighlight(chapter, highlights),
                     onClick = { onChapterClick(chapter) }
                 )
             }
@@ -797,6 +842,16 @@ private fun chapterAt(book: BookDetailDto, posSec: Double): ChapterDto? {
     val probe = posSec + 0.010  // see PlayerController.chapterAt
     return book.chapters.firstOrNull {
         probe >= parseTimeSpan(it.start) && probe < parseTimeSpan(it.end)
+    }
+}
+
+/** True when any highlighted passage overlaps this chapter's time range. */
+private fun chapterHasHighlight(chapter: ChapterDto, highlights: List<HighlightDto>): Boolean {
+    if (highlights.isEmpty()) return false
+    val cs = parseTimeSpan(chapter.start)
+    val ce = parseTimeSpan(chapter.end)
+    return highlights.any { h ->
+        parseTimeSpan(h.start) < ce && parseTimeSpan(h.end) > cs
     }
 }
 
@@ -895,6 +950,7 @@ private fun ActionRow(onPlay: () -> Unit, isPlaying: Boolean) {
 private fun ChapterRow(
     chapter: ChapterDto,
     isActive: Boolean,
+    hasHighlight: Boolean,
     onClick: () -> Unit
 ) {
     val chapterDurationSec = parseTimeSpan(chapter.end) - parseTimeSpan(chapter.start)
@@ -931,6 +987,14 @@ private fun ChapterRow(
                     color = MaterialTheme.colorScheme.outline
                 )
             }
+        }
+        if (hasHighlight) {
+            Icon(
+                Icons.Filled.Highlight,
+                contentDescription = "Enthält Markierungen",
+                tint = HighlightColor,
+                modifier = Modifier.size(20.dp)
+            )
         }
         IconButton(onClick = { /* chapter menu placeholder */ }) {
             Icon(

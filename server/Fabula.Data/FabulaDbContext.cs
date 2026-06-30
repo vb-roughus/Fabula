@@ -15,6 +15,7 @@ public class FabulaDbContext(DbContextOptions<FabulaDbContext> options) : DbCont
     public DbSet<User> Users => Set<User>();
     public DbSet<PlaybackProgress> PlaybackProgress => Set<PlaybackProgress>();
     public DbSet<Bookmark> Bookmarks => Set<Bookmark>();
+    public DbSet<Highlight> Highlights => Set<Highlight>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -122,6 +123,23 @@ public class FabulaDbContext(DbContextOptions<FabulaDbContext> options) : DbCont
         {
             e.HasIndex(x => new { x.UserId, x.BookId, x.Position });
             e.Property(x => x.Note).HasMaxLength(512);
+
+            e.HasOne(x => x.User)
+                .WithMany()
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasOne(x => x.Book)
+                .WithMany()
+                .HasForeignKey(x => x.BookId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        b.Entity<Highlight>(e =>
+        {
+            e.HasIndex(x => new { x.UserId, x.BookId, x.Start });
+            e.Property(x => x.Title).HasMaxLength(200);
+            e.Property(x => x.Note).HasMaxLength(2000);
 
             e.HasOne(x => x.User)
                 .WithMany()
