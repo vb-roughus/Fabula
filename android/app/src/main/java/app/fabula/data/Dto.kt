@@ -148,6 +148,28 @@ data class CreateBookmarkRequest(val position: String, val note: String? = null)
 data class UpdateBookmarkRequest(val note: String? = null)
 
 @Serializable
+data class HighlightDto(
+    val id: Int,
+    val bookId: Int,
+    val start: String,
+    val end: String,
+    val title: String? = null,
+    val note: String? = null,
+    val createdAt: String
+)
+
+@Serializable
+data class CreateHighlightRequest(
+    val start: String,
+    val end: String,
+    val title: String? = null,
+    val note: String? = null
+)
+
+@Serializable
+data class UpdateHighlightRequest(val title: String? = null, val note: String? = null)
+
+@Serializable
 data class SeriesRequest(val name: String, val description: String? = null)
 
 @Serializable

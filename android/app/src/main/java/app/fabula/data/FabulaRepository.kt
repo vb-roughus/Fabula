@@ -31,6 +31,12 @@ class FabulaRepository(
     val bookmarksRevision: StateFlow<Int> = _bookmarksRevision.asStateFlow()
     fun bumpBookmarksRevision() { _bookmarksRevision.value = _bookmarksRevision.value + 1 }
 
+    /** Bumps every time a highlight is created/edited/deleted, so screens that
+     *  show highlights (player, BookScreen) can re-fetch without prop drilling. */
+    private val _highlightsRevision = MutableStateFlow(0)
+    val highlightsRevision: StateFlow<Int> = _highlightsRevision.asStateFlow()
+    fun bumpHighlightsRevision() { _highlightsRevision.value = _highlightsRevision.value + 1 }
+
     /** Bumps every time the series catalog changes (create/update/delete or
      *  a book's series assignment changes), so list screens can re-fetch. */
     private val _seriesRevision = MutableStateFlow(0)

@@ -51,7 +51,12 @@ data class PlayerUiState(
     /** Configured shower boost in dB (0 = off). Persisted in DataStore. */
     val showerBoostDb: Float = 0f,
     /** True when the built-in speaker is the only active audio output. */
-    val showerSpeakerOnly: Boolean = true
+    val showerSpeakerOnly: Boolean = true,
+    /** While the user is capturing a highlight, the book-position (seconds)
+     *  where they tapped "Markierung starten". Null when no capture is in
+     *  progress. The second tap reads this together with the current position
+     *  to create the range. */
+    val highlightStartSec: Double? = null
 )
 
 /**
@@ -152,6 +157,20 @@ class PlayerController(
         val clamped = db.coerceIn(0f, 15f)
         (context.applicationContext as FabulaApp).setShowerBoostLive(clamped)
         scope.launch { repository.setShowerBoostDb(clamped) }
+    }
+
+    /** Mark the current playback position as the start of a new highlight.
+     *  The UI shows a "capturing" state until the user taps again to set the
+     *  end (which it reads from highlightStartSec + the current position). */
+    fun beginHighlight() {
+        _state.value = _state.value.copy(highlightStartSec = _state.value.positionInBook)
+    }
+
+    /** Abandon an in-progress highlight capture without creating anything. */
+    fun cancelHighlight() {
+        if (_state.value.highlightStartSec != null) {
+            _state.value = _state.value.copy(highlightStartSec = null)
+        }
     }
 
     suspend fun loadBook(book: BookDetailDto) {

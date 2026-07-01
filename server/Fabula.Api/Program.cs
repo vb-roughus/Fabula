@@ -140,6 +140,7 @@ app.MapSeriesEndpoints();
 app.MapStreamingEndpoints();
 app.MapProgressEndpoints();
 app.MapBookmarkEndpoints();
+app.MapHighlightEndpoints();
 
 app.MapFallbackToFile("index.html");
 

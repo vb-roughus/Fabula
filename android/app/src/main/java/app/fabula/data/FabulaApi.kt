@@ -86,6 +86,24 @@ interface FabulaApi {
     @DELETE("api/bookmarks/{id}")
     suspend fun deleteBookmark(@Path("id") id: Int)
 
+    @GET("api/books/{bookId}/highlights")
+    suspend fun listHighlights(@Path("bookId") bookId: Int): List<HighlightDto>
+
+    @POST("api/books/{bookId}/highlights")
+    suspend fun createHighlight(
+        @Path("bookId") bookId: Int,
+        @Body body: CreateHighlightRequest
+    ): HighlightDto
+
+    @PATCH("api/highlights/{id}")
+    suspend fun updateHighlight(
+        @Path("id") id: Int,
+        @Body body: UpdateHighlightRequest
+    ): HighlightDto
+
+    @DELETE("api/highlights/{id}")
+    suspend fun deleteHighlight(@Path("id") id: Int)
+
     // --- auth -------------------------------------------------------------
 
     @GET("api/setup")

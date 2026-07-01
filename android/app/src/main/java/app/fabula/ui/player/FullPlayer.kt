@@ -11,6 +11,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -46,22 +47,27 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Replay30
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.Highlight
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material.icons.outlined.GraphicEq
+import androidx.compose.material.icons.outlined.Highlight
 import androidx.compose.material.icons.outlined.WaterDrop
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -72,6 +78,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
@@ -81,7 +90,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.fabula.data.CreateBookmarkRequest
+import app.fabula.data.CreateHighlightRequest
 import app.fabula.data.FabulaRepository
+import app.fabula.data.HighlightDto
 import app.fabula.data.formatClock
 import app.fabula.data.parseTimeSpan
 import app.fabula.data.toTimeSpanString
@@ -106,6 +117,11 @@ fun FullPlayer(
 
     var bookmarkManagerOpen by remember { mutableStateOf(false) }
     var bookmarkSavedFlash by remember { mutableStateOf(false) }
+    var highlightManagerOpen by remember { mutableStateOf(false) }
+    // While capturing, the frozen end position (book seconds) of the second
+    // tap; the create dialog reads it together with state.highlightStartSec.
+    var highlightDialogOpen by remember { mutableStateOf(false) }
+    var highlightEndSec by remember { mutableFloatStateOf(0f) }
     var pulseEnabled by remember { mutableStateOf(false) }
     // Speed is hoisted here so it survives the portrait <-> landscape layout
     // swap (each layout would otherwise re-create its own utility row).
@@ -152,6 +168,29 @@ fun FullPlayer(
     val chapterDuration = (chapterEnd - chapterStart).coerceAtLeast(0.0)
     val chapterPos = (pos - chapterStart).coerceIn(0.0, chapterDuration)
 
+    val highlightsRevision by repository.highlightsRevision.collectAsState()
+    var highlights by remember { mutableStateOf<List<HighlightDto>>(emptyList()) }
+    LaunchedEffect(book.id, highlightsRevision) {
+        runCatching {
+            val api = repository.apiOrNull() ?: return@runCatching
+            highlights = api.listHighlights(book.id)
+        }
+    }
+    // Highlight ranges intersecting the current chapter, as [0..1] fractions
+    // of the chapter-relative scrubber, for the coloured bands on the track.
+    val highlightBands: List<Pair<Float, Float>> = if (chapterDuration <= 0.0) emptyList() else
+        highlights.mapNotNull { h ->
+            val hs = parseTimeSpan(h.start)
+            val he = parseTimeSpan(h.end)
+            if (he <= chapterStart || hs >= chapterStart + chapterDuration) null
+            else {
+                val s = ((hs - chapterStart) / chapterDuration).coerceIn(0.0, 1.0).toFloat()
+                val e = ((he - chapterStart) / chapterDuration).coerceIn(0.0, 1.0).toFloat()
+                if (e > s) s to e else null
+            }
+        }
+    val capturing = state.highlightStartSec != null
+
     val whiteText = Color.White
     val mutedText = Color.White.copy(alpha = 0.65f)
 
@@ -177,6 +216,17 @@ fun FullPlayer(
         }
     }
 
+    // First tap marks the start, second tap freezes the end and opens the
+    // dialog to add a description/note before saving.
+    val onToggleHighlight: () -> Unit = {
+        if (state.highlightStartSec == null) {
+            player.beginHighlight()
+        } else {
+            highlightEndSec = state.positionInBook.toFloat()
+            highlightDialogOpen = true
+        }
+    }
+
     // Shared building blocks -- assembled differently for portrait vs. landscape
     // so the two orientations never drift out of sync.
     val topBar: @Composable () -> Unit = {
@@ -185,6 +235,9 @@ fun FullPlayer(
             title = book.series ?: book.title,
             onCollapse = onCollapse,
             onManageBookmarks = { bookmarkManagerOpen = true },
+            onManageHighlights = { highlightManagerOpen = true },
+            capturing = capturing,
+            onDiscardHighlight = { player.cancelHighlight() },
             whiteText = whiteText,
             mutedText = mutedText
         )
@@ -202,6 +255,8 @@ fun FullPlayer(
             author = book.authors.joinToString(", ").ifBlank { book.title },
             bookmarkSaved = bookmarkSavedFlash,
             onAddBookmark = onAddBookmark,
+            highlightCapturing = capturing,
+            onToggleHighlight = onToggleHighlight,
             whiteText = whiteText,
             mutedText = mutedText
         )
@@ -212,6 +267,7 @@ fun FullPlayer(
             chapterStart = chapterStart,
             chapterDuration = chapterDuration,
             onSeek = { player.seekInBook(it) },
+            highlightBands = highlightBands,
             whiteText = whiteText,
             mutedText = mutedText
         )
@@ -349,6 +405,107 @@ fun FullPlayer(
             }
         )
     }
+
+    if (highlightManagerOpen) {
+        HighlightManagerSheet(
+            bookId = book.id,
+            book = book,
+            repository = repository,
+            onDismiss = { highlightManagerOpen = false },
+            onPlayHighlight = { h ->
+                player.seekInBook(parseTimeSpan(h.start))
+                player.play()
+            }
+        )
+    }
+
+    if (highlightDialogOpen) {
+        val startSec = state.highlightStartSec ?: highlightEndSec.toDouble()
+        val endSec = highlightEndSec.toDouble()
+        val lo = minOf(startSec, endSec)
+        val hi = maxOf(startSec, endSec)
+        CreateHighlightDialog(
+            startSec = lo,
+            endSec = hi,
+            onDismiss = {
+                highlightDialogOpen = false
+                player.cancelHighlight()
+            },
+            onSave = { title, note ->
+                highlightDialogOpen = false
+                player.cancelHighlight()
+                scope.launch {
+                    val api = repository.apiOrNull() ?: return@launch
+                    runCatching {
+                        api.createHighlight(
+                            book.id,
+                            CreateHighlightRequest(
+                                start = toTimeSpanString(lo),
+                                end = toTimeSpanString(hi),
+                                title = title,
+                                note = note
+                            )
+                        )
+                        repository.bumpHighlightsRevision()
+                    }.onFailure { t ->
+                        repository.logFailure(
+                            "FullPlayer.createHighlight book=${book.id} $lo..$hi",
+                            t
+                        )
+                    }
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun CreateHighlightDialog(
+    startSec: Double,
+    endSec: Double,
+    onDismiss: () -> Unit,
+    onSave: (title: String?, note: String?) -> Unit
+) {
+    var title by remember { mutableStateOf("") }
+    var note by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Markierung speichern") },
+        text = {
+            Column {
+                Text(
+                    "${formatClock(startSec)} – ${formatClock(endSec)}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.outline
+                )
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = { title = it },
+                    label = { Text("Beschreibung (optional)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = note,
+                    onValueChange = { note = it },
+                    label = { Text("Notiz (optional)") },
+                    singleLine = false,
+                    maxLines = 5,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                onSave(title.trim().ifBlank { null }, note.trim().ifBlank { null })
+            }) { Text("Speichern") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Verwerfen") }
+        }
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -358,6 +515,9 @@ private fun PlayerTopBar(
     title: String,
     onCollapse: () -> Unit,
     onManageBookmarks: () -> Unit,
+    onManageHighlights: () -> Unit,
+    capturing: Boolean,
+    onDiscardHighlight: () -> Unit,
     whiteText: Color,
     mutedText: Color,
     modifier: Modifier = Modifier
@@ -416,6 +576,28 @@ private fun PlayerTopBar(
                         onManageBookmarks()
                     }
                 )
+                DropdownMenuItem(
+                    text = { Text("Markierungen verwalten") },
+                    leadingIcon = {
+                        Icon(Icons.Filled.Highlight, contentDescription = null)
+                    },
+                    onClick = {
+                        moreMenuOpen = false
+                        onManageHighlights()
+                    }
+                )
+                if (capturing) {
+                    DropdownMenuItem(
+                        text = { Text("Markierung verwerfen") },
+                        leadingIcon = {
+                            Icon(Icons.Outlined.Highlight, contentDescription = null)
+                        },
+                        onClick = {
+                            moreMenuOpen = false
+                            onDiscardHighlight()
+                        }
+                    )
+                }
             }
         }
     }
@@ -451,6 +633,8 @@ private fun PlayerTitleRow(
     author: String,
     bookmarkSaved: Boolean,
     onAddBookmark: () -> Unit,
+    highlightCapturing: Boolean,
+    onToggleHighlight: () -> Unit,
     whiteText: Color,
     mutedText: Color,
     modifier: Modifier = Modifier
@@ -474,6 +658,13 @@ private fun PlayerTitleRow(
                 maxLines = 1
             )
         }
+        IconButton(onClick = onToggleHighlight) {
+            Icon(
+                imageVector = if (highlightCapturing) Icons.Filled.Highlight else Icons.Outlined.Highlight,
+                contentDescription = if (highlightCapturing) "Markierung beenden" else "Passage markieren",
+                tint = if (highlightCapturing) HighlightColor else whiteText
+            )
+        }
         IconButton(onClick = onAddBookmark) {
             Icon(
                 Icons.Filled.BookmarkAdd,
@@ -490,6 +681,7 @@ private fun PlayerScrubber(
     chapterStart: Double,
     chapterDuration: Double,
     onSeek: (Double) -> Unit,
+    highlightBands: List<Pair<Float, Float>>,
     whiteText: Color,
     mutedText: Color,
     modifier: Modifier = Modifier
@@ -554,6 +746,29 @@ private fun PlayerScrubber(
                         .height(20.dp),
                     contentAlignment = Alignment.Center
                 ) {
+                    // Highlighter bands behind the track line: the Material3
+                    // track is measured at slider_width - thumb_width, so this
+                    // Canvas' [0..1] maps 1:1 to the thumb's travel and lines up
+                    // with the fill below.
+                    if (highlightBands.isNotEmpty()) {
+                        Canvas(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(6.dp)
+                        ) {
+                            val h = size.height
+                            highlightBands.forEach { (s, e) ->
+                                val x = size.width * s
+                                val w = (size.width * (e - s)).coerceAtLeast(3.dp.toPx())
+                                drawRoundRect(
+                                    color = HighlightColor.copy(alpha = 0.85f),
+                                    topLeft = Offset(x, 0f),
+                                    size = Size(w, h),
+                                    cornerRadius = CornerRadius(h / 2f, h / 2f)
+                                )
+                            }
+                        }
+                    }
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
