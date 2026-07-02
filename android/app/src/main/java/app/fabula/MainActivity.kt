@@ -4,7 +4,10 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.lifecycle.lifecycleScope
 import app.fabula.ui.FabulaTheme
 import app.fabula.ui.Navigation
@@ -20,7 +23,13 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch { appContainer.repository.apiOrNull() }
 
         setContent {
-            FabulaTheme {
+            val themeMode by appContainer.repository.themeMode.collectAsState(initial = "system")
+            val darkTheme = when (themeMode) {
+                "light" -> false
+                "dark" -> true
+                else -> isSystemInDarkTheme()
+            }
+            FabulaTheme(darkTheme = darkTheme) {
                 DisposableEffect(Unit) {
                     appContainer.playerController.connect()
                     onDispose { }

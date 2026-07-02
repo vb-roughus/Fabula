@@ -191,8 +191,11 @@ fun FullPlayer(
         }
     val capturing = state.highlightStartSec != null
 
-    val whiteText = Color.White
-    val mutedText = Color.White.copy(alpha = 0.65f)
+    // Foreground for the player, derived from the theme so the controls stay
+    // legible in both dark mode (light-on-navy) and light mode (dark-on-light).
+    // Previously hardcoded white, which vanished on the light background.
+    val playerFg = MaterialTheme.colorScheme.onBackground
+    val playerMuted = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.65f)
 
     val onAddBookmark: () -> Unit = {
         scope.launch {
@@ -238,8 +241,8 @@ fun FullPlayer(
             onManageHighlights = { highlightManagerOpen = true },
             capturing = capturing,
             onDiscardHighlight = { player.cancelHighlight() },
-            whiteText = whiteText,
-            mutedText = mutedText
+            playerFg = playerFg,
+            playerMuted = playerMuted
         )
     }
     val cover: @Composable (Modifier) -> Unit = { mod ->
@@ -257,8 +260,8 @@ fun FullPlayer(
             onAddBookmark = onAddBookmark,
             highlightCapturing = capturing,
             onToggleHighlight = onToggleHighlight,
-            whiteText = whiteText,
-            mutedText = mutedText
+            playerFg = playerFg,
+            playerMuted = playerMuted
         )
     }
     val scrubber: @Composable () -> Unit = {
@@ -268,8 +271,8 @@ fun FullPlayer(
             chapterDuration = chapterDuration,
             onSeek = { player.seekInBook(it) },
             highlightBands = highlightBands,
-            whiteText = whiteText,
-            mutedText = mutedText
+            playerFg = playerFg,
+            playerMuted = playerMuted
         )
     }
     val mainControls: @Composable () -> Unit = {
@@ -282,7 +285,7 @@ fun FullPlayer(
             onTogglePlay = { player.togglePlayPause() },
             onNextChapter = { nextChapter?.let { player.jumpToChapter(it) } },
             onSkipForward = { player.skip(30.0) },
-            whiteText = whiteText
+            playerFg = playerFg
         )
     }
     val showerSection: @Composable () -> Unit = {
@@ -291,8 +294,8 @@ fun FullPlayer(
             boostDb = state.showerBoostDb,
             speakerOnly = state.showerSpeakerOnly,
             onBoostChange = { player.setShowerBoostDb(it) },
-            whiteText = whiteText,
-            mutedText = mutedText
+            playerFg = playerFg,
+            playerMuted = playerMuted
         )
     }
     val utilityRow: @Composable () -> Unit = {
@@ -307,7 +310,7 @@ fun FullPlayer(
             sleepRemainingMs = state.sleepTimerRemainingMs,
             onStartSleep = { player.startSleepTimer(SLEEP_TIMER_DURATION_MS) },
             onCancelSleep = { player.cancelSleepTimer() },
-            whiteText = whiteText
+            playerFg = playerFg
         )
     }
 
@@ -518,8 +521,8 @@ private fun PlayerTopBar(
     onManageHighlights: () -> Unit,
     capturing: Boolean,
     onDiscardHighlight: () -> Unit,
-    whiteText: Color,
-    mutedText: Color,
+    playerFg: Color,
+    playerMuted: Color,
     modifier: Modifier = Modifier
 ) {
     var moreMenuOpen by remember { mutableStateOf(false) }
@@ -531,7 +534,7 @@ private fun PlayerTopBar(
             Icon(
                 Icons.Filled.KeyboardArrowDown,
                 contentDescription = "Minimieren",
-                tint = whiteText
+                tint = playerFg
             )
         }
         Column(
@@ -541,7 +544,7 @@ private fun PlayerTopBar(
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelSmall,
-                color = mutedText,
+                color = playerMuted,
                 letterSpacing = 1.sp,
                 maxLines = 1
             )
@@ -549,7 +552,7 @@ private fun PlayerTopBar(
                 text = title,
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold,
-                color = whiteText,
+                color = playerFg,
                 maxLines = 1,
                 textAlign = TextAlign.Center
             )
@@ -559,7 +562,7 @@ private fun PlayerTopBar(
                 Icon(
                     Icons.Filled.MoreHoriz,
                     contentDescription = "Mehr",
-                    tint = whiteText
+                    tint = playerFg
                 )
             }
             DropdownMenu(
@@ -635,8 +638,8 @@ private fun PlayerTitleRow(
     onAddBookmark: () -> Unit,
     highlightCapturing: Boolean,
     onToggleHighlight: () -> Unit,
-    whiteText: Color,
-    mutedText: Color,
+    playerFg: Color,
+    playerMuted: Color,
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -648,13 +651,13 @@ private fun PlayerTitleRow(
                 text = title,
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
-                color = whiteText,
+                color = playerFg,
                 maxLines = 1
             )
             Text(
                 text = author,
                 style = MaterialTheme.typography.bodyMedium,
-                color = mutedText,
+                color = playerMuted,
                 maxLines = 1
             )
         }
@@ -662,14 +665,14 @@ private fun PlayerTitleRow(
             Icon(
                 imageVector = if (highlightCapturing) Icons.Filled.BorderColor else Icons.Outlined.BorderColor,
                 contentDescription = if (highlightCapturing) "Markierung beenden" else "Passage markieren",
-                tint = if (highlightCapturing) HighlightColor else whiteText
+                tint = if (highlightCapturing) HighlightColor else playerFg
             )
         }
         IconButton(onClick = onAddBookmark) {
             Icon(
                 Icons.Filled.BookmarkAdd,
                 contentDescription = "Lesezeichen setzen",
-                tint = if (bookmarkSaved) MaterialTheme.colorScheme.primary else whiteText
+                tint = if (bookmarkSaved) MaterialTheme.colorScheme.primary else playerFg
             )
         }
     }
@@ -683,8 +686,8 @@ private fun PlayerScrubber(
     chapterDuration: Double,
     onSeek: (Double) -> Unit,
     highlightBands: List<Pair<Float, Float>>,
-    whiteText: Color,
-    mutedText: Color,
+    playerFg: Color,
+    playerMuted: Color,
     modifier: Modifier = Modifier
 ) {
     var scrubFraction by remember { mutableStateOf<Float?>(null) }
@@ -699,7 +702,7 @@ private fun PlayerScrubber(
         Text(
             formatClock(chapterPos),
             style = MaterialTheme.typography.labelSmall,
-            color = mutedText,
+            color = playerMuted,
             modifier = Modifier.width(40.dp)
         )
         Slider(
@@ -715,9 +718,9 @@ private fun PlayerScrubber(
                 .weight(1f)
                 .padding(horizontal = 8.dp),
             colors = SliderDefaults.colors(
-                thumbColor = whiteText,
-                activeTrackColor = whiteText,
-                inactiveTrackColor = whiteText.copy(alpha = 0.25f)
+                thumbColor = playerFg,
+                activeTrackColor = playerFg,
+                inactiveTrackColor = playerFg.copy(alpha = 0.25f)
             ),
             thumb = {
                 // Wrap the visible 10 dp circle in a 20 dp box so the slider
@@ -732,7 +735,7 @@ private fun PlayerScrubber(
                         modifier = Modifier
                             .size(10.dp)
                             .clip(CircleShape)
-                            .background(whiteText)
+                            .background(playerFg)
                     )
                 }
             },
@@ -775,14 +778,14 @@ private fun PlayerScrubber(
                             .fillMaxWidth()
                             .height(2.dp)
                             .clip(RoundedCornerShape(1.dp))
-                            .background(whiteText.copy(alpha = 0.25f))
+                            .background(playerFg.copy(alpha = 0.25f))
                     ) {
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth(fraction)
                                 .fillMaxHeight()
                                 .clip(RoundedCornerShape(1.dp))
-                                .background(whiteText)
+                                .background(playerFg)
                         )
                     }
                 }
@@ -791,7 +794,7 @@ private fun PlayerScrubber(
         Text(
             formatClock(chapterDuration),
             style = MaterialTheme.typography.labelSmall,
-            color = mutedText,
+            color = playerMuted,
             modifier = Modifier.width(40.dp),
             textAlign = TextAlign.End
         )
@@ -808,7 +811,7 @@ private fun PlayerMainControls(
     onTogglePlay: () -> Unit,
     onNextChapter: () -> Unit,
     onSkipForward: () -> Unit,
-    whiteText: Color,
+    playerFg: Color,
     modifier: Modifier = Modifier
 ) {
     // -30s | prev chapter | PLAY/PAUSE | next chapter | +30s
@@ -821,7 +824,7 @@ private fun PlayerMainControls(
             Icon(
                 Icons.Filled.Replay30,
                 contentDescription = "30 Sek. zurück",
-                tint = whiteText,
+                tint = playerFg,
                 modifier = Modifier.size(32.dp)
             )
         }
@@ -829,7 +832,7 @@ private fun PlayerMainControls(
             Icon(
                 Icons.Filled.SkipPrevious,
                 contentDescription = "Vorheriges Kapitel",
-                tint = if (hasPrev) whiteText else whiteText.copy(alpha = 0.3f),
+                tint = if (hasPrev) playerFg else playerFg.copy(alpha = 0.3f),
                 modifier = Modifier.size(40.dp)
             )
         }
@@ -837,7 +840,7 @@ private fun PlayerMainControls(
             modifier = Modifier
                 .size(72.dp)
                 .clip(CircleShape)
-                .background(whiteText)
+                .background(playerFg)
                 .clickable { onTogglePlay() },
             contentAlignment = Alignment.Center
         ) {
@@ -852,7 +855,7 @@ private fun PlayerMainControls(
             Icon(
                 Icons.Filled.SkipNext,
                 contentDescription = "Nächstes Kapitel",
-                tint = if (hasNext) whiteText else whiteText.copy(alpha = 0.3f),
+                tint = if (hasNext) playerFg else playerFg.copy(alpha = 0.3f),
                 modifier = Modifier.size(40.dp)
             )
         }
@@ -860,7 +863,7 @@ private fun PlayerMainControls(
             Icon(
                 Icons.Filled.Forward30,
                 contentDescription = "30 Sek. vor",
-                tint = whiteText,
+                tint = playerFg,
                 modifier = Modifier.size(32.dp)
             )
         }
@@ -873,8 +876,8 @@ private fun PlayerShowerSection(
     boostDb: Float,
     speakerOnly: Boolean,
     onBoostChange: (Float) -> Unit,
-    whiteText: Color,
-    mutedText: Color
+    playerFg: Color,
+    playerMuted: Color
 ) {
     AnimatedVisibility(
         visible = visible,
@@ -888,8 +891,8 @@ private fun PlayerShowerSection(
                 boostDb = boostDb,
                 speakerOnly = speakerOnly,
                 onBoostChange = onBoostChange,
-                whiteText = whiteText,
-                mutedText = mutedText
+                playerFg = playerFg,
+                playerMuted = playerMuted
             )
             Spacer(Modifier.height(8.dp))
         }
@@ -908,7 +911,7 @@ private fun PlayerUtilityRow(
     sleepRemainingMs: Long?,
     onStartSleep: () -> Unit,
     onCancelSleep: () -> Unit,
-    whiteText: Color,
+    playerFg: Color,
     modifier: Modifier = Modifier
 ) {
     var speedMenuOpen by remember { mutableStateOf(false) }
@@ -925,13 +928,13 @@ private fun PlayerUtilityRow(
                 Icon(
                     Icons.Filled.Speed,
                     contentDescription = null,
-                    tint = whiteText,
+                    tint = playerFg,
                     modifier = Modifier.size(20.dp)
                 )
                 Spacer(Modifier.width(6.dp))
                 Text(
                     "${"%.2f".format(currentSpeed).trimEnd('0').trimEnd('.', ',')}×",
-                    color = whiteText,
+                    color = playerFg,
                     style = MaterialTheme.typography.labelLarge
                 )
             }
@@ -961,8 +964,8 @@ private fun PlayerUtilityRow(
                 contentDescription = if (showerExpanded) "Dusch-Modus ausblenden" else "Dusch-Modus einblenden",
                 tint = when {
                     showerEffectivelyOn -> MaterialTheme.colorScheme.primary
-                    showerExpanded -> whiteText
-                    else -> whiteText.copy(alpha = 0.7f)
+                    showerExpanded -> playerFg
+                    else -> playerFg.copy(alpha = 0.7f)
                 },
                 modifier = Modifier.size(20.dp)
             )
@@ -975,7 +978,7 @@ private fun PlayerUtilityRow(
             Icon(
                 Icons.Outlined.GraphicEq,
                 contentDescription = if (pulseEnabled) "Pulse-Modus aus" else "Pulse-Modus an",
-                tint = if (pulseEnabled) MaterialTheme.colorScheme.primary else whiteText.copy(alpha = 0.7f),
+                tint = if (pulseEnabled) MaterialTheme.colorScheme.primary else playerFg.copy(alpha = 0.7f),
                 modifier = Modifier.size(20.dp)
             )
         }
@@ -1014,13 +1017,13 @@ private fun PlayerUtilityRow(
                 Icon(
                     Icons.Outlined.Bedtime,
                     contentDescription = null,
-                    tint = whiteText,
+                    tint = playerFg,
                     modifier = Modifier.size(20.dp)
                 )
                 Spacer(Modifier.width(6.dp))
                 Text(
                     "30 min",
-                    color = whiteText,
+                    color = playerFg,
                     style = MaterialTheme.typography.labelLarge
                 )
             }
@@ -1034,15 +1037,15 @@ private fun ShowerModeRow(
     boostDb: Float,
     speakerOnly: Boolean,
     onBoostChange: (Float) -> Unit,
-    whiteText: Color,
-    mutedText: Color
+    playerFg: Color,
+    playerMuted: Color
 ) {
     val active = boostDb > 0f
     val effectivelyOn = active && speakerOnly
     val iconTint = when {
         effectivelyOn -> MaterialTheme.colorScheme.primary
-        active && !speakerOnly -> whiteText.copy(alpha = 0.35f)
-        else -> whiteText.copy(alpha = 0.7f)
+        active && !speakerOnly -> playerFg.copy(alpha = 0.35f)
+        else -> playerFg.copy(alpha = 0.7f)
     }
 
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -1060,21 +1063,21 @@ private fun ShowerModeRow(
             Text(
                 "Dusch-Modus",
                 style = MaterialTheme.typography.labelLarge,
-                color = if (effectivelyOn) whiteText else mutedText
+                color = if (effectivelyOn) playerFg else playerMuted
             )
             if (active && !speakerOnly) {
                 Spacer(Modifier.width(6.dp))
                 Text(
                     "· Nur Lautsprecher",
                     style = MaterialTheme.typography.labelSmall,
-                    color = whiteText.copy(alpha = 0.4f)
+                    color = playerFg.copy(alpha = 0.4f)
                 )
             }
             Spacer(Modifier.weight(1f))
             Text(
                 if (boostDb <= 0f) "AUS" else "+${boostDb.toInt()} dB",
                 style = MaterialTheme.typography.labelMedium,
-                color = if (effectivelyOn) MaterialTheme.colorScheme.primary else mutedText
+                color = if (effectivelyOn) MaterialTheme.colorScheme.primary else playerMuted
             )
         }
         Slider(
@@ -1086,9 +1089,9 @@ private fun ShowerModeRow(
                 .fillMaxWidth()
                 .padding(horizontal = 0.dp),
             colors = SliderDefaults.colors(
-                thumbColor = if (effectivelyOn) MaterialTheme.colorScheme.primary else whiteText.copy(alpha = 0.5f),
-                activeTrackColor = if (effectivelyOn) MaterialTheme.colorScheme.primary else whiteText.copy(alpha = 0.5f),
-                inactiveTrackColor = whiteText.copy(alpha = 0.15f),
+                thumbColor = if (effectivelyOn) MaterialTheme.colorScheme.primary else playerFg.copy(alpha = 0.5f),
+                activeTrackColor = if (effectivelyOn) MaterialTheme.colorScheme.primary else playerFg.copy(alpha = 0.5f),
+                inactiveTrackColor = playerFg.copy(alpha = 0.15f),
                 activeTickColor = Color.Transparent,
                 inactiveTickColor = Color.Transparent
             )
