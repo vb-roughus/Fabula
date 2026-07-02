@@ -45,9 +45,15 @@ private val LightScheme = lightColorScheme(
     primary = BrandGreen500,
     onPrimary = Navy950,
     secondary = BrandGreen400,
+    onSecondary = Navy950,
+    tertiary = BrandGreen300,
     background = OffWhite,
-    surface = Slate200,
-    onSurface = Navy950
+    onBackground = Navy950,
+    surface = Color.White,
+    onSurface = Navy950,
+    surfaceVariant = Color(0xFFDDE3EE),
+    onSurfaceVariant = Navy900,
+    outline = Color(0xFF5A6478)
 )
 
 @Composable

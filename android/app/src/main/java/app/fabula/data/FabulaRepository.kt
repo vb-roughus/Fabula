@@ -112,6 +112,8 @@ class FabulaRepository(
     val sleepRepeatUntilMinutes: Flow<Int> = preferences.sleepRepeatUntilMinutes
     val diagnosticsEnabled: Flow<Boolean> = preferences.diagnosticsEnabled
     suspend fun setDiagnosticsEnabled(enabled: Boolean) = preferences.setDiagnosticsEnabled(enabled)
+    val themeMode: Flow<String> = preferences.themeMode
+    suspend fun setThemeMode(mode: String) = preferences.setThemeMode(mode)
     val showerBoostDb: Flow<Float> = preferences.showerBoostDb
     suspend fun setShowerBoostDb(db: Float) = preferences.setShowerBoostDb(db)
     suspend fun setSleepRepeatEnabled(enabled: Boolean) =

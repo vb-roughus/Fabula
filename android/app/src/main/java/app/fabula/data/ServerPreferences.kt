@@ -66,6 +66,14 @@ class ServerPreferences(private val context: Context) {
         context.dataStore.edit { it[SHOWER_BOOST_KEY] = db.coerceIn(0f, 15f) }
     }
 
+    /** UI colour scheme: "system", "light" or "dark". */
+    val themeMode: Flow<String> = context.dataStore.data
+        .map { it[THEME_MODE_KEY] ?: "system" }
+
+    suspend fun setThemeMode(mode: String) {
+        context.dataStore.edit { it[THEME_MODE_KEY] = mode }
+    }
+
     /** Stable id for this device, used when reporting progress back to the server. */
     fun deviceId(): String {
         val androidId = runCatching {
@@ -81,5 +89,6 @@ class ServerPreferences(private val context: Context) {
         private val AUTH_TOKEN_KEY = stringPreferencesKey("auth_token")
         private val DIAGNOSTICS_KEY = booleanPreferencesKey("diagnostics_enabled")
         private val SHOWER_BOOST_KEY = floatPreferencesKey("shower_boost_db")
+        private val THEME_MODE_KEY = stringPreferencesKey("theme_mode")
     }
 }

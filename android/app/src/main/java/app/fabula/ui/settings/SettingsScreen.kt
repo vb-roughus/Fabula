@@ -5,6 +5,7 @@ import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -104,6 +105,10 @@ fun SettingsScreen(
                 .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 16.dp + bottomInset),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            AppearanceSection(repository = repository)
+
+            HorizontalDivider()
+
             Text("Server", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             OutlinedTextField(
                 value = url,
@@ -478,6 +483,36 @@ private fun launchInstaller(context: Context, apk: File) {
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
     }
     context.startActivity(intent)
+}
+
+@Composable
+private fun AppearanceSection(repository: FabulaRepository) {
+    val mode by repository.themeMode.collectAsState(initial = "system")
+    val scope = rememberCoroutineScope()
+
+    Text("Darstellung", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+    Text(
+        "Farbschema der App.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.outline
+    )
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        ThemeChoice("System", mode == "system") { scope.launch { repository.setThemeMode("system") } }
+        ThemeChoice("Hell", mode == "light") { scope.launch { repository.setThemeMode("light") } }
+        ThemeChoice("Dunkel", mode == "dark") { scope.launch { repository.setThemeMode("dark") } }
+    }
+}
+
+@Composable
+private fun RowScope.ThemeChoice(label: String, selected: Boolean, onClick: () -> Unit) {
+    if (selected) {
+        Button(onClick = onClick, modifier = Modifier.weight(1f)) { Text(label) }
+    } else {
+        OutlinedButton(onClick = onClick, modifier = Modifier.weight(1f)) { Text(label) }
+    }
 }
 
 @Composable
