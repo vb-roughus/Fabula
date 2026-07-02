@@ -85,6 +85,8 @@ fun LoginScreen(
                         try {
                             repository.login(username.trim(), password)
                             onLoggedIn()
+                        } catch (c: kotlinx.coroutines.CancellationException) {
+                            throw c
                         } catch (t: Throwable) {
                             error = t.message
                         } finally {

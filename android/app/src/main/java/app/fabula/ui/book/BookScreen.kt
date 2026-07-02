@@ -134,6 +134,8 @@ fun BookScreen(
                 return@LaunchedEffect
             }
             book = api.getBook(bookId)
+        } catch (c: kotlinx.coroutines.CancellationException) {
+            throw c  // effect cancelled (navigation) -- not an error
         } catch (t: Throwable) {
             error = t.message
         }

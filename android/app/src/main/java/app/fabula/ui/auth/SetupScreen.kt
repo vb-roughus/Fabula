@@ -110,6 +110,8 @@ fun SetupScreen(
                         try {
                             repository.setup(username.trim(), password)
                             onSetupDone()
+                        } catch (c: kotlinx.coroutines.CancellationException) {
+                            throw c
                         } catch (t: Throwable) {
                             error = t.message
                         } finally {

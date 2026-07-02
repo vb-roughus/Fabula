@@ -270,6 +270,7 @@ private fun AppUpdateSection(repository: FabulaRepository) {
                         state = result.fold(
                             onSuccess = { UpdateUiState.Available(s.version) },
                             onFailure = { t ->
+                                if (t is kotlinx.coroutines.CancellationException) throw t
                                 repository.logFailure("AppUpdate.download", t)
                                 UpdateUiState.Error(t.message ?: "Download fehlgeschlagen")
                             }
@@ -300,6 +301,7 @@ private fun AppUpdateSection(repository: FabulaRepository) {
                                 else UpdateUiState.UpToDate
                             },
                             onFailure = { t ->
+                                if (t is kotlinx.coroutines.CancellationException) throw t
                                 if (t is retrofit2.HttpException && t.code() == 404) {
                                     UpdateUiState.Error("Der Server kennt noch keine App-Version (Update-Spiegel nicht konfiguriert oder noch kein Release).")
                                 } else {
@@ -391,6 +393,7 @@ private fun AppUpdateSection(repository: FabulaRepository) {
                             tokenText = ""
                             configMsg = "Gespeichert."
                         }.onFailure { t ->
+                            if (t is kotlinx.coroutines.CancellationException) throw t
                             repository.logFailure("AppUpdate.setConfig", t)
                             configMsg = t.message ?: "Speichern fehlgeschlagen"
                         }
@@ -413,6 +416,7 @@ private fun AppUpdateSection(repository: FabulaRepository) {
                         testing = false
                         res.onSuccess { testResult = it }
                             .onFailure { t ->
+                                if (t is kotlinx.coroutines.CancellationException) throw t
                                 repository.logFailure("AppUpdate.checkNow", t)
                                 testResult = AppUpdateCheckDto(
                                     configured = true,
