@@ -16,7 +16,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Highlight
+import androidx.compose.material.icons.filled.BorderColor
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AlertDialog
@@ -185,7 +185,7 @@ private fun HighlightManagerRow(
         horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         Icon(
-            Icons.Filled.Highlight,
+            Icons.Filled.BorderColor,
             contentDescription = null,
             tint = HighlightColor
         )

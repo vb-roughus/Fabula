@@ -47,12 +47,12 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Replay30
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
-import androidx.compose.material.icons.filled.Highlight
+import androidx.compose.material.icons.filled.BorderColor
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material.icons.outlined.GraphicEq
-import androidx.compose.material.icons.outlined.Highlight
+import androidx.compose.material.icons.outlined.BorderColor
 import androidx.compose.material.icons.outlined.WaterDrop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
@@ -579,7 +579,7 @@ private fun PlayerTopBar(
                 DropdownMenuItem(
                     text = { Text("Markierungen verwalten") },
                     leadingIcon = {
-                        Icon(Icons.Filled.Highlight, contentDescription = null)
+                        Icon(Icons.Filled.BorderColor, contentDescription = null)
                     },
                     onClick = {
                         moreMenuOpen = false
@@ -590,7 +590,7 @@ private fun PlayerTopBar(
                     DropdownMenuItem(
                         text = { Text("Markierung verwerfen") },
                         leadingIcon = {
-                            Icon(Icons.Outlined.Highlight, contentDescription = null)
+                            Icon(Icons.Outlined.BorderColor, contentDescription = null)
                         },
                         onClick = {
                             moreMenuOpen = false
@@ -660,7 +660,7 @@ private fun PlayerTitleRow(
         }
         IconButton(onClick = onToggleHighlight) {
             Icon(
-                imageVector = if (highlightCapturing) Icons.Filled.Highlight else Icons.Outlined.Highlight,
+                imageVector = if (highlightCapturing) Icons.Filled.BorderColor else Icons.Outlined.BorderColor,
                 contentDescription = if (highlightCapturing) "Markierung beenden" else "Passage markieren",
                 tint = if (highlightCapturing) HighlightColor else whiteText
             )

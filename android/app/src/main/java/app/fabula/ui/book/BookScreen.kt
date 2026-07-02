@@ -29,7 +29,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Highlight
+import androidx.compose.material.icons.filled.BorderColor
 import androidx.compose.material.icons.filled.LibraryBooks
 import androidx.compose.material.icons.outlined.RemoveDone
 import androidx.compose.material.icons.filled.MoreHoriz
@@ -257,7 +257,7 @@ fun BookScreen(
                             DropdownMenuItem(
                                 text = { Text("Markierungen verwalten") },
                                 leadingIcon = {
-                                    Icon(Icons.Filled.Highlight, contentDescription = null)
+                                    Icon(Icons.Filled.BorderColor, contentDescription = null)
                                 },
                                 onClick = {
                                     moreMenuOpen = false
@@ -990,7 +990,7 @@ private fun ChapterRow(
         }
         if (hasHighlight) {
             Icon(
-                Icons.Filled.Highlight,
+                Icons.Filled.BorderColor,
                 contentDescription = "Enthält Markierungen",
                 tint = HighlightColor,
                 modifier = Modifier.size(20.dp)
