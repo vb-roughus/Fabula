@@ -1,11 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import type { LibraryFolder, LibraryType, ScanStatus } from '../api/types';
+import type { AppUpdateCheck, LibraryFolder, LibraryType, ScanStatus } from '../api/types';
 import { LIBRARY_TYPE_LABEL } from '../api/types';
+import { useAuth } from '../auth/AuthContext';
 
 export function SettingsPage() {
   const qc = useQueryClient();
+  const auth = useAuth();
   const [name, setName] = useState('');
   const [path, setPath] = useState('');
   const [type, setType] = useState<LibraryType>('Audiobook');
@@ -82,6 +84,8 @@ export function SettingsPage() {
         </div>
       </section>
 
+      {auth.user?.isAdmin && <AppUpdateSection />}
+
       <section>
         <h2 className="text-lg font-semibold mb-3">Vorhandene Bibliotheken</h2>
         {isLoading && <div className="text-ink-400">Lade...</div>}
@@ -100,6 +104,101 @@ export function SettingsPage() {
         </ul>
       </section>
     </div>
+  );
+}
+
+function AppUpdateSection() {
+  const qc = useQueryClient();
+  const { data: config } = useQuery({
+    queryKey: ['app-update-config'],
+    queryFn: api.getUpdateConfig
+  });
+
+  const [repo, setRepo] = useState('');
+  const [token, setToken] = useState('');
+  const [savedMsg, setSavedMsg] = useState<string | null>(null);
+  const [check, setCheck] = useState<AppUpdateCheck | null>(null);
+
+  useEffect(() => {
+    setRepo(config?.repo ?? '');
+  }, [config?.repo]);
+
+  const saveMutation = useMutation({
+    mutationFn: () => api.setUpdateConfig(repo.trim() || null, token.trim() || null),
+    onSuccess: (c) => {
+      qc.setQueryData(['app-update-config'], c);
+      setToken('');
+      setCheck(null);
+      setSavedMsg('Gespeichert.');
+    }
+  });
+
+  const checkMutation = useMutation({
+    mutationFn: () => api.checkUpdateNow(),
+    onSuccess: (r) => setCheck(r)
+  });
+
+  return (
+    <section className="bg-ink-800 ring-1 ring-ink-700 rounded-lg p-4 mb-6">
+      <h2 className="text-lg font-semibold mb-1">App-Updates</h2>
+      <p className="text-ink-400 text-sm mb-3">
+        Aus welchem GitHub-Repository der Server neue Android-App-Versionen spiegelt. Wird sofort
+        übernommen (kein Neustart nötig).
+      </p>
+      {config?.currentVersionName && (
+        <div className="text-ink-300 text-sm mb-3">
+          Aktuell gespiegelt: {config.currentVersionName} (Build {config.currentVersionCode})
+        </div>
+      )}
+      <div className="flex flex-col gap-3">
+        <input
+          placeholder="GitHub-Repository (owner/name)"
+          value={repo}
+          onChange={(e) => {
+            setRepo(e.target.value);
+            setSavedMsg(null);
+          }}
+          className="bg-ink-900 ring-1 ring-ink-600 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-accent-500"
+        />
+        <input
+          type="password"
+          autoComplete="off"
+          placeholder={config?.hasToken ? '•••• gesetzt – leer lassen = unverändert' : 'GitHub-Token (nur für privates Repo)'}
+          value={token}
+          onChange={(e) => {
+            setToken(e.target.value);
+            setSavedMsg(null);
+          }}
+          className="bg-ink-900 ring-1 ring-ink-600 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-accent-500"
+        />
+        <div className="flex gap-2">
+          <button
+            disabled={saveMutation.isPending}
+            onClick={() => saveMutation.mutate()}
+            className="bg-accent-500 hover:bg-accent-600 disabled:bg-ink-600 disabled:text-ink-400 text-ink-900 font-medium px-4 py-2 rounded-lg"
+          >
+            {saveMutation.isPending ? 'Speichere...' : 'Speichern'}
+          </button>
+          <button
+            disabled={checkMutation.isPending}
+            onClick={() => checkMutation.mutate()}
+            className="px-4 py-2 rounded-lg bg-ink-700 hover:bg-ink-600 disabled:opacity-60 text-sm"
+          >
+            {checkMutation.isPending ? 'Teste...' : 'Verbindung testen'}
+          </button>
+        </div>
+        {savedMsg && <div className="text-ink-400 text-sm">{savedMsg}</div>}
+        {saveMutation.isError && (
+          <div className="text-red-400 text-sm">{(saveMutation.error as Error).message}</div>
+        )}
+        {check && (
+          <div className={`text-sm ${check.ok ? 'text-accent-400' : 'text-red-400'}`}>{check.message}</div>
+        )}
+        {checkMutation.isError && (
+          <div className="text-red-400 text-sm">{(checkMutation.error as Error).message}</div>
+        )}
+      </div>
+    </section>
   );
 }
 
