@@ -15,6 +15,34 @@ Re-running the same setup `.exe` performs an in-place upgrade: the
 service is stopped, files are replaced, and the service is started
 again. The data folder is preserved.
 
+## App-Update-Konfiguration (In-App-Updates)
+
+Der Installer zeigt eine optionale Seite **"App-Updates"**, auf der du das
+GitHub-Repository der App-Releases (Vorgabe `vb-roughus/Fabula`) und – bei
+einem privaten Repo – ein Zugriffstoken eintragen kannst. Die Werte werden
+nach `C:\ProgramData\Fabula\fabula.settings.json` geschrieben:
+
+```json
+{
+  "Fabula": {
+    "UpdateRepo": "vb-roughus/Fabula",
+    "UpdateGithubToken": "github_pat_…"
+  }
+}
+```
+
+Diese Datei liegt bewusst im `ProgramData`-Ordner (nicht unter Program
+Files) und **überlebt Upgrades** – `appsettings.*` würden bei jedem
+Reinstall überschrieben. Der Server lädt sie zuletzt, sie hat also Vorrang
+vor den mitgelieferten Vorgaben. Bei einem Reinstall werden die Felder aus
+der vorhandenen Datei vorbefüllt; ein stiller Install (`/VERYSILENT`) lässt
+eine bestehende Datei unangetastet.
+
+Token nachträglich ändern: einfach die JSON-Datei bearbeiten (der Server
+liest sie dank `reloadOnChange` neu) oder den Installer erneut ausführen.
+Alternativ funktioniert auf beliebigen Plattformen die Umgebungsvariable
+`FABULA_SETTINGS_FILE`, die auf eine eigene Settings-Datei zeigt.
+
 ## Prerequisites
 
 - Windows with the **.NET 10 SDK** installed (`dotnet --version` ≥ 10).
