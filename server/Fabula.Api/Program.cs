@@ -42,6 +42,9 @@ builder.Services.Configure<FabulaOptions>(o =>
 {
     o.DataDirectory = dataDirectory;
     o.CoversDirectory = coversDirectory;
+    o.UpdateRepo = rawOptions.UpdateRepo;
+    o.UpdateGithubToken = rawOptions.UpdateGithubToken;
+    o.UpdateCheckMinutes = rawOptions.UpdateCheckMinutes;
 });
 
 var dbPath = Path.Combine(dataDirectory, "fabula.db");
@@ -61,6 +64,7 @@ builder.Services.AddScoped<ILibraryScanner, LibraryScanner>();
 builder.Services.AddSingleton<IAudioMetadataReader, AtlAudioMetadataReader>();
 builder.Services.AddSingleton<ICoverStore, FileSystemCoverStore>();
 builder.Services.AddSingleton<ScanCoordinator>();
+builder.Services.AddSingleton<AppUpdateService>();
 
 // Serialise enums as their string names so the web client can compare
 // against e.g. "Running" instead of the underlying numeric value.
@@ -141,6 +145,7 @@ app.MapStreamingEndpoints();
 app.MapProgressEndpoints();
 app.MapBookmarkEndpoints();
 app.MapHighlightEndpoints();
+app.MapAppUpdateEndpoints();
 
 app.MapFallbackToFile("index.html");
 

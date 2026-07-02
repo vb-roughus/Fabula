@@ -190,11 +190,154 @@ fun SettingsScreen(
 
             HorizontalDivider()
 
+            AppUpdateSection(repository = repository)
+
+            HorizontalDivider()
+
             DiagnoseSection(repository = repository)
 
             Spacer(Modifier.height(8.dp))
         }
     }
+}
+
+private sealed interface UpdateUiState {
+    data object Idle : UpdateUiState
+    data object Checking : UpdateUiState
+    data object UpToDate : UpdateUiState
+    data class Available(val version: app.fabula.data.AppVersionDto) : UpdateUiState
+    data object Downloading : UpdateUiState
+    data class Error(val message: String) : UpdateUiState
+}
+
+@Composable
+private fun AppUpdateSection(repository: FabulaRepository) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var state by remember { mutableStateOf<UpdateUiState>(UpdateUiState.Idle) }
+
+    val (ownCode, ownName) = remember(context) { installedVersion(context) }
+
+    Text("App-Update", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+    Text(
+        "Installiert: $ownName (Build $ownCode)",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.outline
+    )
+
+    when (val s = state) {
+        is UpdateUiState.Available -> {
+            Text(
+                "Neue Version verfügbar: ${s.version.versionName} (Build ${s.version.versionCode})",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Button(
+                onClick = {
+                    state = UpdateUiState.Downloading
+                    scope.launch {
+                        val result = runCatching {
+                            val api = repository.apiOrNull()
+                                ?: throw IllegalStateException("Kein Server konfiguriert.")
+                            val apk = downloadApkToCache(context, api)
+                            launchInstaller(context, apk)
+                        }
+                        state = result.fold(
+                            onSuccess = { UpdateUiState.Available(s.version) },
+                            onFailure = { t ->
+                                repository.logFailure("AppUpdate.download", t)
+                                UpdateUiState.Error(t.message ?: "Download fehlgeschlagen")
+                            }
+                        )
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Herunterladen & installieren") }
+        }
+        UpdateUiState.Downloading -> {
+            Button(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth()) {
+                Text("Wird heruntergeladen…")
+            }
+        }
+        else -> {
+            OutlinedButton(
+                enabled = state != UpdateUiState.Checking,
+                onClick = {
+                    state = UpdateUiState.Checking
+                    scope.launch {
+                        state = runCatching {
+                            val api = repository.apiOrNull()
+                                ?: throw IllegalStateException("Kein Server konfiguriert.")
+                            api.getAppVersion()
+                        }.fold(
+                            onSuccess = { latest ->
+                                if (latest.versionCode > ownCode) UpdateUiState.Available(latest)
+                                else UpdateUiState.UpToDate
+                            },
+                            onFailure = { t ->
+                                if (t is retrofit2.HttpException && t.code() == 404) {
+                                    UpdateUiState.Error("Der Server kennt noch keine App-Version (Update-Spiegel nicht konfiguriert oder noch kein Release).")
+                                } else {
+                                    repository.logFailure("AppUpdate.check", t)
+                                    UpdateUiState.Error(t.message ?: "Prüfung fehlgeschlagen")
+                                }
+                            }
+                        )
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(if (state == UpdateUiState.Checking) "Prüfe…" else "Auf Updates prüfen")
+            }
+            when (val st = state) {
+                UpdateUiState.UpToDate -> Text(
+                    "Du bist auf dem neuesten Stand.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline
+                )
+                is UpdateUiState.Error -> Text(
+                    st.message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+                else -> Unit
+            }
+        }
+    }
+}
+
+/** Installed versionCode/versionName, robust across API levels (minSdk 26). */
+private fun installedVersion(context: Context): Pair<Long, String> {
+    val info = context.packageManager.getPackageInfo(context.packageName, 0)
+    val code = if (android.os.Build.VERSION.SDK_INT >= 28) info.longVersionCode
+    else @Suppress("DEPRECATION") info.versionCode.toLong()
+    return code to (info.versionName ?: "?")
+}
+
+/** Streams the APK from the server into cacheDir/updates/fabula.apk. */
+private suspend fun downloadApkToCache(context: Context, api: app.fabula.data.FabulaApi): File =
+    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        val dir = File(context.cacheDir, "updates").apply { mkdirs() }
+        val target = File(dir, "fabula.apk")
+        api.downloadApk().use { body ->
+            body.byteStream().use { input ->
+                target.outputStream().use { output -> input.copyTo(output) }
+            }
+        }
+        target
+    }
+
+/** Hands the downloaded APK to the system package installer. Android asks for
+ *  the "Install unknown apps" permission for Fabula on first use. */
+private fun launchInstaller(context: Context, apk: File) {
+    val uri = androidx.core.content.FileProvider.getUriForFile(
+        context, "${context.packageName}.logs", apk
+    )
+    val intent = Intent(Intent.ACTION_VIEW).apply {
+        setDataAndType(uri, "application/vnd.android.package-archive")
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    context.startActivity(intent)
 }
 
 @Composable

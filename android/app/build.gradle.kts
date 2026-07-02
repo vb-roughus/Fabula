@@ -5,6 +5,19 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+// CI (GitHub Actions) passes -PversionCode / -PversionName so every merge to
+// main produces a strictly increasing versionCode without touching this file.
+// Local builds fall back to the dev defaults below.
+val ciVersionCode = (project.findProperty("versionCode") as String?)?.toIntOrNull()
+val ciVersionName = project.findProperty("versionName") as String?
+
+// Release signing is driven entirely by environment variables so the keystore
+// never lives in the repo: FABULA_KEYSTORE (path to .jks), FABULA_KEYSTORE_PASSWORD,
+// FABULA_KEY_ALIAS, FABULA_KEY_PASSWORD. Without them, release builds fall back
+// to the debug key so local `assembleRelease` keeps working (not update-compatible
+// with CI builds -- CI is the source of truth for distributed APKs).
+val releaseKeystorePath: String? = System.getenv("FABULA_KEYSTORE")
+
 android {
     namespace = "app.fabula"
     compileSdk = 35
@@ -13,14 +26,29 @@ android {
         applicationId = "app.fabula"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = ciVersionCode ?: 1
+        versionName = ciVersionName ?: "0.1.0-dev"
+    }
+
+    signingConfigs {
+        if (releaseKeystorePath != null) {
+            create("release") {
+                storeFile = file(releaseKeystorePath)
+                storePassword = System.getenv("FABULA_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("FABULA_KEY_ALIAS")
+                keyPassword = System.getenv("FABULA_KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = if (releaseKeystorePath != null)
+                signingConfigs.getByName("release")
+            else
+                signingConfigs.getByName("debug")
         }
     }
 

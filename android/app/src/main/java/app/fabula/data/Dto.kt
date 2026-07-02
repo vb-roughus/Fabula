@@ -211,3 +211,8 @@ data class UserDetailDto(
     val isAdmin: Boolean,
     val createdAt: String
 )
+
+// --- in-app update ---------------------------------------------------------
+
+@Serializable
+data class AppVersionDto(val versionCode: Int, val versionName: String)
