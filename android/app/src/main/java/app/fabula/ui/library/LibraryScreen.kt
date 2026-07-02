@@ -79,6 +79,8 @@ fun LibraryScreen(
             } else {
                 LibraryState.Loaded(api.listBooks(page = 1, pageSize = 200).items)
             }
+        } catch (c: kotlinx.coroutines.CancellationException) {
+            throw c  // effect cancelled (navigation/refresh) -- not an error
         } catch (t: Throwable) {
             state = LibraryState.Error(t.message ?: "Unbekannter Fehler")
         } finally {

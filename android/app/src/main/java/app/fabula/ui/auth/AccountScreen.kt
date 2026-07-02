@@ -142,6 +142,8 @@ fun AccountScreen(
                             repository.changeMyPassword(current, pwd)
                             current = ""; pwd = ""; confirm = ""
                             success = true
+                        } catch (c: kotlinx.coroutines.CancellationException) {
+                            throw c
                         } catch (t: Throwable) {
                             error = t.message
                         } finally {

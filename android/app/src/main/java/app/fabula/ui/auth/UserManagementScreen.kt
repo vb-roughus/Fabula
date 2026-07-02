@@ -125,6 +125,8 @@ fun UserManagementScreen(
                             newName = ""; newPwd = ""; newAdmin = false
                             error = null
                             reload()
+                        } catch (c: kotlinx.coroutines.CancellationException) {
+                            throw c
                         } catch (t: Throwable) {
                             error = t.message
                         }
@@ -143,14 +145,14 @@ fun UserManagementScreen(
                         onToggleAdmin = {
                             scope.launch {
                                 runCatching { repository.setUserAdmin(u.id, !u.isAdmin) }
-                                    .onFailure { error = it.message }
+                                    .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it; error = it.message }
                                 reload()
                             }
                         },
                         onDelete = {
                             scope.launch {
                                 runCatching { repository.deleteUser(u.id) }
-                                    .onFailure { error = it.message }
+                                    .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it; error = it.message }
                                 reload()
                             }
                         },
@@ -170,6 +172,8 @@ fun UserManagementScreen(
                     try {
                         repository.adminResetPassword(target.id, newPassword)
                         resetTarget = null
+                    } catch (c: kotlinx.coroutines.CancellationException) {
+                        throw c
                     } catch (t: Throwable) {
                         error = t.message
                     }

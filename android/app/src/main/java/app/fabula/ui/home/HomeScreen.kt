@@ -107,6 +107,8 @@ fun HomeScreen(
                 books = api.listBooks(page = 1, pageSize = 200).items
                 error = null
             }
+        } catch (c: kotlinx.coroutines.CancellationException) {
+            throw c  // effect cancelled (navigation/refresh) -- not an error
         } catch (t: Throwable) {
             error = t.message
         } finally {

@@ -69,6 +69,8 @@ fun SeriesDetailScreen(
                 series = api.getSeries(seriesId)
                 error = null
             }
+        } catch (c: kotlinx.coroutines.CancellationException) {
+            throw c  // effect cancelled (navigation/refresh) -- not an error
         } catch (t: Throwable) { error = t.message }
         finally { isRefreshing = false }
     }
