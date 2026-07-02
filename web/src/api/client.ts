@@ -1,4 +1,6 @@
 import type {
+  AppUpdateCheck,
+  AppUpdateConfig,
   AuthResponse,
   AuthUser,
   BookDetail,
@@ -208,7 +210,18 @@ export const api = {
     }),
 
   deleteBookmark: (id: number) =>
-    request<void>(`/api/bookmarks/${id}`, { method: 'DELETE' })
+    request<void>(`/api/bookmarks/${id}`, { method: 'DELETE' }),
+
+  // --- in-app update (admin) ---------------------------------------------
+  getUpdateConfig: () => request<AppUpdateConfig>('/api/app/config'),
+
+  setUpdateConfig: (repo: string | null, token: string | null) =>
+    request<AppUpdateConfig>('/api/app/config', {
+      method: 'PUT',
+      body: JSON.stringify({ repo, token })
+    }),
+
+  checkUpdateNow: () => request<AppUpdateCheck>('/api/app/check', { method: 'POST' })
 };
 
 // `<audio src=...>` cannot send custom headers, so the JWT travels as a

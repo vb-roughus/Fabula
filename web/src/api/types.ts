@@ -148,3 +148,21 @@ export interface SetupStatus {
 export interface UserDetail extends AuthUser {
   createdAt: string;
 }
+
+// --- in-app update -------------------------------------------------------
+
+export interface AppUpdateConfig {
+  repo: string | null;
+  hasToken: boolean;
+  checkMinutes: number;
+  currentVersionCode: number | null;
+  currentVersionName: string | null;
+}
+
+export interface AppUpdateCheck {
+  configured: boolean;
+  ok: boolean;
+  message: string;
+  versionCode: number | null;
+  versionName: string | null;
+}
