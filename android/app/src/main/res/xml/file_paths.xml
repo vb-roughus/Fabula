@@ -3,4 +3,7 @@
     <!-- Exposes filesDir/logs/ to the share intent so the user can send the
          diagnostic log file to email, chat, etc. -->
     <files-path name="logs" path="logs/" />
+    <!-- Exposes cacheDir/updates/ so the system package installer can read
+         the APK downloaded by the in-app updater. -->
+    <cache-path name="updates" path="updates/" />
 </paths>

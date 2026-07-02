@@ -1,5 +1,6 @@
 package app.fabula.data
 
+import okhttp3.ResponseBody
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
@@ -8,6 +9,7 @@ import retrofit2.http.POST
 import retrofit2.http.PUT
 import retrofit2.http.Path
 import retrofit2.http.Query
+import retrofit2.http.Streaming
 
 interface FabulaApi {
     @GET("api/books")
@@ -103,6 +105,17 @@ interface FabulaApi {
 
     @DELETE("api/highlights/{id}")
     suspend fun deleteHighlight(@Path("id") id: Int)
+
+    /** Newest app build the server has mirrored from GitHub Releases.
+     *  404s until the first release exists (Retrofit throws HttpException). */
+    @GET("api/app/version")
+    suspend fun getAppVersion(): AppVersionDto
+
+    /** The APK itself. @Streaming keeps Retrofit from buffering the whole
+     *  file in memory -- callers copy the byte stream to disk. */
+    @Streaming
+    @GET("api/app/apk")
+    suspend fun downloadApk(): ResponseBody
 
     // --- auth -------------------------------------------------------------
 

@@ -1,0 +1,97 @@
+# Builds a signed release APK on every merge to main that touches the Android
+# app, and publishes it as a GitHub Release. The Fabula server picks releases
+# up from the GitHub API and serves them to the app's in-app updater.
+#
+# Required repository secrets (Settings -> Secrets and variables -> Actions):
+#   KEYSTORE_BASE64     -- release keystore, base64-encoded (base64 -w0 fabula.jks)
+#   KEYSTORE_PASSWORD   -- keystore password
+#   KEY_ALIAS           -- key alias inside the keystore
+#   KEY_PASSWORD        -- key password
+#
+# Generate the keystore once and keep it safe -- every future APK must be
+# signed with the same key or Android will refuse to update in place:
+#   keytool -genkeypair -v -keystore fabula.jks -alias fabula \
+#     -keyalg RSA -keysize 4096 -validity 10000
+
+name: Android Release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "android/**"
+      - ".github/workflows/android-release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write # create releases
+
+concurrency:
+  group: android-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check signing secrets
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::Secret KEYSTORE_BASE64 fehlt. Bitte Keystore erzeugen und die Secrets KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD anlegen (siehe Kommentar oben in dieser Workflow-Datei)."
+            exit 1
+          fi
+
+      - name: Compute version
+        run: |
+          # Offset keeps CI versionCodes above any manually side-loaded dev
+          # build (dev uses versionCode 1). run_number increases per workflow
+          # run, so every release is strictly newer than the previous one.
+          echo "VERSION_CODE=$((100 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
+          echo "VERSION_NAME=0.2.$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Decode keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/fabula.jks"
+
+      - name: Build signed APK
+        working-directory: android
+        env:
+          FABULA_KEYSTORE: ${{ runner.temp }}/fabula.jks
+          FABULA_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          FABULA_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          FABULA_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          ./gradlew :app:assembleRelease \
+            -PversionCode="$VERSION_CODE" \
+            -PversionName="$VERSION_NAME" \
+            --no-daemon
+
+      - name: Prepare release assets
+        run: |
+          cp android/app/build/outputs/apk/release/app-release.apk fabula.apk
+          printf '{"versionCode":%s,"versionName":"%s"}\n' "$VERSION_CODE" "$VERSION_NAME" > version.json
+          cat version.json
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apk-v${{ env.VERSION_NAME }}
+          name: Fabula ${{ env.VERSION_NAME }}
+          body: |
+            Automatischer Build von `main` (`${{ github.sha }}`).
+            versionCode: ${{ env.VERSION_CODE }}
+          files: |
+            fabula.apk
+            version.json
