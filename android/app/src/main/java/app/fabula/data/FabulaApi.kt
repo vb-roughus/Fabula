@@ -117,6 +117,19 @@ interface FabulaApi {
     @GET("api/app/apk")
     suspend fun downloadApk(): ResponseBody
 
+    /** Admin-only: read the server's update configuration (token never
+     *  returned, only hasToken). */
+    @GET("api/app/config")
+    suspend fun getUpdateConfig(): AppUpdateConfigDto
+
+    /** Admin-only: change repo/token. Blank token = keep existing. */
+    @PUT("api/app/config")
+    suspend fun setUpdateConfig(@Body body: UpdateAppConfigRequest): AppUpdateConfigDto
+
+    /** Admin-only: force an immediate GitHub check and report the outcome. */
+    @POST("api/app/check")
+    suspend fun checkUpdateNow(): AppUpdateCheckDto
+
     // --- auth -------------------------------------------------------------
 
     @GET("api/setup")

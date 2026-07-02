@@ -216,3 +216,24 @@ data class UserDetailDto(
 
 @Serializable
 data class AppVersionDto(val versionCode: Int, val versionName: String)
+
+@Serializable
+data class AppUpdateConfigDto(
+    val repo: String? = null,
+    val hasToken: Boolean = false,
+    val checkMinutes: Int = 15,
+    val currentVersionCode: Int? = null,
+    val currentVersionName: String? = null
+)
+
+@Serializable
+data class UpdateAppConfigRequest(val repo: String?, val token: String?)
+
+@Serializable
+data class AppUpdateCheckDto(
+    val configured: Boolean,
+    val ok: Boolean,
+    val message: String,
+    val versionCode: Int? = null,
+    val versionName: String? = null
+)

@@ -23,4 +23,11 @@ public class FabulaOptions
 
     /// <summary>Minimum minutes between two GitHub release checks.</summary>
     public int UpdateCheckMinutes { get; set; } = 15;
+
+    /// <summary>
+    /// Absolute path of the operator settings file (fabula.settings.json).
+    /// Set at startup so runtime edits from the app can be persisted back to
+    /// the same file the config was loaded from. Not read from config itself.
+    /// </summary>
+    public string? SettingsFilePath { get; set; }
 }

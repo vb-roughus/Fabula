@@ -28,8 +28,27 @@ public static class AppUpdateEndpoints
                 fileDownloadName: "fabula.apk");
         });
 
+        // --- Admin: view / edit / test the update configuration ------------
+
+        group.MapGet("/config", (AppUpdateService updates) =>
+            Results.Ok(updates.GetSettings()))
+            .RequireAuthorization("Admin");
+
+        group.MapPut("/config", async (UpdateAppConfigRequest req, AppUpdateService updates, CancellationToken ct) =>
+        {
+            var settings = await updates.UpdateSettingsAsync(req.Repo, req.Token, ct);
+            return Results.Ok(settings);
+        }).RequireAuthorization("Admin");
+
+        // Force an immediate GitHub check and report exactly what happened, so
+        // the operator can diagnose repo/token issues from the app.
+        group.MapPost("/check", async (AppUpdateService updates, CancellationToken ct) =>
+            Results.Ok(await updates.CheckNowAsync(ct)))
+            .RequireAuthorization("Admin");
+
         return app;
     }
 }
 
 public record AppVersionDto(int VersionCode, string VersionName);
+public record UpdateAppConfigRequest(string? Repo, string? Token);

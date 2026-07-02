@@ -57,6 +57,7 @@ builder.Services.Configure<FabulaOptions>(o =>
     o.UpdateRepo = rawOptions.UpdateRepo;
     o.UpdateGithubToken = rawOptions.UpdateGithubToken;
     o.UpdateCheckMinutes = rawOptions.UpdateCheckMinutes;
+    o.SettingsFilePath = operatorSettingsFile;
 });
 
 var dbPath = Path.Combine(dataDirectory, "fabula.db");

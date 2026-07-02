@@ -40,9 +40,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import app.fabula.FabulaApp
+import app.fabula.data.AppUpdateCheckDto
+import app.fabula.data.AppUpdateConfigDto
 import app.fabula.data.FabulaRepository
+import app.fabula.data.UpdateAppConfigRequest
 import app.fabula.ui.LocalContentBottomInset
 import java.io.File
 import kotlinx.coroutines.launch
@@ -218,6 +222,27 @@ private fun AppUpdateSection(repository: FabulaRepository) {
 
     val (ownCode, ownName) = remember(context) { installedVersion(context) }
 
+    // Admin-only server-side update configuration (repo + token) and tester.
+    var isAdmin by remember { mutableStateOf(false) }
+    var config by remember { mutableStateOf<AppUpdateConfigDto?>(null) }
+    var repoText by remember { mutableStateOf("") }
+    var tokenText by remember { mutableStateOf("") }
+    var configSaving by remember { mutableStateOf(false) }
+    var configMsg by remember { mutableStateOf<String?>(null) }
+    var testing by remember { mutableStateOf(false) }
+    var testResult by remember { mutableStateOf<AppUpdateCheckDto?>(null) }
+
+    LaunchedEffect(Unit) {
+        val api = repository.apiOrNull() ?: return@LaunchedEffect
+        isAdmin = runCatching { repository.me()?.isAdmin == true }.getOrDefault(false)
+        if (isAdmin) {
+            runCatching { api.getUpdateConfig() }.onSuccess { c ->
+                config = c
+                repoText = c.repo ?: ""
+            }
+        }
+    }
+
     Text("App-Update", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
     Text(
         "Installiert: $ownName (Build $ownCode)",
@@ -302,6 +327,117 @@ private fun AppUpdateSection(repository: FabulaRepository) {
                 )
                 else -> Unit
             }
+        }
+    }
+
+    if (isAdmin) {
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "Server-Konfiguration",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold
+        )
+        Text(
+            "Legt fest, aus welchem GitHub-Repository der Server neue App-Versionen " +
+                "spiegelt. Wird sofort übernommen (kein Neustart nötig).",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.outline
+        )
+        OutlinedTextField(
+            value = repoText,
+            onValueChange = { repoText = it; configMsg = null },
+            label = { Text("GitHub-Repository (owner/name)") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+        OutlinedTextField(
+            value = tokenText,
+            onValueChange = { tokenText = it; configMsg = null },
+            label = { Text("GitHub-Token") },
+            placeholder = {
+                Text(
+                    if (config?.hasToken == true) "•••• gesetzt – leer lassen = unverändert"
+                    else "nur für privates Repo"
+                )
+            },
+            singleLine = true,
+            visualTransformation = PasswordVisualTransformation(),
+            modifier = Modifier.fillMaxWidth()
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Button(
+                enabled = !configSaving,
+                onClick = {
+                    configSaving = true
+                    configMsg = null
+                    scope.launch {
+                        val res = runCatching {
+                            val api = repository.apiOrNull()
+                                ?: throw IllegalStateException("Kein Server konfiguriert.")
+                            api.setUpdateConfig(
+                                UpdateAppConfigRequest(
+                                    repo = repoText.trim().ifBlank { null },
+                                    token = tokenText.trim().ifBlank { null }
+                                )
+                            )
+                        }
+                        configSaving = false
+                        res.onSuccess { c ->
+                            config = c
+                            repoText = c.repo ?: ""
+                            tokenText = ""
+                            configMsg = "Gespeichert."
+                        }.onFailure { t ->
+                            repository.logFailure("AppUpdate.setConfig", t)
+                            configMsg = t.message ?: "Speichern fehlgeschlagen"
+                        }
+                    }
+                },
+                modifier = Modifier.weight(1f)
+            ) { Text(if (configSaving) "Speichere…" else "Speichern") }
+
+            OutlinedButton(
+                enabled = !testing,
+                onClick = {
+                    testing = true
+                    testResult = null
+                    scope.launch {
+                        val res = runCatching {
+                            val api = repository.apiOrNull()
+                                ?: throw IllegalStateException("Kein Server konfiguriert.")
+                            api.checkUpdateNow()
+                        }
+                        testing = false
+                        res.onSuccess { testResult = it }
+                            .onFailure { t ->
+                                repository.logFailure("AppUpdate.checkNow", t)
+                                testResult = AppUpdateCheckDto(
+                                    configured = true,
+                                    ok = false,
+                                    message = t.message ?: "Test fehlgeschlagen"
+                                )
+                            }
+                    }
+                },
+                modifier = Modifier.weight(1f)
+            ) { Text(if (testing) "Teste…" else "Verbindung testen") }
+        }
+        configMsg?.let {
+            Text(
+                it,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.outline
+            )
+        }
+        testResult?.let {
+            Text(
+                it.message,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (it.ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+            )
         }
     }
 }
