@@ -99,6 +99,41 @@ Filename: "{sys}\sc.exe"; Parameters: "delete {#ServiceName}"; Flags: runhidden;
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""Fabula Server"""; Flags: runhidden; RunOnceId: "RemoveFirewallRule"
 
 [Code]
+var
+  UpdatePage: TInputQueryWizardPage;
+
+// Minimal JSON string-value reader: finds "Key" and returns the quoted value
+// after the next colon. Good enough for repo names and tokens (no quotes /
+// backslashes in those), used only to pre-fill the wizard on reinstall.
+function ExtractJsonValue(Content, Key: String): String;
+var
+  P, Q: Integer;
+  Marker: String;
+begin
+  Result := '';
+  Marker := '"' + Key + '"';
+  P := Pos(Marker, Content);
+  if P = 0 then exit;
+  Q := P + Length(Marker);
+  while (Q <= Length(Content)) and (Content[Q] <> ':') do Inc(Q);
+  if Q > Length(Content) then exit;
+  Inc(Q);
+  while (Q <= Length(Content)) and (Content[Q] <> '"') do Inc(Q);
+  if Q > Length(Content) then exit;
+  Inc(Q);
+  P := Q;
+  while (P <= Length(Content)) and (Content[P] <> '"') do Inc(P);
+  if P > Length(Content) then exit;
+  Result := Copy(Content, Q, P - Q);
+end;
+
+function JsonEscape(S: String): String;
+begin
+  StringChangeEx(S, '\', '\\', True);
+  StringChangeEx(S, '"', '\"', True);
+  Result := S;
+end;
+
 // Stop the service before files are copied, otherwise the running exe is
 // locked. Best-effort: errors are swallowed.
 procedure StopServiceQuiet;
@@ -111,10 +146,67 @@ begin
   Sleep(1500);
 end;
 
+procedure InitializeWizard;
+var
+  Content: AnsiString;
+  Repo, Token: String;
+begin
+  UpdatePage := CreateInputQueryPage(wpSelectDir,
+    'App-Updates', 'Automatische App-Updates über diesen Server',
+    'Optional: Trage das GitHub-Repository ein, das die App-Releases enthält, ' +
+    'und – falls es privat ist – ein Zugriffstoken. Der Server holt neue ' +
+    'App-Versionen von dort und stellt sie der App zur Verfügung. ' +
+    'Kann später in fabula.settings.json geändert werden.');
+  UpdatePage.Add('GitHub-Repository (owner/name):', False);
+  UpdatePage.Add('GitHub-Token (nur für privates Repo):', True);
+
+  // Pre-fill from an existing settings file so a reinstall keeps the values.
+  Repo := 'vb-roughus/Fabula';
+  Token := '';
+  if LoadStringFromFile(ExpandConstant('{commonappdata}\{#AppName}\fabula.settings.json'), Content) then
+  begin
+    if ExtractJsonValue(String(Content), 'UpdateRepo') <> '' then
+      Repo := ExtractJsonValue(String(Content), 'UpdateRepo');
+    Token := ExtractJsonValue(String(Content), 'UpdateGithubToken');
+  end;
+  UpdatePage.Values[0] := Repo;
+  UpdatePage.Values[1] := Token;
+end;
+
+// Persist the update settings to %ProgramData%\Fabula\fabula.settings.json.
+// This file survives upgrades (unlike appsettings.* under Program Files) and
+// overrides the shipped defaults. Runs before the service is (re)started.
+procedure WriteUpdateSettings;
+var
+  Repo, Token, Json, Dir: String;
+begin
+  if WizardSilent then exit; // never clobber existing config on a silent upgrade
+  Repo := Trim(UpdatePage.Values[0]);
+  Token := Trim(UpdatePage.Values[1]);
+
+  Dir := ExpandConstant('{commonappdata}\{#AppName}');
+  ForceDirectories(Dir);
+
+  Json := '{' + #13#10 + '  "Fabula": {' + #13#10;
+  if Repo <> '' then
+  begin
+    Json := Json + '    "UpdateRepo": "' + JsonEscape(Repo) + '"';
+    if Token <> '' then Json := Json + ',';
+    Json := Json + #13#10;
+  end;
+  if Token <> '' then
+    Json := Json + '    "UpdateGithubToken": "' + JsonEscape(Token) + '"' + #13#10;
+  Json := Json + '  }' + #13#10 + '}' + #13#10;
+
+  SaveStringToFile(Dir + '\fabula.settings.json', Json, False);
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssInstall then
-    StopServiceQuiet;
+    StopServiceQuiet
+  else if CurStep = ssPostInstall then
+    WriteUpdateSettings;
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);

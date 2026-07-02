@@ -25,6 +25,18 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 
 builder.Host.UseWindowsService(o => o.ServiceName = "Fabula");
 
+// Operator-owned settings that must survive an in-place upgrade. appsettings.*
+// live under the install dir (Program Files) and get overwritten on every
+// reinstall, so the installer instead writes things like the update token to
+// %ProgramData%\Fabula\fabula.settings.json. Loaded last => it overrides the
+// shipped defaults. Override the location with FABULA_SETTINGS_FILE (handy on
+// Linux/Docker).
+var operatorSettingsFile = Environment.GetEnvironmentVariable("FABULA_SETTINGS_FILE")
+    ?? Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+        "Fabula", "fabula.settings.json");
+builder.Configuration.AddJsonFile(operatorSettingsFile, optional: true, reloadOnChange: true);
+
 var rawOptions = builder.Configuration.GetSection(FabulaOptions.SectionName).Get<FabulaOptions>() ?? new FabulaOptions();
 
 string ResolvePath(string path) => Path.IsPathRooted(path)
