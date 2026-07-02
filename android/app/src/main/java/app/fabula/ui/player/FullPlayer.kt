@@ -675,6 +675,7 @@ private fun PlayerTitleRow(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun PlayerScrubber(
     chapterPos: Double,
