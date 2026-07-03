@@ -370,8 +370,11 @@ fun FullPlayer(
                 }
             }
         } else {
-            // Portrait: centred square cover with the controls flowing beneath,
-            // weighted spacers keeping everything vertically balanced.
+            // Portrait: the cover takes the flexible space up top (so it shrinks
+            // on large/wide screens instead of pushing the controls off the
+            // bottom), the controls sit beneath at their natural size. The cover
+            // is sized to the largest square that fits its region -- min of the
+            // available width and height -- so it never overflows either way.
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -379,19 +382,24 @@ fun FullPlayer(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 topBar()
-                Spacer(Modifier.weight(0.5f))
-                cover(
-                    Modifier
-                        .fillMaxWidth(0.82f)
-                        .aspectRatio(1f)
-                )
-                Spacer(Modifier.weight(0.4f))
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .padding(vertical = 12.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    BoxWithConstraints {
+                        val side = minOf(maxWidth, maxHeight)
+                        cover(Modifier.size(side))
+                    }
+                }
                 titleRow()
                 Spacer(Modifier.height(16.dp))
                 scrubber()
                 Spacer(Modifier.height(16.dp))
                 mainControls()
-                Spacer(Modifier.weight(0.3f))
+                Spacer(Modifier.height(12.dp))
                 showerSection()
                 utilityRow()
             }
