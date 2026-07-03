@@ -83,7 +83,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -145,14 +145,15 @@ fun FullPlayer(
     val pulseFactor = if (pulseEnabled) pulseValue else 0f
 
     val baseColor = MaterialTheme.colorScheme.background
-    val accentColor = MaterialTheme.colorScheme.primary
-    // Static 10% accent base on the top edge, brightened up to 50% when
-    // pulsing -- pre-blended onto the navy so the gradient itself is fully
-    // opaque and predictable.
-    val topTint = accentColor.copy(alpha = 0.10f + 0.40f * pulseFactor).compositeOver(baseColor)
+    // Neutral grey "now playing" gradient (Spotify-style): a greyed version of
+    // the background at the top fading into the plain background. Built by
+    // blending toward the foreground, so it stays neutral and theme-aware --
+    // dark-grey->near-black in dark mode, light-grey->white in light mode.
+    // Pulse mode brightens the top blend for a subtle breathing effect.
+    val topTint = lerp(baseColor, MaterialTheme.colorScheme.onBackground, 0.16f + 0.18f * pulseFactor)
     val backgroundGradient = Brush.verticalGradient(
         0.0f to topTint,
-        0.45f to baseColor,
+        0.5f to baseColor,
         1.0f to baseColor
     )
 
@@ -369,18 +370,19 @@ fun FullPlayer(
                 }
             }
         } else {
-            // Portrait: large square cover with the controls flowing beneath,
+            // Portrait: centred square cover with the controls flowing beneath,
             // weighted spacers keeping everything vertically balanced.
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 24.dp)
+                    .padding(horizontal = 24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 topBar()
                 Spacer(Modifier.weight(0.5f))
                 cover(
                     Modifier
-                        .fillMaxWidth()
+                        .fillMaxWidth(0.82f)
                         .aspectRatio(1f)
                 )
                 Spacer(Modifier.weight(0.4f))
@@ -694,17 +696,9 @@ private fun PlayerScrubber(
     val sliderValue = scrubFraction
         ?: if (chapterDuration > 0) (chapterPos / chapterDuration).toFloat().coerceIn(0f, 1f) else 0f
 
-    // Slim chapter-relative scrubber: time / slider / time on a single line.
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            formatClock(chapterPos),
-            style = MaterialTheme.typography.labelSmall,
-            color = playerMuted,
-            modifier = Modifier.width(40.dp)
-        )
+    // Chapter-relative scrubber: a full-width bar with the times underneath
+    // (elapsed left, chapter length right), matching the "now playing" look.
+    Column(modifier = modifier.fillMaxWidth()) {
         Slider(
             value = sliderValue,
             onValueChange = { scrubFraction = it },
@@ -714,9 +708,7 @@ private fun PlayerScrubber(
                 }
                 scrubFraction = null
             },
-            modifier = Modifier
-                .weight(1f)
-                .padding(horizontal = 8.dp),
+            modifier = Modifier.fillMaxWidth(),
             colors = SliderDefaults.colors(
                 thumbColor = playerFg,
                 activeTrackColor = playerFg,
@@ -791,13 +783,19 @@ private fun PlayerScrubber(
                 }
             }
         )
-        Text(
-            formatClock(chapterDuration),
-            style = MaterialTheme.typography.labelSmall,
-            color = playerMuted,
-            modifier = Modifier.width(40.dp),
-            textAlign = TextAlign.End
-        )
+        Row(modifier = Modifier.fillMaxWidth()) {
+            Text(
+                formatClock(chapterPos),
+                style = MaterialTheme.typography.labelSmall,
+                color = playerMuted
+            )
+            Spacer(Modifier.weight(1f))
+            Text(
+                formatClock(chapterDuration),
+                style = MaterialTheme.typography.labelSmall,
+                color = playerMuted
+            )
+        }
     }
 }
 
