@@ -2,6 +2,8 @@ package app.fabula.ui.settings
 
 import android.content.Context
 import android.content.Intent
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,13 +13,21 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Bedtime
+import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.LibraryBooks
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -35,10 +45,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -52,6 +65,15 @@ import app.fabula.ui.LocalContentBottomInset
 import java.io.File
 import kotlinx.coroutines.launch
 
+/** A settings sub-page. `null` = the top-level category menu. */
+private enum class SettingsSection(val title: String) {
+    Appearance("Darstellung"),
+    Server("Server"),
+    Playback("Wiedergabe"),
+    AppUpdate("App-Update"),
+    Diagnostics("Diagnose")
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
@@ -59,31 +81,18 @@ fun SettingsScreen(
     onDone: () -> Unit,
     onManageSeries: () -> Unit
 ) {
-    val storedUrl by repository.baseUrlFlow.collectAsState(initial = "")
-    val sleepRepeatEnabled by repository.sleepRepeatEnabled.collectAsState(initial = true)
-    val sleepWakeMinutes by repository.sleepRepeatUntilMinutes.collectAsState(initial = 7 * 60)
+    // Which sub-page is open; null shows the category menu. Survives rotation.
+    var section by rememberSaveable { mutableStateOf<SettingsSection?>(null) }
 
-    var url by remember { mutableStateOf("") }
-    var wakeText by remember { mutableStateOf("") }
-    var wakeError by remember { mutableStateOf<String?>(null) }
-    val scope = rememberCoroutineScope()
-
-    LaunchedEffect(storedUrl) {
-        if (url.isBlank() && storedUrl.isNotBlank()) url = storedUrl
-    }
-    LaunchedEffect(sleepWakeMinutes) {
-        // Only sync from prefs if the user isn't currently editing.
-        if (wakeText.isBlank() || parseHhMm(wakeText) == sleepWakeMinutes) {
-            wakeText = formatHhMm(sleepWakeMinutes)
-        }
-    }
+    // Hardware back inside a sub-page returns to the menu instead of leaving.
+    BackHandler(enabled = section != null) { section = null }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Einstellungen") },
+                title = { Text(section?.title ?: "Einstellungen") },
                 navigationIcon = {
-                    IconButton(onClick = onDone) {
+                    IconButton(onClick = { if (section != null) section = null else onDone() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Zurück")
                     }
                 },
@@ -93,9 +102,8 @@ fun SettingsScreen(
         containerColor = Color.Transparent,
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0.dp)
     ) { insets ->
-        // Extend the scrollable content past the translucent bottom nav bar
-        // and mini player so the last sections (e.g. Diagnose) can scroll
-        // fully into view instead of being hidden behind the overlay.
+        // Extend the scrollable content past the translucent bottom nav bar so
+        // the last items can scroll fully into view.
         val bottomInset = LocalContentBottomInset.current.calculateBottomPadding()
         Column(
             modifier = Modifier
@@ -103,111 +111,172 @@ fun SettingsScreen(
                 .padding(insets)
                 .verticalScroll(rememberScrollState())
                 .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 16.dp + bottomInset),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(if (section == null) 4.dp else 16.dp)
         ) {
-            AppearanceSection(repository = repository)
+            when (section) {
+                null -> {
+                    SettingsMenuItem(Icons.Filled.Palette, "Darstellung", "Hell, Dunkel, System") {
+                        section = SettingsSection.Appearance
+                    }
+                    SettingsMenuItem(Icons.Filled.Dns, "Server", "Server-URL") {
+                        section = SettingsSection.Server
+                    }
+                    SettingsMenuItem(Icons.Filled.Bedtime, "Wiedergabe", "Schlaf-Timer") {
+                        section = SettingsSection.Playback
+                    }
+                    SettingsMenuItem(Icons.Filled.LibraryBooks, "Serien verwalten", "Reihenfolge & Zuordnung", onManageSeries)
+                    SettingsMenuItem(Icons.Filled.SystemUpdate, "App-Update", "Version & Aktualisierung") {
+                        section = SettingsSection.AppUpdate
+                    }
+                    SettingsMenuItem(Icons.Filled.BugReport, "Diagnose", "Fehlerprotokoll") {
+                        section = SettingsSection.Diagnostics
+                    }
+                }
+                SettingsSection.Appearance -> AppearanceSection(repository)
+                SettingsSection.Server -> ServerSection(repository)
+                SettingsSection.Playback -> PlaybackSection(repository)
+                SettingsSection.AppUpdate -> AppUpdateSection(repository)
+                SettingsSection.Diagnostics -> DiagnoseSection(repository)
+            }
+        }
+    }
+}
 
-            HorizontalDivider()
-
-            Text("Server", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            OutlinedTextField(
-                value = url,
-                onValueChange = { url = it },
-                label = { Text("Server-URL") },
-                placeholder = { Text("http://192.168.1.20:5075") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
+@Composable
+private fun SettingsMenuItem(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 14.dp, horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+        Spacer(Modifier.width(16.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
             Text(
-                "Die URL, unter der dein Fabula-Server erreichbar ist. Wenn du den Port weglässt, wird 80 verwendet.",
+                subtitle,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.outline
             )
-            Button(
-                enabled = url.isNotBlank(),
-                onClick = {
-                    scope.launch {
-                        val normalised = FabulaRepository.normaliseBaseUrl(url) ?: return@launch
-                        repository.setBaseUrl(normalised)
-                    }
-                }
-            ) { Text("Server speichern") }
+        }
+        Icon(
+            Icons.Filled.KeyboardArrowRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.outline
+        )
+    }
+}
 
-            HorizontalDivider()
+@Composable
+private fun ServerSection(repository: FabulaRepository) {
+    val storedUrl by repository.baseUrlFlow.collectAsState(initial = "")
+    var url by remember { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
 
-            Text("Schlaf-Timer", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Automatisch wiederholen", style = MaterialTheme.typography.bodyLarge)
-                    Text(
-                        "Setzt den Timer beim Wiederaufnehmen der Wiedergabe neu, bis die Aufwach-Uhrzeit erreicht ist.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.outline
-                    )
-                }
-                Switch(
-                    checked = sleepRepeatEnabled,
-                    onCheckedChange = { value ->
-                        scope.launch { repository.setSleepRepeatEnabled(value) }
-                    }
-                )
+    LaunchedEffect(storedUrl) {
+        if (url.isBlank() && storedUrl.isNotBlank()) url = storedUrl
+    }
+
+    OutlinedTextField(
+        value = url,
+        onValueChange = { url = it },
+        label = { Text("Server-URL") },
+        placeholder = { Text("http://192.168.1.20:5075") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth()
+    )
+    Text(
+        "Die URL, unter der dein Fabula-Server erreichbar ist. Wenn du den Port weglässt, wird 80 verwendet.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.outline
+    )
+    Button(
+        enabled = url.isNotBlank(),
+        onClick = {
+            scope.launch {
+                val normalised = FabulaRepository.normaliseBaseUrl(url) ?: return@launch
+                repository.setBaseUrl(normalised)
             }
+        }
+    ) { Text("Server speichern") }
+}
 
-            OutlinedTextField(
-                value = wakeText,
-                onValueChange = {
-                    wakeText = it
-                    wakeError = null
-                },
-                label = { Text("Aufwach-Uhrzeit (HH:MM)") },
-                singleLine = true,
-                enabled = sleepRepeatEnabled,
-                isError = wakeError != null,
-                supportingText = {
-                    wakeError?.let { Text(it) }
-                        ?: Text(
-                            "Standard: 07:00",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.outline
-                        )
-                },
-                modifier = Modifier.fillMaxWidth()
-            )
-            OutlinedButton(
-                enabled = sleepRepeatEnabled,
-                onClick = {
-                    val parsed = parseHhMm(wakeText)
-                    if (parsed == null) {
-                        wakeError = "Format HH:MM, z. B. 07:00"
-                    } else {
-                        wakeError = null
-                        scope.launch { repository.setSleepRepeatUntilMinutes(parsed) }
-                    }
-                }
-            ) { Text("Aufwach-Uhrzeit speichern") }
+@Composable
+private fun PlaybackSection(repository: FabulaRepository) {
+    val sleepRepeatEnabled by repository.sleepRepeatEnabled.collectAsState(initial = true)
+    val sleepWakeMinutes by repository.sleepRepeatUntilMinutes.collectAsState(initial = 7 * 60)
+    var wakeText by remember { mutableStateOf("") }
+    var wakeError by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
 
-            HorizontalDivider()
-
-            Text("Bibliothek", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            OutlinedButton(
-                onClick = onManageSeries,
-                modifier = Modifier.fillMaxWidth()
-            ) { Text("Serien verwalten") }
-
-            HorizontalDivider()
-
-            AppUpdateSection(repository = repository)
-
-            HorizontalDivider()
-
-            DiagnoseSection(repository = repository)
-
-            Spacer(Modifier.height(8.dp))
+    LaunchedEffect(sleepWakeMinutes) {
+        // Only sync from prefs if the user isn't currently editing.
+        if (wakeText.isBlank() || parseHhMm(wakeText) == sleepWakeMinutes) {
+            wakeText = formatHhMm(sleepWakeMinutes)
         }
     }
+
+    Text("Schlaf-Timer", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text("Automatisch wiederholen", style = MaterialTheme.typography.bodyLarge)
+            Text(
+                "Setzt den Timer beim Wiederaufnehmen der Wiedergabe neu, bis die Aufwach-Uhrzeit erreicht ist.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.outline
+            )
+        }
+        Switch(
+            checked = sleepRepeatEnabled,
+            onCheckedChange = { value ->
+                scope.launch { repository.setSleepRepeatEnabled(value) }
+            }
+        )
+    }
+
+    OutlinedTextField(
+        value = wakeText,
+        onValueChange = {
+            wakeText = it
+            wakeError = null
+        },
+        label = { Text("Aufwach-Uhrzeit (HH:MM)") },
+        singleLine = true,
+        enabled = sleepRepeatEnabled,
+        isError = wakeError != null,
+        supportingText = {
+            wakeError?.let { Text(it) }
+                ?: Text(
+                    "Standard: 07:00",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline
+                )
+        },
+        modifier = Modifier.fillMaxWidth()
+    )
+    OutlinedButton(
+        enabled = sleepRepeatEnabled,
+        onClick = {
+            val parsed = parseHhMm(wakeText)
+            if (parsed == null) {
+                wakeError = "Format HH:MM, z. B. 07:00"
+            } else {
+                wakeError = null
+                scope.launch { repository.setSleepRepeatUntilMinutes(parsed) }
+            }
+        }
+    ) { Text("Aufwach-Uhrzeit speichern") }
 }
 
 private sealed interface UpdateUiState {
@@ -248,7 +317,6 @@ private fun AppUpdateSection(repository: FabulaRepository) {
         }
     }
 
-    Text("App-Update", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
     Text(
         "Installiert: $ownName (Build $ownCode)",
         style = MaterialTheme.typography.bodySmall,
@@ -490,7 +558,6 @@ private fun AppearanceSection(repository: FabulaRepository) {
     val mode by repository.themeMode.collectAsState(initial = "system")
     val scope = rememberCoroutineScope()
 
-    Text("Darstellung", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
     Text(
         "Farbschema der App.",
         style = MaterialTheme.typography.bodySmall,
@@ -524,7 +591,6 @@ private fun DiagnoseSection(repository: FabulaRepository) {
     val logBytes by logStore.byteCount.collectAsState()
     val scope = rememberCoroutineScope()
 
-    Text("Diagnose", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
