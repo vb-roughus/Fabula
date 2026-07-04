@@ -548,18 +548,16 @@ private fun FabulaNavigationBar(navController: NavHostController) {
             NavigationBarItem(
                 selected = selected,
                 onClick = {
-                    if (selected) {
-                        // Already on this tab -- pop everything stacked on
-                        // top of it so we land back on its root screen.
-                        navController.popBackStack(tab.route, inclusive = false)
-                    } else {
-                        navController.navigate(tab.route) {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                saveState = true
-                            }
-                            launchSingleTop = true
-                            restoreState = true
+                    // Always land on the tapped tab's root screen, popping
+                    // anything stacked on top (e.g. an open book) -- no matter
+                    // what's currently in front. No save/restoreState so a tab
+                    // tap is always a clean reset to that page.
+                    navController.navigate(tab.route) {
+                        popUpTo(navController.graph.findStartDestination().id) {
+                            saveState = false
                         }
+                        launchSingleTop = true
+                        restoreState = false
                     }
                 },
                 icon = { Icon(tab.icon, contentDescription = null) },
