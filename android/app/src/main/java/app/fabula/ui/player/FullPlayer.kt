@@ -101,7 +101,6 @@ import coil3.compose.AsyncImage
 import kotlinx.coroutines.launch
 
 private val SPEED_CHOICES = listOf(0.8f, 0.9f, 1.0f, 1.1f, 1.25f, 1.5f, 1.75f, 2.0f)
-private const val SLEEP_TIMER_DURATION_MS = 30L * 60 * 1000  // 30 minutes
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -114,6 +113,7 @@ fun FullPlayer(
     val state by player.state.collectAsState()
     val book = state.book ?: return
     val scope = rememberCoroutineScope()
+    val sleepMinutes by repository.sleepTimerMinutes.collectAsState(initial = 30)
 
     var bookmarkManagerOpen by remember { mutableStateOf(false) }
     var bookmarkSavedFlash by remember { mutableStateOf(false) }
@@ -309,7 +309,8 @@ fun FullPlayer(
             pulseEnabled = pulseEnabled,
             onTogglePulse = { pulseEnabled = !pulseEnabled },
             sleepRemainingMs = state.sleepTimerRemainingMs,
-            onStartSleep = { player.startSleepTimer(SLEEP_TIMER_DURATION_MS) },
+            sleepMinutes = sleepMinutes,
+            onStartSleep = { player.startSleepTimer(sleepMinutes * 60_000L) },
             onCancelSleep = { player.cancelSleepTimer() },
             playerFg = playerFg
         )
@@ -915,6 +916,7 @@ private fun PlayerUtilityRow(
     pulseEnabled: Boolean,
     onTogglePulse: () -> Unit,
     sleepRemainingMs: Long?,
+    sleepMinutes: Int,
     onStartSleep: () -> Unit,
     onCancelSleep: () -> Unit,
     playerFg: Color,
@@ -1028,7 +1030,7 @@ private fun PlayerUtilityRow(
                 )
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    "30 min",
+                    "$sleepMinutes min",
                     color = playerFg,
                     style = MaterialTheme.typography.labelLarge
                 )

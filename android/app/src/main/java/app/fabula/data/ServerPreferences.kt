@@ -58,6 +58,16 @@ class ServerPreferences(private val context: Context) {
         context.dataStore.edit { it[SLEEP_UNTIL_KEY] = minutes.coerceIn(0, 24 * 60 - 1) }
     }
 
+    /** Sleep-timer duration in minutes (5-minute steps). Default: 30. */
+    val sleepTimerMinutes: Flow<Int> = context.dataStore.data
+        .map { it[SLEEP_TIMER_MINUTES_KEY] ?: 30 }
+
+    suspend fun setSleepTimerMinutes(minutes: Int) {
+        // Snap to 5-minute steps within a sensible range.
+        val snapped = (minutes / 5) * 5
+        context.dataStore.edit { it[SLEEP_TIMER_MINUTES_KEY] = snapped.coerceIn(5, 240) }
+    }
+
     /** Extra gain (dB) applied by LoudnessEnhancer during shower mode. 0 = off. */
     val showerBoostDb: Flow<Float> = context.dataStore.data
         .map { it[SHOWER_BOOST_KEY] ?: 0f }
@@ -90,5 +100,6 @@ class ServerPreferences(private val context: Context) {
         private val DIAGNOSTICS_KEY = booleanPreferencesKey("diagnostics_enabled")
         private val SHOWER_BOOST_KEY = floatPreferencesKey("shower_boost_db")
         private val THEME_MODE_KEY = stringPreferencesKey("theme_mode")
+        private val SLEEP_TIMER_MINUTES_KEY = intPreferencesKey("sleep_timer_minutes")
     }
 }

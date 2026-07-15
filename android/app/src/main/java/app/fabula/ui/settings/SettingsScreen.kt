@@ -213,6 +213,7 @@ private fun ServerSection(repository: FabulaRepository) {
 private fun PlaybackSection(repository: FabulaRepository) {
     val sleepRepeatEnabled by repository.sleepRepeatEnabled.collectAsState(initial = true)
     val sleepWakeMinutes by repository.sleepRepeatUntilMinutes.collectAsState(initial = 7 * 60)
+    val sleepTimerMinutes by repository.sleepTimerMinutes.collectAsState(initial = 30)
     var wakeText by remember { mutableStateOf("") }
     var wakeError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
@@ -225,6 +226,36 @@ private fun PlaybackSection(repository: FabulaRepository) {
     }
 
     Text("Schlaf-Timer", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+
+    // Duration picker in 5-minute steps.
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text("Dauer", style = MaterialTheme.typography.bodyLarge)
+            Text(
+                "Wie lange der Timer läuft, wenn du ihn im Player startest.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.outline
+            )
+        }
+        OutlinedButton(
+            enabled = sleepTimerMinutes > 5,
+            onClick = { scope.launch { repository.setSleepTimerMinutes(sleepTimerMinutes - 5) } }
+        ) { Text("−5") }
+        Text(
+            "$sleepTimerMinutes min",
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.Medium,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            modifier = Modifier.width(72.dp)
+        )
+        OutlinedButton(
+            enabled = sleepTimerMinutes < 240,
+            onClick = { scope.launch { repository.setSleepTimerMinutes(sleepTimerMinutes + 5) } }
+        ) { Text("+5") }
+    }
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
