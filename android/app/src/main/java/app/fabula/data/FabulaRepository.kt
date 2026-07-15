@@ -120,6 +120,8 @@ class FabulaRepository(
         preferences.setSleepRepeatEnabled(enabled)
     suspend fun setSleepRepeatUntilMinutes(minutes: Int) =
         preferences.setSleepRepeatUntilMinutes(minutes)
+    val sleepTimerMinutes: Flow<Int> = preferences.sleepTimerMinutes
+    suspend fun setSleepTimerMinutes(minutes: Int) = preferences.setSleepTimerMinutes(minutes)
 
     suspend fun apiOrNull(): FabulaApi? {
         val raw = preferences.baseUrl.first()
