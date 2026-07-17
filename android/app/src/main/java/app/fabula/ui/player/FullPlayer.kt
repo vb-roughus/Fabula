@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -329,11 +330,14 @@ fun FullPlayer(
             )
             .systemBarsPadding()
     ) {
-        if (maxWidth > maxHeight) {
-            // Landscape: a square cover on the left, the controls stacked in a
-            // scrollable column on the right so nothing is ever pushed off the
-            // (short) screen. This is the case that previously rendered the
-            // cover as tall as the screen was wide and hid every control.
+        // Two-pane only when the screen is clearly wider than tall (phone in
+        // landscape). Near-square large screens (e.g. an unfolded foldable)
+        // use the single-column layout below -- a full-height square cover
+        // would otherwise dominate the pane.
+        if (maxWidth > maxHeight * 1.3f) {
+            // Landscape (wide): a square cover on the left, the controls
+            // stacked in a scrollable column on the right so nothing is ever
+            // pushed off the (short) screen.
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -371,14 +375,18 @@ fun FullPlayer(
                 }
             }
         } else {
-            // Portrait: the cover takes the flexible space up top (so it shrinks
-            // on large/wide screens instead of pushing the controls off the
-            // bottom), the controls sit beneath at their natural size. The cover
-            // is sized to the largest square that fits its region -- min of the
-            // available width and height -- so it never overflows either way.
+            // Portrait / near-square: the cover takes the flexible space up top
+            // (so it shrinks instead of pushing the controls off the bottom),
+            // the controls sit beneath at their natural size. The cover is sized
+            // to the largest square that fits its region -- min of the available
+            // width and height -- so it never overflows. The whole column is
+            // capped to a comfortable width and centred, so on a big/near-square
+            // screen it reads like a normal player instead of stretching wide.
             Column(
                 modifier = Modifier
-                    .fillMaxSize()
+                    .fillMaxHeight()
+                    .widthIn(max = 560.dp)
+                    .align(Alignment.TopCenter)
                     .padding(horizontal = 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
