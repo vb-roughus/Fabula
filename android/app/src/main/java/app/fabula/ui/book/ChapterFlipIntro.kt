@@ -4,7 +4,9 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -29,11 +31,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -54,6 +62,18 @@ private const val HOLD_SLOW_MS = 120     // pause between the final pages
 private const val FINAL_HOLD_MS = 620L   // dwell on the target chapter before leaving
 private const val FADE_OUT_MS = 300
 
+// Aged-book palette. Fixed (theme-independent) so an old book looks old in
+// both light and dark app themes.
+private val AgedBackdrop = Color(0xFF15100A)     // dim, candle-lit library
+private val AgedBackdropGlow = Color(0xFF2C2013) // warm glow behind the book
+private val Parchment = Color(0xFFEBDCB8)         // page base
+private val ParchmentShade = Color(0xFFD8C299)    // stacked page edges
+private val ParchmentVignette = Color(0xFFB89A63) // darkened rim / foxing
+private val Ink = Color(0xFF40301C)               // main text
+private val InkSoft = Color(0xFF6E5638)           // rules, softer text
+private val Leather = Color(0xFF3A2413)           // spine / cover frame
+private val Gilt = Color(0xFF9A7638)              // faded gold ornaments
+
 /**
  * Full-screen intro shown when a book is opened: a book "riffles" through its
  * chapters -- 3D page turns around the spine -- and settles on the chapter the
@@ -61,8 +81,9 @@ private const val FADE_OUT_MS = 300
  * bounded ([MAX_FLIPS]) and the shown chapters are sampled across the book, so
  * it always lands exactly on [targetIndex] without animating dozens of pages.
  *
- * The overlay is opaque (paints the app background) so it covers the book
- * screen while it plays. Tapping anywhere skips straight to the end.
+ * Styled like an old book: parchment pages with a vignette and a double-rule
+ * frame, serif ink lettering with gilt ornaments, a leather spine and a
+ * candle-lit backdrop. Tapping anywhere skips straight to the end.
  */
 @Composable
 fun ChapterFlipIntro(
@@ -120,15 +141,22 @@ fun ChapterFlipIntro(
         finishNow()
     }
 
-    val pageColor = MaterialTheme.colorScheme.surface
-    val spineColor = MaterialTheme.colorScheme.surfaceVariant
     val density = LocalDensity.current
+    // Faded, low-saturation cover so a modern cover photo reads like an old
+    // inset plate rather than clashing with the parchment.
+    val agedCoverFilter = remember { ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0.4f) }) }
+    val backdropBrush = remember {
+        Brush.radialGradient(listOf(AgedBackdropGlow, AgedBackdrop))
+    }
+    val vignetteBrush = remember {
+        Brush.radialGradient(listOf(Color.Transparent, ParchmentVignette.copy(alpha = 0.55f)))
+    }
 
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
             .graphicsLayer { alpha = screenAlpha.value }
-            .background(MaterialTheme.colorScheme.background)
+            .background(backdropBrush)
             .pointerInput(Unit) { detectTapGestures { finishNow() } },
         contentAlignment = Alignment.Center
     ) {
@@ -144,16 +172,16 @@ fun ChapterFlipIntro(
                         .offset(x = 7.dp, y = 8.dp)
                         .width(pageWidth)
                         .aspectRatio(0.72f)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(spineColor.copy(alpha = 0.4f))
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(ParchmentVignette.copy(alpha = 0.55f))
                 )
                 Box(
                     modifier = Modifier
                         .offset(x = 3.dp, y = 4.dp)
                         .width(pageWidth)
                         .aspectRatio(0.72f)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(spineColor.copy(alpha = 0.7f))
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(ParchmentShade)
                 )
 
                 // The animating front page, turning around its left spine.
@@ -167,53 +195,87 @@ fun ChapterFlipIntro(
                             transformOrigin = TransformOrigin(0f, 0.5f)
                             alpha = 1f - flip.value * 0.55f
                         }
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(pageColor)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Parchment)
                 ) {
-                    // Thin darker spine strip on the left edge.
+                    // Aged rim shading over the whole page.
+                    Box(Modifier.fillMaxSize().background(vignetteBrush))
+                    // Dark leather spine strip on the left edge.
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(end = pageWidth * 0.94f)
-                            .background(spineColor)
+                            .padding(end = pageWidth * 0.955f)
+                            .background(Leather)
                     )
-                    Column(
+                    // Double-rule frame enclosing the page content.
+                    Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(start = 26.dp, end = 20.dp, top = 24.dp, bottom = 24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                            .padding(start = 22.dp, end = 14.dp, top = 14.dp, bottom = 14.dp)
+                            .border(1.5.dp, InkSoft.copy(alpha = 0.55f))
+                            .padding(3.dp)
+                            .border(0.8.dp, InkSoft.copy(alpha = 0.4f))
+                            .padding(horizontal = 14.dp, vertical = 16.dp),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(66.dp)
-                                .clip(RoundedCornerShape(5.dp))
-                                .background(spineColor)
+                        Column(
+                            modifier = Modifier.fillMaxSize(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
                         ) {
-                            coverUrl?.let { url ->
-                                AsyncImage(
-                                    model = url,
-                                    contentDescription = null,
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize()
-                                )
+                            Text(
+                                "❧",
+                                color = Gilt,
+                                fontFamily = FontFamily.Serif,
+                                fontSize = 22.sp
+                            )
+                            Spacer(Modifier.height(12.dp))
+                            // Cover as a framed, faded plate.
+                            Box(
+                                modifier = Modifier
+                                    .size(62.dp)
+                                    .border(1.dp, Leather)
+                                    .padding(3.dp)
+                                    .background(ParchmentShade)
+                            ) {
+                                coverUrl?.let { url ->
+                                    AsyncImage(
+                                        model = url,
+                                        contentDescription = null,
+                                        contentScale = ContentScale.Crop,
+                                        colorFilter = agedCoverFilter,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                }
                             }
+                            Spacer(Modifier.height(16.dp))
+                            Text(
+                                "KAPITEL ${chapterIdx + 1}",
+                                color = Ink,
+                                fontFamily = FontFamily.Serif,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 13.sp,
+                                letterSpacing = 3.sp
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                "• • •",
+                                color = Gilt,
+                                fontFamily = FontFamily.Serif,
+                                fontSize = 12.sp
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                chapter.title,
+                                style = MaterialTheme.typography.titleMedium,
+                                color = Ink,
+                                fontFamily = FontFamily.Serif,
+                                fontStyle = FontStyle.Italic,
+                                textAlign = TextAlign.Center,
+                                maxLines = 4,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
-                        Spacer(Modifier.height(18.dp))
-                        Text(
-                            "Kapitel ${chapterIdx + 1}",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            chapter.title,
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            textAlign = TextAlign.Center,
-                            maxLines = 4,
-                            overflow = TextOverflow.Ellipsis
-                        )
                     }
                 }
             }
@@ -221,8 +283,9 @@ fun ChapterFlipIntro(
             Spacer(Modifier.height(28.dp))
             Text(
                 "Tippen zum Überspringen",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.outline,
+                color = Parchment.copy(alpha = 0.6f),
+                fontFamily = FontFamily.Serif,
+                fontStyle = FontStyle.Italic,
                 fontSize = 12.sp
             )
         }
