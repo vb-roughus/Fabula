@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -73,12 +74,15 @@ fun BookmarkManagerSheet(
     val scope = rememberCoroutineScope()
     val bookmarksRevision by repository.bookmarksRevision.collectAsState()
     var bookmarks by remember { mutableStateOf<List<BookmarkDto>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
 
     LaunchedEffect(bookId, bookmarksRevision) {
+        loading = true
         runCatching {
             val api = repository.apiOrNull() ?: return@runCatching
             bookmarks = api.listBookmarks(bookId)
         }
+        loading = false
     }
 
     var editing by remember { mutableStateOf<BookmarkDto?>(null) }
@@ -99,7 +103,16 @@ fun BookmarkManagerSheet(
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 8.dp)
             )
-            if (bookmarks.isEmpty()) {
+            if (loading && bookmarks.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 32.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
+                }
+            } else if (bookmarks.isEmpty()) {
                 Text(
                     "Noch keine Lesezeichen für dieses Hörbuch.",
                     color = MaterialTheme.colorScheme.outline,
