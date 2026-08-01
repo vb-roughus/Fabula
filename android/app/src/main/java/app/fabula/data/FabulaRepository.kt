@@ -114,6 +114,9 @@ class FabulaRepository(
     suspend fun setDiagnosticsEnabled(enabled: Boolean) = preferences.setDiagnosticsEnabled(enabled)
     val themeMode: Flow<String> = preferences.themeMode
     suspend fun setThemeMode(mode: String) = preferences.setThemeMode(mode)
+    val chapterFlipIntroEnabled: Flow<Boolean> = preferences.chapterFlipIntroEnabled
+    suspend fun setChapterFlipIntroEnabled(enabled: Boolean) =
+        preferences.setChapterFlipIntroEnabled(enabled)
     val showerBoostDb: Flow<Float> = preferences.showerBoostDb
     suspend fun setShowerBoostDb(db: Float) = preferences.setShowerBoostDb(db)
     suspend fun setSleepRepeatEnabled(enabled: Boolean) =

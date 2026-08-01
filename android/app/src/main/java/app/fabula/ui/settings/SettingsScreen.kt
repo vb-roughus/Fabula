@@ -587,6 +587,7 @@ private fun launchInstaller(context: Context, apk: File) {
 @Composable
 private fun AppearanceSection(repository: FabulaRepository) {
     val mode by repository.themeMode.collectAsState(initial = "system")
+    val flipIntroEnabled by repository.chapterFlipIntroEnabled.collectAsState(initial = true)
     val scope = rememberCoroutineScope()
 
     Text(
@@ -601,6 +602,27 @@ private fun AppearanceSection(repository: FabulaRepository) {
         ThemeChoice("System", mode == "system") { scope.launch { repository.setThemeMode("system") } }
         ThemeChoice("Hell", mode == "light") { scope.launch { repository.setThemeMode("light") } }
         ThemeChoice("Dunkel", mode == "dark") { scope.launch { repository.setThemeMode("dark") } }
+    }
+
+    Spacer(Modifier.height(20.dp))
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text("Blätter-Animation beim Öffnen", style = MaterialTheme.typography.bodyLarge)
+            Text(
+                "Beim Öffnen eines Hörbuchs kurz durch die Kapitel blättern, bis zum aktuellen.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.outline
+            )
+        }
+        Switch(
+            checked = flipIntroEnabled,
+            onCheckedChange = { value ->
+                scope.launch { repository.setChapterFlipIntroEnabled(value) }
+            }
+        )
     }
 }
 
