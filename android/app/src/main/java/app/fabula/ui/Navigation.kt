@@ -56,6 +56,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -182,7 +183,10 @@ fun Navigation(
     }
     val hasBook by hasBookFlow.collectAsState(initial = false)
 
-    var fullPlayerOpen by remember { mutableStateOf(false) }
+    // rememberSaveable so an orientation change (Activity recreation) keeps
+    // the full player open instead of collapsing it back to the mini player --
+    // rotating should only swap the portrait/landscape layout, not dismiss it.
+    var fullPlayerOpen by rememberSaveable { mutableStateOf(false) }
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
 
