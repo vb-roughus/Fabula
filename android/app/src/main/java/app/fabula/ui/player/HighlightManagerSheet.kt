@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.BorderColor
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -70,12 +71,15 @@ fun HighlightManagerSheet(
     val scope = rememberCoroutineScope()
     val highlightsRevision by repository.highlightsRevision.collectAsState()
     var highlights by remember { mutableStateOf<List<HighlightDto>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
 
     LaunchedEffect(bookId, highlightsRevision) {
+        loading = true
         runCatching {
             val api = repository.apiOrNull() ?: return@runCatching
             highlights = api.listHighlights(bookId)
         }
+        loading = false
     }
 
     var editing by remember { mutableStateOf<HighlightDto?>(null) }
@@ -96,7 +100,16 @@ fun HighlightManagerSheet(
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 8.dp)
             )
-            if (highlights.isEmpty()) {
+            if (loading && highlights.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 32.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
+                }
+            } else if (highlights.isEmpty()) {
                 Text(
                     "Noch keine Markierungen für dieses Hörbuch.",
                     color = MaterialTheme.colorScheme.outline,
