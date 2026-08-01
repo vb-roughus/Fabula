@@ -56,6 +56,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -114,6 +115,13 @@ fun BookScreen(
     var seriesList by remember { mutableStateOf<List<SeriesSummaryDto>>(emptyList()) }
     val seriesRevision by repository.seriesRevision.collectAsState()
     var hasAutoScrolled by remember(bookId) { mutableStateOf(false) }
+    // Chapter page-flip intro: play once per book open, landing on the resume
+    // chapter. `introHandled` is saveable so it doesn't replay after process
+    // death / restore; `showFlipIntro` drives the visible overlay.
+    val flipIntroEnabled by repository.chapterFlipIntroEnabled.collectAsState(initial = true)
+    var introHandled by rememberSaveable(bookId) { mutableStateOf(false) }
+    var showFlipIntro by remember(bookId) { mutableStateOf(false) }
+    var flipTargetIndex by remember(bookId) { mutableIntStateOf(0) }
     val listState = rememberLazyListState()
     val playerState by player.state.collectAsState()
     val bookmarksRevision by repository.bookmarksRevision.collectAsState()
@@ -217,6 +225,31 @@ fun BookScreen(
         hasAutoScrolled = true
     }
 
+    // Kick off the chapter page-flip intro once the book has loaded. Compute
+    // the resume chapter the same way the auto-scroll does: the active player
+    // chapter when this book is playing, otherwise the chapter at the saved
+    // progress position (else the first chapter).
+    LaunchedEffect(book?.id, flipIntroEnabled) {
+        if (introHandled) return@LaunchedEffect
+        val current = book ?: return@LaunchedEffect
+        introHandled = true
+        if (!flipIntroEnabled || current.chapters.isEmpty()) return@LaunchedEffect
+
+        val activeIdx: Int? = if (playerState.book?.id == current.id) {
+            playerState.currentChapter?.index
+        } else {
+            val pos = current.progress?.let { parseTimeSpan(it.position) } ?: 0.0
+            if (pos > 1.0) {
+                current.chapters.indexOfFirst { c ->
+                    pos >= parseTimeSpan(c.start) && pos < parseTimeSpan(c.end)
+                }.takeIf { it >= 0 }
+            } else null
+        }
+        flipTargetIndex = (activeIdx ?: 0).coerceIn(0, current.chapters.lastIndex)
+        showFlipIntro = true
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
     Scaffold(
         topBar = {
             TopAppBar(
@@ -393,6 +426,19 @@ fun BookScreen(
                             }
                         }
                     }
+                )
+            }
+        }
+    }
+
+        if (showFlipIntro) {
+            book?.let { b ->
+                ChapterFlipIntro(
+                    coverUrl = repository.coverUrl(b),
+                    chapters = b.chapters,
+                    targetIndex = flipTargetIndex,
+                    onFinished = { showFlipIntro = false },
+                    modifier = Modifier.fillMaxSize()
                 )
             }
         }

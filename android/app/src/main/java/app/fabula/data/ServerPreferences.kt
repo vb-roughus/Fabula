@@ -84,6 +84,15 @@ class ServerPreferences(private val context: Context) {
         context.dataStore.edit { it[THEME_MODE_KEY] = mode }
     }
 
+    /** When on, opening a book plays the chapter page-flip intro that settles
+     *  on the resume chapter. Default: on. */
+    val chapterFlipIntroEnabled: Flow<Boolean> = context.dataStore.data
+        .map { it[CHAPTER_FLIP_INTRO_KEY] ?: true }
+
+    suspend fun setChapterFlipIntroEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[CHAPTER_FLIP_INTRO_KEY] = enabled }
+    }
+
     /** Stable id for this device, used when reporting progress back to the server. */
     fun deviceId(): String {
         val androidId = runCatching {
@@ -101,5 +110,6 @@ class ServerPreferences(private val context: Context) {
         private val SHOWER_BOOST_KEY = floatPreferencesKey("shower_boost_db")
         private val THEME_MODE_KEY = stringPreferencesKey("theme_mode")
         private val SLEEP_TIMER_MINUTES_KEY = intPreferencesKey("sleep_timer_minutes")
+        private val CHAPTER_FLIP_INTRO_KEY = booleanPreferencesKey("chapter_flip_intro_enabled")
     }
 }
