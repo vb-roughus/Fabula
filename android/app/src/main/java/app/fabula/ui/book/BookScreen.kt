@@ -1148,6 +1148,17 @@ private fun ActionRow(
     downloadState: BookDownloadState?,
     onDownloadClick: () -> Unit
 ) {
+    // Same reasoning as the chapter rows: seeded so an already-downloaded book
+    // doesn't celebrate on open, and saveable because this row sits in a
+    // LazyColumn item too -- scrolling through a long chapter list disposes it.
+    var completeCelebrated by rememberSaveable {
+        mutableStateOf(downloadState?.status == DownloadStatus.Complete)
+    }
+    // Arm it again when the download goes away, so re-downloading celebrates.
+    LaunchedEffect(downloadState?.status) {
+        if (downloadState?.status != DownloadStatus.Complete) completeCelebrated = false
+    }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1186,11 +1197,13 @@ private fun ActionRow(
                         )
                     }
                 }
-                DownloadStatus.Complete -> Icon(
-                    Icons.Filled.DownloadDone,
+                DownloadStatus.Complete -> WhirlInIcon(
+                    icon = Icons.Filled.DownloadDone,
                     contentDescription = "Offline verfügbar – tippen zum Entfernen",
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(26.dp)
+                    iconSize = 26.dp,
+                    play = !completeCelebrated,
+                    onEntranceFinished = { completeCelebrated = true }
                 )
                 DownloadStatus.Partial -> Icon(
                     Icons.Filled.DownloadForOffline,
@@ -1251,6 +1264,16 @@ private fun ChapterRow(
 ) {
     val chapterDurationSec = parseTimeSpan(chapter.end) - parseTimeSpan(chapter.start)
 
+    // Seeded with isOffline at first composition: a chapter that was already
+    // downloaded when the screen opened must not celebrate again. Saveable
+    // because LazyColumn disposes off-screen rows -- with a plain remember the
+    // whirl would replay every time the row scrolled back into view (and only
+    // on longer scrolls, since nearby rows survive in the prefetch window,
+    // which makes it easy to miss when testing by hand).
+    var offlineMarkCelebrated by rememberSaveable(chapter.index) { mutableStateOf(isOffline) }
+    // Arm it again when the download goes away, so re-downloading celebrates.
+    LaunchedEffect(isOffline) { if (!isOffline) offlineMarkCelebrated = false }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1285,11 +1308,13 @@ private fun ChapterRow(
             }
         }
         if (isOffline) {
-            Icon(
-                Icons.Filled.DownloadDone,
+            WhirlInIcon(
+                icon = Icons.Filled.DownloadDone,
                 contentDescription = "Offline verfügbar",
                 tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(20.dp)
+                iconSize = 20.dp,
+                play = !offlineMarkCelebrated,
+                onEntranceFinished = { offlineMarkCelebrated = true }
             )
             Spacer(Modifier.width(4.dp))
         }
