@@ -120,5 +120,6 @@ class ServerPreferences(private val context: Context) {
         private val THEME_MODE_KEY = stringPreferencesKey("theme_mode")
         private val SLEEP_TIMER_MINUTES_KEY = intPreferencesKey("sleep_timer_minutes")
         private val CHAPTER_FLIP_INTRO_KEY = booleanPreferencesKey("chapter_flip_intro_enabled")
+        private val DOWNLOAD_WIFI_ONLY_KEY = booleanPreferencesKey("download_wifi_only")
     }
 }
