@@ -269,10 +269,10 @@ class DownloadManager(
         }
 
         val complete = book.files.all { it.id in doneIds }
-        update(book.id) {
-            it?.copy(
+        update(book.id) { current ->
+            current?.copy(
                 status = if (complete) DownloadStatus.Complete else DownloadStatus.Partial,
-                doneBytes = if (complete) total else it.doneBytes
+                doneBytes = if (complete) total else current.doneBytes
             )
         }
         offlineStore.reindex()
