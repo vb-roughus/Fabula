@@ -396,7 +396,10 @@ fun Navigation(
                         SettingsScreen(
                             repository = repository,
                             onDone = { navController.popBackStack() },
-                            onManageSeries = { navController.navigate("series-manage") }
+                            onManageSeries = { navController.navigate("series-manage") },
+                            // Entry point that works with no server: Home and
+                            // Library are network-driven and empty offline.
+                            onOpenBook = { id -> navController.navigate("book/$id") }
                         )
                     }
                     composable("series-manage") {

@@ -21,11 +21,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.DownloadForOffline
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.LibraryBooks
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -70,6 +73,7 @@ private enum class SettingsSection(val title: String) {
     Appearance("Darstellung"),
     Server("Server"),
     Playback("Wiedergabe"),
+    Downloads("Downloads"),
     AppUpdate("App-Update"),
     Diagnostics("Diagnose")
 }
@@ -79,7 +83,8 @@ private enum class SettingsSection(val title: String) {
 fun SettingsScreen(
     repository: FabulaRepository,
     onDone: () -> Unit,
-    onManageSeries: () -> Unit
+    onManageSeries: () -> Unit,
+    onOpenBook: (Int) -> Unit
 ) {
     // Which sub-page is open; null shows the category menu. Survives rotation.
     var section by rememberSaveable { mutableStateOf<SettingsSection?>(null) }
@@ -124,6 +129,9 @@ fun SettingsScreen(
                     SettingsMenuItem(Icons.Filled.Bedtime, "Wiedergabe", "Schlaf-Timer") {
                         section = SettingsSection.Playback
                     }
+                    SettingsMenuItem(Icons.Filled.DownloadForOffline, "Downloads", "Offline verfügbare Hörbücher") {
+                        section = SettingsSection.Downloads
+                    }
                     SettingsMenuItem(Icons.Filled.LibraryBooks, "Serien verwalten", "Reihenfolge & Zuordnung", onManageSeries)
                     SettingsMenuItem(Icons.Filled.SystemUpdate, "App-Update", "Version & Aktualisierung") {
                         section = SettingsSection.AppUpdate
@@ -135,6 +143,7 @@ fun SettingsScreen(
                 SettingsSection.Appearance -> AppearanceSection(repository)
                 SettingsSection.Server -> ServerSection(repository)
                 SettingsSection.Playback -> PlaybackSection(repository)
+                SettingsSection.Downloads -> DownloadsSection(repository, onOpenBook)
                 SettingsSection.AppUpdate -> AppUpdateSection(repository)
                 SettingsSection.Diagnostics -> DiagnoseSection(repository)
             }
@@ -632,6 +641,127 @@ private fun RowScope.ThemeChoice(label: String, selected: Boolean, onClick: () -
         Button(onClick = onClick, modifier = Modifier.weight(1f)) { Text(label) }
     } else {
         OutlinedButton(onClick = onClick, modifier = Modifier.weight(1f)) { Text(label) }
+    }
+}
+
+@Composable
+private fun DownloadsSection(repository: FabulaRepository, onOpenBook: (Int) -> Unit) {
+    val context = LocalContext.current
+    val app = remember(context) { context.applicationContext as FabulaApp }
+    val offlineStore = app.offlineStore
+    val downloads = app.downloadManager
+    val wifiOnly by repository.downloadWifiOnly.collectAsState(initial = true)
+    val revision by offlineStore.revision.collectAsState()
+    val totalBytes by offlineStore.totalBytes.collectAsState()
+    val scope = rememberCoroutineScope()
+    var confirmDeleteAll by remember { mutableStateOf(false) }
+
+    // Re-read the manifests whenever files appear or disappear.
+    val books = remember(revision) { offlineStore.listDownloadedBooks() }
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text("Nur über WLAN laden", style = MaterialTheme.typography.bodyLarge)
+            Text(
+                "Downloads pausieren im Mobilnetz und laufen im WLAN weiter.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.outline
+            )
+        }
+        Switch(
+            checked = wifiOnly,
+            onCheckedChange = { value -> scope.launch { repository.setDownloadWifiOnly(value) } }
+        )
+    }
+
+    Text(
+        "Belegter Speicher: ${formatBytes(totalBytes)}",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.outline
+    )
+
+    if (books.isEmpty()) {
+        Text(
+            "Noch keine Hörbücher heruntergeladen. Öffne ein Hörbuch und tippe " +
+            "dort auf das Download-Symbol.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.outline
+        )
+        return
+    }
+
+    books.forEach { manifest ->
+        val bytes = remember(revision, manifest.bookId) { offlineStore.bookBytes(manifest.bookId) }
+        val doneCount = remember(revision, manifest.bookId) {
+            offlineStore.downloadedFileIds(manifest.bookId).size
+        }
+        val trackCount = manifest.book.files.size
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onOpenBook(manifest.bookId) }
+                .padding(vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    manifest.book.title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    maxLines = 2
+                )
+                Text(
+                    buildString {
+                        append(formatBytes(bytes))
+                        if (trackCount > 0) {
+                            append(" · ")
+                            append(
+                                if (doneCount >= trackCount) "vollständig"
+                                else "$doneCount von $trackCount Tracks"
+                            )
+                        }
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline
+                )
+            }
+            IconButton(onClick = { downloads.remove(manifest.bookId) }) {
+                Icon(
+                    Icons.Filled.Delete,
+                    contentDescription = "Download löschen",
+                    tint = MaterialTheme.colorScheme.outline
+                )
+            }
+        }
+    }
+
+    OutlinedButton(
+        onClick = { confirmDeleteAll = true },
+        modifier = Modifier.fillMaxWidth()
+    ) { Text("Alle Downloads löschen") }
+
+    if (confirmDeleteAll) {
+        AlertDialog(
+            onDismissRequest = { confirmDeleteAll = false },
+            title = { Text("Alle Downloads löschen?") },
+            text = {
+                Text(
+                    "Alle offline gespeicherten Hörbücher werden vom Gerät entfernt. " +
+                    "Auf dem Server bleiben sie erhalten."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmDeleteAll = false
+                    downloads.removeAll()
+                }) { Text("Löschen") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDeleteAll = false }) { Text("Abbrechen") }
+            }
+        )
     }
 }
 

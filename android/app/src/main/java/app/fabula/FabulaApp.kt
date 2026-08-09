@@ -1,9 +1,12 @@
 package app.fabula
 
 import android.app.Application
+import app.fabula.data.DownloadManager
 import app.fabula.data.FabulaRepository
 import app.fabula.data.LogStore
+import app.fabula.data.OfflineStore
 import app.fabula.data.ServerPreferences
+import app.fabula.player.DownloadService
 import app.fabula.player.PlayerController
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -25,6 +28,14 @@ class FabulaApp : Application() {
         private set
 
     lateinit var playerController: PlayerController
+        private set
+
+    /** Downloaded audio on disk. Read by PlaybackService on every stream open,
+     *  so it must exist before any playback starts. */
+    lateinit var offlineStore: OfflineStore
+        private set
+
+    lateinit var downloadManager: DownloadManager
         private set
 
     /** Hot mirror of the persisted shower-boost preference — PlaybackService
@@ -49,6 +60,15 @@ class FabulaApp : Application() {
             preferences.showerBoostDb.collect { _showerBoostDb.value = it }
         }
         repository = FabulaRepository(preferences, logStore)
+        offlineStore = OfflineStore(this, logStore)
+        downloadManager = DownloadManager(
+            context = this,
+            repository = repository,
+            offlineStore = offlineStore,
+            logStore = logStore,
+            scope = appScope,
+            startForegroundService = { DownloadService.start(this) }
+        )
         playerController = PlayerController(this, repository)
     }
 }

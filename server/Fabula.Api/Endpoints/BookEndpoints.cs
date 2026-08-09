@@ -119,7 +119,7 @@ public static class BookEndpoints
                 book.LibraryFolder.Name,
                 progress,
                 book.Chapters.Select(c => new ChapterDto(c.Index, c.Title, c.Start, c.End)).ToList(),
-                book.Files.Select(f => new AudioFileDto(f.Id, f.TrackIndex, f.Duration, f.OffsetInBook)).ToList()));
+                book.Files.Select(f => new AudioFileDto(f.Id, f.TrackIndex, f.Duration, f.OffsetInBook, f.SizeBytes)).ToList()));
         });
 
         group.MapPut("/{id:int}/series", async (int id, FabulaDbContext db, AssignSeriesRequest req, CancellationToken ct) =>
@@ -258,6 +258,6 @@ public record BookDetailDto(
     List<AudioFileDto> Files);
 
 public record ChapterDto(int Index, string Title, TimeSpan Start, TimeSpan End);
-public record AudioFileDto(int Id, int TrackIndex, TimeSpan Duration, TimeSpan OffsetInBook);
+public record AudioFileDto(int Id, int TrackIndex, TimeSpan Duration, TimeSpan OffsetInBook, long SizeBytes);
 public record PagedResult<T>(IReadOnlyList<T> Items, int Total, int Page, int PageSize);
 public record AssignSeriesRequest(int? SeriesId, decimal? SeriesPosition);

@@ -5,8 +5,11 @@ import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.media.audiofx.LoudnessEnhancer
+import android.net.Uri
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -106,8 +109,22 @@ class PlaybackService : MediaSessionService() {
                 response
             }
             .build()
-        val dataSourceFactory = OkHttpDataSource.Factory(okHttp)
+        val httpFactory = OkHttpDataSource.Factory(okHttp)
             .setUserAgent("Fabula/0.1 (Android)")
+        // DefaultDataSource handles file:// itself and delegates http(s) to the
+        // OkHttp factory. Without this wrapper an offline file:// URI would be
+        // handed to OkHttpDataSource, which only speaks HTTP, and fail.
+        val baseFactory = DefaultDataSource.Factory(this, httpFactory)
+        // Swap /api/stream/<id> for a downloaded copy at open() time. Doing it
+        // here rather than when building MediaItems means a book can be part
+        // local and part remote with no bookkeeping in PlayerController, and a
+        // deleted download silently falls back to streaming on the next open.
+        val offlineStore = app.offlineStore
+        val dataSourceFactory = ResolvingDataSource.Factory(baseFactory) { spec ->
+            offlineStore.localFileForStreamUri(spec.uri)
+                ?.let { spec.withUri(Uri.fromFile(it)) }
+                ?: spec
+        }
 
         val player = ExoPlayer.Builder(this)
             .setMediaSourceFactory(DefaultMediaSourceFactory(this).setDataSourceFactory(dataSourceFactory))

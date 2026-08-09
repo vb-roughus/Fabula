@@ -93,6 +93,15 @@ class ServerPreferences(private val context: Context) {
         context.dataStore.edit { it[CHAPTER_FLIP_INTRO_KEY] = enabled }
     }
 
+    /** When on, offline downloads only run on Wi-Fi/Ethernet and park
+     *  themselves on mobile data. Default: on. */
+    val downloadWifiOnly: Flow<Boolean> = context.dataStore.data
+        .map { it[DOWNLOAD_WIFI_ONLY_KEY] ?: true }
+
+    suspend fun setDownloadWifiOnly(enabled: Boolean) {
+        context.dataStore.edit { it[DOWNLOAD_WIFI_ONLY_KEY] = enabled }
+    }
+
     /** Stable id for this device, used when reporting progress back to the server. */
     fun deviceId(): String {
         val androidId = runCatching {
