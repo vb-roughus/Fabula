@@ -58,6 +58,27 @@ data class BookDetailDto(
     val files: List<AudioFileDto> = emptyList()
 )
 
+/**
+ * Narrows a cached book detail back to the summary shape the library and home
+ * tiles render. Used to show downloaded books when the server is unreachable.
+ */
+fun BookDetailDto.toSummary(): BookSummaryDto = BookSummaryDto(
+    id = id,
+    title = title,
+    subtitle = subtitle,
+    authors = authors,
+    narrators = narrators,
+    seriesId = seriesId,
+    series = series,
+    seriesPosition = seriesPosition,
+    duration = duration,
+    coverUrl = coverUrl,
+    type = type,
+    libraryFolderId = libraryFolderId,
+    libraryFolderName = libraryFolderName,
+    progress = progress
+)
+
 @Serializable
 data class ChapterDto(
     val index: Int,
