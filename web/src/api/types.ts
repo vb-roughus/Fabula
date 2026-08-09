@@ -62,6 +62,7 @@ export interface AudioFileInfo {
   trackIndex: number;
   duration: string;
   offsetInBook: string;
+  sizeBytes: number;
 }
 
 export interface PagedResult<T> {

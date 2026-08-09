@@ -71,7 +71,10 @@ data class AudioFileDto(
     val id: Int,
     val trackIndex: Int,
     val duration: String,
-    val offsetInBook: String
+    val offsetInBook: String,
+    /** Size on disk. Defaults to 0 against older servers that don't send it --
+     *  the download progress then falls back to duration weighting. */
+    val sizeBytes: Long = 0
 )
 
 @Serializable

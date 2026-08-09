@@ -27,8 +27,13 @@ import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.DownloadDone
+import androidx.compose.material.icons.filled.DownloadForOffline
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.BorderColor
 import androidx.compose.material.icons.filled.LibraryBooks
 import androidx.compose.material.icons.outlined.RemoveDone
@@ -45,6 +50,7 @@ import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
@@ -67,14 +73,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.fabula.FabulaApp
 import app.fabula.data.AssignSeriesRequest
 import app.fabula.data.BookDetailDto
+import app.fabula.data.BookDownloadState
 import app.fabula.data.BookmarkDto
 import app.fabula.data.ChapterDto
 import app.fabula.data.CreateBookmarkRequest
+import app.fabula.data.DownloadStatus
 import app.fabula.data.FabulaRepository
 import app.fabula.data.HighlightDto
 import app.fabula.data.SeriesSummaryDto
@@ -127,6 +137,15 @@ fun BookScreen(
     val bookmarksRevision by repository.bookmarksRevision.collectAsState()
     val scope = rememberCoroutineScope()
 
+    val app = LocalContext.current.applicationContext as FabulaApp
+    val offlineStore = app.offlineStore
+    val downloads = app.downloadManager
+    val downloadStates by downloads.states.collectAsState()
+    val downloadState = downloadStates[bookId]
+    val downloadedFileIds by offlineStore.downloadedFileIds.collectAsState()
+    var cancelDownloadConfirmOpen by remember { mutableStateOf(false) }
+    var deleteDownloadConfirmOpen by remember { mutableStateOf(false) }
+
     // Position the bookmark would be saved at: current playback position when
     // playing this book, otherwise the saved progress on the book itself
     // (falls back to 0 when neither is available).
@@ -136,16 +155,27 @@ fun BookScreen(
     }
 
     LaunchedEffect(bookId, seriesRevision) {
+        // Paint the downloaded copy first: without this a fully synced book
+        // could not even be opened offline, which would defeat the feature.
+        val cached = offlineStore.cachedBook(bookId)
+        if (cached != null && book == null) {
+            book = cached
+            downloads.refreshFromDisk(cached)
+        }
         try {
             val api = repository.apiOrNull() ?: run {
-                error = "Kein Server konfiguriert."
+                if (book == null) error = "Kein Server konfiguriert."
                 return@LaunchedEffect
             }
-            book = api.getBook(bookId)
+            val fresh = api.getBook(bookId)
+            book = fresh
+            offlineStore.refreshCachedBook(fresh)
+            downloads.refreshFromDisk(fresh)
         } catch (c: kotlinx.coroutines.CancellationException) {
             throw c  // effect cancelled (navigation) -- not an error
         } catch (t: Throwable) {
-            error = t.message
+            // Offline with a cached copy is a normal state, not an error.
+            if (book == null) error = t.message
         }
     }
 
@@ -252,8 +282,25 @@ fun BookScreen(
     Box(modifier = Modifier.fillMaxSize()) {
     Scaffold(
         topBar = {
+            // The sync status lives in the app bar rather than as a LazyColumn
+            // item: it stays visible while scrolling the chapter list, and it
+            // leaves BookContent's item count -- which the auto-scroll below
+            // counts by hand -- untouched.
+            Column {
             TopAppBar(
-                title = { },
+                title = {
+                    val s = downloadState
+                    if (s != null && s.status != DownloadStatus.Complete) {
+                        Text(
+                            text = downloadStatusLabel(s),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (s.status == DownloadStatus.Failed)
+                                MaterialTheme.colorScheme.error
+                            else MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1
+                        )
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Zurück")
@@ -364,11 +411,33 @@ fun BookScreen(
                                     assignSeriesOpen = true
                                 }
                             )
+                            if (downloadState != null) {
+                                DropdownMenuItem(
+                                    text = { Text("Downloads entfernen") },
+                                    leadingIcon = {
+                                        Icon(Icons.Filled.DeleteSweep, contentDescription = null)
+                                    },
+                                    onClick = {
+                                        moreMenuOpen = false
+                                        deleteDownloadConfirmOpen = true
+                                    }
+                                )
+                            }
                         }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
             )
+            val running = downloadState?.takeIf {
+                it.status == DownloadStatus.Running || it.status == DownloadStatus.Paused
+            }
+            if (running != null) {
+                LinearProgressIndicator(
+                    progress = { running.percent / 100f },
+                    modifier = Modifier.fillMaxWidth().height(3.dp)
+                )
+            }
+            }
         },
         containerColor = Color.Transparent,
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0.dp)
@@ -389,6 +458,20 @@ fun BookScreen(
                     currentChapterIndex = playerState.currentChapter?.index,
                     bookmarks = bookmarks,
                     highlights = highlights,
+                    downloadState = downloadState,
+                    downloadedFileIds = downloadedFileIds,
+                    onDownloadClick = {
+                        when (downloadState?.status) {
+                            null -> downloads.enqueue(b)
+                            DownloadStatus.Complete -> deleteDownloadConfirmOpen = true
+                            DownloadStatus.Queued,
+                            DownloadStatus.Running,
+                            DownloadStatus.Paused -> cancelDownloadConfirmOpen = true
+                            // Interrupted or failed: pick up where we stopped.
+                            DownloadStatus.Partial,
+                            DownloadStatus.Failed -> downloads.enqueue(b)
+                        }
+                    },
                     listState = listState,
                     onPlay = {
                         scope.launch {
@@ -442,6 +525,50 @@ fun BookScreen(
                 )
             }
         }
+    }
+
+    if (cancelDownloadConfirmOpen) {
+        AlertDialog(
+            onDismissRequest = { cancelDownloadConfirmOpen = false },
+            title = { Text("Download abbrechen?") },
+            text = {
+                Text(
+                    "Bereits geladene Tracks bleiben erhalten. Du kannst später " +
+                    "an derselben Stelle fortsetzen."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    cancelDownloadConfirmOpen = false
+                    downloads.cancel(bookId)
+                }) { Text("Abbrechen") }
+            },
+            dismissButton = {
+                TextButton(onClick = { cancelDownloadConfirmOpen = false }) { Text("Weiter laden") }
+            }
+        )
+    }
+
+    if (deleteDownloadConfirmOpen) {
+        AlertDialog(
+            onDismissRequest = { deleteDownloadConfirmOpen = false },
+            title = { Text("Downloads entfernen?") },
+            text = {
+                Text(
+                    "Die heruntergeladenen Dateien werden gelöscht. Das Hörbuch " +
+                    "bleibt auf dem Server und lässt sich weiterhin streamen."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    deleteDownloadConfirmOpen = false
+                    downloads.remove(bookId)
+                }) { Text("Entfernen") }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteDownloadConfirmOpen = false }) { Text("Behalten") }
+            }
+        )
     }
 
     if (resetProgressConfirmOpen) {
@@ -701,6 +828,9 @@ private fun BookContent(
     currentChapterIndex: Int?,
     bookmarks: List<BookmarkDto>,
     highlights: List<HighlightDto>,
+    downloadState: BookDownloadState?,
+    downloadedFileIds: Set<Int>,
+    onDownloadClick: () -> Unit,
     listState: androidx.compose.foundation.lazy.LazyListState,
     onPlay: () -> Unit,
     onChapterClick: (ChapterDto) -> Unit,
@@ -709,6 +839,11 @@ private fun BookContent(
 ) {
     val totalSeconds = parseTimeSpan(book.duration)
     var bookmarksExpanded by rememberSaveable(book.id) { mutableStateOf(false) }
+    // Precomputed: the per-chapter check is O(chapters x files), which would
+    // otherwise re-run for every ChapterRow on every recomposition.
+    val offlineFlags = remember(book, downloadedFileIds) {
+        offlineChapterFlags(book, downloadedFileIds)
+    }
     // Group by local date, oldest day first; within each day, oldest first.
     // Newest bookmark therefore renders at the very bottom of the section.
     val bookmarkGroups = remember(bookmarks) {
@@ -819,7 +954,12 @@ private fun BookContent(
         }
 
         item {
-            ActionRow(onPlay = onPlay, isPlaying = isCurrent && isPlaying)
+            ActionRow(
+                onPlay = onPlay,
+                isPlaying = isCurrent && isPlaying,
+                downloadState = downloadState,
+                onDownloadClick = onDownloadClick
+            )
         }
 
         if (!book.description.isNullOrBlank()) {
@@ -877,6 +1017,7 @@ private fun BookContent(
                     chapter = chapter,
                     isActive = isCurrent && currentChapterIndex == chapter.index,
                     hasHighlight = chapterHasHighlight(chapter, highlights),
+                    isOffline = offlineFlags.getOrElse(chapter.index) { false },
                     onClick = { onChapterClick(chapter) }
                 )
             }
@@ -891,6 +1032,65 @@ private fun chapterAt(book: BookDetailDto, posSec: Double): ChapterDto? {
     return book.chapters.firstOrNull {
         probe >= parseTimeSpan(it.start) && probe < parseTimeSpan(it.end)
     }
+}
+
+/**
+ * Per-chapter "available offline" flags, indexed by chapter index.
+ *
+ * A chapter counts as offline only when *every* audio file overlapping its
+ * time range is on disk. That is honest in both directions: a single-file m4b
+ * with 30 chapters flips them all at once when its one track lands, while a
+ * 60-track mp3 book fills in progressively.
+ */
+private fun offlineChapterFlags(book: BookDetailDto, downloadedFileIds: Set<Int>): BooleanArray {
+    val flags = BooleanArray(book.chapters.size)
+    if (book.files.isEmpty() || downloadedFileIds.isEmpty()) return flags
+
+    // Prefer the server's offset; fall back to a running sum the same way
+    // PlayerController.loadBook builds its fileStarts.
+    val starts = DoubleArray(book.files.size)
+    val ends = DoubleArray(book.files.size)
+    var acc = 0.0
+    book.files.forEachIndexed { i, f ->
+        val declared = parseTimeSpan(f.offsetInBook)
+        val start = if (declared > 0.0 || i == 0) declared else acc
+        starts[i] = start
+        ends[i] = start + parseTimeSpan(f.duration)
+        acc = ends[i]
+    }
+
+    book.chapters.forEachIndexed { ci, c ->
+        val cs = parseTimeSpan(c.start)
+        val ce = parseTimeSpan(c.end)
+        var overlapped = false
+        var all = true
+        for (i in book.files.indices) {
+            // Same 10 ms tolerance the rest of the codebase uses for the FP
+            // drift around chapter boundaries (see chapterAt).
+            if (starts[i] < ce - 0.010 && ends[i] > cs + 0.010) {
+                overlapped = true
+                if (book.files[i].id !in downloadedFileIds) {
+                    all = false
+                    break
+                }
+            }
+        }
+        flags[ci] = overlapped && all
+    }
+    return flags
+}
+
+/** Short status line shown in the book screen's app bar while syncing. */
+private fun downloadStatusLabel(state: BookDownloadState): String = when (state.status) {
+    DownloadStatus.Queued -> "Download in Warteschlange"
+    DownloadStatus.Running ->
+        if (state.totalTracks > 0)
+            "Synchronisiert ${state.percent} % · Track ${(state.doneTracks + 1).coerceAtMost(state.totalTracks)} von ${state.totalTracks}"
+        else "Synchronisiert ${state.percent} %"
+    DownloadStatus.Paused -> "${state.error ?: "Pausiert"} · ${state.percent} %"
+    DownloadStatus.Partial -> "Download pausiert · ${state.percent} %"
+    DownloadStatus.Failed -> state.error ?: "Download fehlgeschlagen"
+    DownloadStatus.Complete -> "Offline verfügbar"
 }
 
 /** True when any highlighted passage overlaps this chapter's time range. */
@@ -942,7 +1142,12 @@ private fun formatDayHeader(date: java.time.LocalDate): String =
     if (date == java.time.LocalDate.MIN) "Unbekanntes Datum" else date.format(DAY_HEADER_FORMATTER)
 
 @Composable
-private fun ActionRow(onPlay: () -> Unit, isPlaying: Boolean) {
+private fun ActionRow(
+    onPlay: () -> Unit,
+    isPlaying: Boolean,
+    downloadState: BookDownloadState?,
+    onDownloadClick: () -> Unit
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -957,13 +1162,55 @@ private fun ActionRow(onPlay: () -> Unit, isPlaying: Boolean) {
                 modifier = Modifier.size(26.dp)
             )
         }
-        IconButton(onClick = { /* download placeholder */ }, enabled = false) {
-            Icon(
-                Icons.Filled.Download,
-                contentDescription = "Herunterladen",
-                tint = MaterialTheme.colorScheme.outline,
-                modifier = Modifier.size(26.dp)
-            )
+        IconButton(onClick = onDownloadClick) {
+            when (downloadState?.status) {
+                DownloadStatus.Running, DownloadStatus.Queued, DownloadStatus.Paused -> {
+                    Box(contentAlignment = Alignment.Center) {
+                        if (downloadState.status == DownloadStatus.Queued) {
+                            CircularProgressIndicator(
+                                strokeWidth = 2.dp,
+                                modifier = Modifier.size(26.dp)
+                            )
+                        } else {
+                            CircularProgressIndicator(
+                                progress = { downloadState.percent / 100f },
+                                strokeWidth = 2.dp,
+                                modifier = Modifier.size(26.dp)
+                            )
+                        }
+                        Icon(
+                            Icons.Filled.Stop,
+                            contentDescription = "Download abbrechen",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(12.dp)
+                        )
+                    }
+                }
+                DownloadStatus.Complete -> Icon(
+                    Icons.Filled.DownloadDone,
+                    contentDescription = "Offline verfügbar – tippen zum Entfernen",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(26.dp)
+                )
+                DownloadStatus.Partial -> Icon(
+                    Icons.Filled.DownloadForOffline,
+                    contentDescription = "Download fortsetzen",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(26.dp)
+                )
+                DownloadStatus.Failed -> Icon(
+                    Icons.Filled.ErrorOutline,
+                    contentDescription = "Download fehlgeschlagen – erneut versuchen",
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(26.dp)
+                )
+                null -> Icon(
+                    Icons.Filled.Download,
+                    contentDescription = "Herunterladen",
+                    tint = MaterialTheme.colorScheme.outline,
+                    modifier = Modifier.size(26.dp)
+                )
+            }
         }
         IconButton(onClick = { /* more placeholder */ }) {
             Icon(
@@ -999,6 +1246,7 @@ private fun ChapterRow(
     chapter: ChapterDto,
     isActive: Boolean,
     hasHighlight: Boolean,
+    isOffline: Boolean,
     onClick: () -> Unit
 ) {
     val chapterDurationSec = parseTimeSpan(chapter.end) - parseTimeSpan(chapter.start)
@@ -1035,6 +1283,15 @@ private fun ChapterRow(
                     color = MaterialTheme.colorScheme.outline
                 )
             }
+        }
+        if (isOffline) {
+            Icon(
+                Icons.Filled.DownloadDone,
+                contentDescription = "Offline verfügbar",
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(Modifier.width(4.dp))
         }
         if (hasHighlight) {
             Icon(

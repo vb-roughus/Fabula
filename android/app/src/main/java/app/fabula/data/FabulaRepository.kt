@@ -117,6 +117,8 @@ class FabulaRepository(
     val chapterFlipIntroEnabled: Flow<Boolean> = preferences.chapterFlipIntroEnabled
     suspend fun setChapterFlipIntroEnabled(enabled: Boolean) =
         preferences.setChapterFlipIntroEnabled(enabled)
+    val downloadWifiOnly: Flow<Boolean> = preferences.downloadWifiOnly
+    suspend fun setDownloadWifiOnly(enabled: Boolean) = preferences.setDownloadWifiOnly(enabled)
     val showerBoostDb: Flow<Float> = preferences.showerBoostDb
     suspend fun setShowerBoostDb(db: Float) = preferences.setShowerBoostDb(db)
     suspend fun setSleepRepeatEnabled(enabled: Boolean) =

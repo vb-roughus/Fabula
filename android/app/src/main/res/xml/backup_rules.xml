@@ -1,2 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<full-backup-content />
+<full-backup-content>
+    <!-- Downloaded audiobooks can be gigabytes; auto-backup has a 25 MB quota
+         and would fail outright. They are re-downloadable, so exclude them. -->
+    <exclude domain="file" path="offline/" />
+</full-backup-content>

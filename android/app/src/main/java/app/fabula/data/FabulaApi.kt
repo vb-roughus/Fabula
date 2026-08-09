@@ -4,6 +4,7 @@ import okhttp3.ResponseBody
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
+import retrofit2.http.Header
 import retrofit2.http.PATCH
 import retrofit2.http.POST
 import retrofit2.http.PUT
@@ -116,6 +117,18 @@ interface FabulaApi {
     @Streaming
     @GET("api/app/apk")
     suspend fun downloadApk(): ResponseBody
+
+    /** One audio file, for offline download. Same endpoint the player streams
+     *  from; @Streaming keeps it off the heap. Pass [range] as "bytes=<n>-" to
+     *  resume a partial file -- the server enables range processing. The raw
+     *  Response is returned so callers can tell 206 (resumed) from 200 (server
+     *  ignored the range and restarted the file). */
+    @Streaming
+    @GET("api/stream/{fileId}")
+    suspend fun downloadAudioFile(
+        @Path("fileId") fileId: Int,
+        @Header("Range") range: String? = null
+    ): retrofit2.Response<ResponseBody>
 
     /** Admin-only: read the server's update configuration (token never
      *  returned, only hasToken). */
