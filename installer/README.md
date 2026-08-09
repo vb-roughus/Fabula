@@ -54,7 +54,28 @@ Alternativ funktioniert auf beliebigen Plattformen die Umgebungsvariable
 - **Inno Setup 6** (https://jrsoftware.org/isinfo.php). The build script
   auto-detects `ISCC.exe` in the standard install locations.
 
-## Build
+## Build (automatisch)
+
+Normalerweise musst du gar nichts von Hand bauen: der Workflow
+**Windows Installer** (`.github/workflows/windows-installer.yml`) baut den
+Installer bei jedem Push auf `main`, der `server/**`, `web/**` oder
+`installer/**` berührt, und veröffentlicht ihn als GitHub-Release mit dem
+Tag `win-v0.3.<run_number>`. Über *Actions → Windows Installer → Run
+workflow* lässt er sich jederzeit auch manuell starten, wahlweise mit einer
+selbst gewählten Version.
+
+Die Installer-Releases sind bewusst **nicht** als „Latest" markiert. Der
+Fabula-Server spiegelt die Android-App über
+`https://api.github.com/repos/<repo>/releases/latest` und erwartet dort ein
+`version.json` und eine `.apk`. Würde ein Installer-Release den
+„Latest"-Zeiger übernehmen, lieferte der Server stillschweigend weiter die
+alte APK aus. Deshalb: getrenntes Tag-Präfix (`win-v*` statt `apk-v*`),
+`make_latest: false`, und keine Asset-Namen, die mit dem APK-Release
+kollidieren.
+
+## Build (lokal)
+
+Für Zwischenstände, die kein Release werden sollen:
 
 ```powershell
 cd installer
@@ -65,6 +86,9 @@ Output: `artifacts\installer\Fabula-Setup-<version>.exe`.
 
 Pass `-SkipWebBuild` if you already have a fresh `wwwroot` and want to
 skip the npm step.
+
+Die Version muss dreiteilig sein (`x.y.z`) — das Skript leitet daraus
+`AssemblyVersion=<version>.0` ab.
 
 ## Silent install / unattended
 
