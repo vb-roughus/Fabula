@@ -89,6 +89,11 @@ jobs:
         with:
           tag_name: apk-v${{ env.VERSION_NAME }}
           name: Fabula ${{ env.VERSION_NAME }}
+          # Explicit: the server mirrors the app by reading /releases/latest and
+          # needs that release to be an APK one. The Windows installer workflow
+          # publishes with make_latest: false, and this reclaims the pointer for
+          # every APK build in case it ever drifts.
+          make_latest: "true"
           body: |
             Automatischer Build von `main` (`${{ github.sha }}`).
             versionCode: ${{ env.VERSION_CODE }}

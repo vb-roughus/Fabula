@@ -1,0 +1,127 @@
+# Builds the Windows installer (single setup .exe) on every merge to main that
+# touches the server, the web UI or the installer itself, and publishes it as a
+# GitHub Release. Mirrors android-release.yml, but runs on Windows because
+# Inno Setup and the win-x64 self-contained publish need it.
+#
+# The release is deliberately NOT marked as "Latest". The Fabula server mirrors
+# the Android app by reading /releases/latest and expects that release to carry
+# both a version.json and an .apk asset (see AppUpdateService). An installer
+# release taking the "Latest" pointer would make the server silently keep
+# serving the previous APK -- while the admin "check now" button still reports
+# OK. Hence make_latest: false here, make_latest: true in android-release.yml,
+# and asset names that share nothing with the APK release.
+#
+# No secrets required: the installer is unsigned, exactly like a local build.
+# Windows SmartScreen will warn on first run either way.
+
+name: Windows Installer
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "server/**"
+      - "web/**"
+      - "installer/**"
+      - ".github/workflows/windows-installer.yml"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version überschreiben (z. B. 0.3.5); leer = automatisch"
+        required: false
+
+permissions:
+  contents: write # create releases
+
+concurrency:
+  group: windows-installer
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute version
+        shell: pwsh
+        env:
+          VERSION_INPUT: ${{ inputs.version }}
+        run: |
+          # Own minor line (0.3.x) so installer versions are never confused
+          # with the app's 0.2.x APK versions -- the two counters are separate.
+          $version = if ([string]::IsNullOrWhiteSpace($env:VERSION_INPUT)) {
+            "0.3.$env:GITHUB_RUN_NUMBER"
+          } else {
+            $env:VERSION_INPUT.Trim()
+          }
+          # build-installer.ps1 derives AssemblyVersion="$Version.0", so a
+          # four-part input would produce an invalid five-part version.
+          if ($version -notmatch '^\d+\.\d+\.\d+$') {
+            Write-Host "::error::Version '$version' ist ungültig. Erwartet wird x.y.z (drei Teile)."
+            exit 1
+          }
+          "INSTALLER_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
+          Write-Host "Installer-Version: $version"
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          # Lands in "C:\Program Files (x86)\Inno Setup 6\ISCC.exe", which is
+          # one of the paths build-installer.ps1 probes -- no -InnoSetupCompiler
+          # needed. Chocolatey is preinstalled on windows-latest.
+          choco install innosetup -y --no-progress
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::error::Inno Setup konnte nicht installiert werden."
+            exit 1
+          }
+
+      - name: Build installer
+        shell: pwsh
+        working-directory: installer
+        run: .\build-installer.ps1 -Version $env:INSTALLER_VERSION
+
+      - name: Prepare release assets
+        shell: pwsh
+        run: |
+          $exe = "artifacts/installer/Fabula-Setup-$env:INSTALLER_VERSION.exe"
+          if (-not (Test-Path $exe)) {
+            Write-Host "::error::Erwartete Datei $exe wurde nicht erzeugt."
+            exit 1
+          }
+          # Plain "<hash>  <filename>" so `sha256sum -c` and Get-FileHash both work.
+          $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
+          "$hash  Fabula-Setup-$env:INSTALLER_VERSION.exe" |
+            Out-File -FilePath "$exe.sha256" -Encoding ascii
+          Write-Host "$hash  $exe"
+          "{0:N1} MB" -f ((Get-Item $exe).Length / 1MB)
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: win-v${{ env.INSTALLER_VERSION }}
+          name: Fabula Windows-Installer ${{ env.INSTALLER_VERSION }}
+          # Must stay false -- see the note at the top of this file.
+          make_latest: "false"
+          body: |
+            Automatischer Build von `main` (`${{ github.sha }}`).
+
+            Enthält Server und Web-UI, self-contained für win-x64. Die Setup-Datei
+            kann über eine bestehende Installation ausgeführt werden; der Dienst
+            wird gestoppt, ersetzt und neu gestartet. Die Daten unter
+            `C:\ProgramData\Fabula` bleiben erhalten.
+
+            Prüfsumme: siehe beigelegte `.sha256`-Datei.
+          files: |
+            artifacts/installer/Fabula-Setup-${{ env.INSTALLER_VERSION }}.exe
+            artifacts/installer/Fabula-Setup-${{ env.INSTALLER_VERSION }}.exe.sha256
