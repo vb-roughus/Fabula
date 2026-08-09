@@ -61,6 +61,42 @@ class FabulaRepository(
     private val _unauthorizedEvents = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val unauthorizedEvents: SharedFlow<Unit> = _unauthorizedEvents.asSharedFlow()
 
+    /**
+     * Whether the server answered the last request. `null` until the first one
+     * has been made, so the UI doesn't flash "offline" during startup.
+     *
+     * Fed by the interceptor below rather than by polling: every call already
+     * passes through it, so the status is a by-product of normal traffic.
+     * A reply of any kind -- including 4xx/5xx -- counts as reachable; only a
+     * transport-level failure means offline.
+     */
+    private val _serverOnline = MutableStateFlow<Boolean?>(null)
+    val serverOnline: StateFlow<Boolean?> = _serverOnline.asStateFlow()
+
+    /** True while an explicit reconnect attempt is in flight. */
+    private val _probing = MutableStateFlow(false)
+    val probing: StateFlow<Boolean> = _probing.asStateFlow()
+
+    /** Bumped after a manual reconnect succeeds, so screens can refetch. */
+    private val _reconnects = MutableStateFlow(0)
+    val reconnects: StateFlow<Int> = _reconnects.asStateFlow()
+
+    /**
+     * Explicit connection attempt behind the drawer's "Verbinden" button.
+     * Returns true when the server answered.
+     */
+    suspend fun probeServer(): Boolean {
+        _probing.value = true
+        return try {
+            val reachable = checkNeedsSetup() != null
+            _serverOnline.value = reachable
+            if (reachable) _reconnects.value = _reconnects.value + 1
+            reachable
+        } finally {
+            _probing.value = false
+        }
+    }
+
     private val okHttp = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
@@ -85,8 +121,11 @@ class FabulaRepository(
                     "${request.method} ${request.url} -> network error after ${System.currentTimeMillis() - started} ms",
                     t
                 )
+                _serverOnline.value = false
                 throw t
             }
+            // Any reply means the server is reachable, even an error one.
+            _serverOnline.value = true
             if (response.code == 401 && !token.isNullOrBlank()) {
                 _unauthorizedEvents.tryEmit(Unit)
             }

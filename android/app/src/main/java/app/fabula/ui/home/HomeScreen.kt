@@ -106,7 +106,11 @@ fun HomeScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    LaunchedEffect(refreshTick) {
+    // Refetch after a successful manual reconnect from the drawer, so the
+    // offline fallback swaps back to the live library without a pull.
+    val reconnects by repository.reconnects.collectAsState()
+
+    LaunchedEffect(refreshTick, reconnects) {
         try {
             val api = repository.apiOrNull()
             if (api == null) {

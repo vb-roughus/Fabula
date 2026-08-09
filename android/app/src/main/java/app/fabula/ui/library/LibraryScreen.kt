@@ -82,7 +82,10 @@ fun LibraryScreen(
     var isRefreshing by remember { mutableStateOf(false) }
     var refreshTrigger by remember { mutableIntStateOf(0) }
 
-    LaunchedEffect(refreshTrigger) {
+    // Refetch after a successful manual reconnect from the drawer.
+    val reconnects by repository.reconnects.collectAsState()
+
+    LaunchedEffect(refreshTrigger, reconnects) {
         // On a pull-to-refresh we keep the current list visible (don't fall
         // back to the Loading spinner) and only swap it once the reload lands.
         try {

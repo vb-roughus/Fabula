@@ -34,8 +34,6 @@ import androidx.compose.ui.unit.dp
 import app.fabula.data.FabulaRepository
 import app.fabula.data.parseTimeSpan
 import app.fabula.player.PlayerController
-import app.fabula.ui.BrandGreen400
-import app.fabula.ui.BrandGreen500
 import coil3.compose.AsyncImage
 
 @Composable
@@ -54,8 +52,12 @@ fun MiniPlayer(
     val chapterPos = (state.positionInBook - chapterStart).coerceIn(0.0, chapterDuration)
     val pct = if (chapterDuration > 0) (chapterPos / chapterDuration).toFloat().coerceIn(0f, 1f) else 0f
 
-    val miniGradient = remember {
-        Brush.horizontalGradient(listOf(BrandGreen500, BrandGreen400))
+    // Read from the scheme rather than the brand constants so the bar follows
+    // the offline accent too.
+    val gradientStart = MaterialTheme.colorScheme.primary
+    val gradientEnd = MaterialTheme.colorScheme.secondary
+    val miniGradient = remember(gradientStart, gradientEnd) {
+        Brush.horizontalGradient(listOf(gradientStart, gradientEnd))
     }
     Column(
         modifier = modifier
