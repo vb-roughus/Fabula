@@ -22,6 +22,13 @@ val BrandGreen500 = Color(0xFF31C76B)  // deeper end of the logo gradient
 val BrandGreen400 = Color(0xFF5BE391)  // lighter end of the logo gradient
 val BrandGreen300 = Color(0xFF8AF0AF)
 
+// Offline accent. Swapped in for the green whenever the server can't be
+// reached, so the whole app reads as "you're on your own copy" at a glance --
+// only the accent changes, the navy chrome stays put.
+val OfflineOrange500 = Color(0xFFE07B39)
+val OfflineOrange400 = Color(0xFFF59B4E)
+val OfflineOrange300 = Color(0xFFFFC183)
+
 val FabulaBackground get() = Navy950
 val FabulaSurface get() = Navy900
 val FabulaSurfaceVariant get() = Navy800
@@ -59,9 +66,16 @@ private val LightScheme = lightColorScheme(
 @Composable
 fun FabulaTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
+    /** Recolours the accent orange while the server is unreachable. */
+    offline: Boolean = false,
     content: @Composable () -> Unit
 ) {
-    val scheme = if (darkTheme) DarkScheme else LightScheme
+    val base = if (darkTheme) DarkScheme else LightScheme
+    val scheme = if (!offline) base else base.copy(
+        primary = OfflineOrange500,
+        secondary = OfflineOrange400,
+        tertiary = OfflineOrange300
+    )
     MaterialTheme(colorScheme = scheme) {
         // Default LocalContentColor is Color.Black, which leaks through every
         // Scaffold we configured with containerColor = Color.Transparent

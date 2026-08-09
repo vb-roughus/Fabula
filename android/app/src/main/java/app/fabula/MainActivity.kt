@@ -29,7 +29,10 @@ class MainActivity : ComponentActivity() {
                 "dark" -> true
                 else -> isSystemInDarkTheme()
             }
-            FabulaTheme(darkTheme = darkTheme) {
+            // null (nothing tried yet) is deliberately not treated as offline,
+            // so the accent doesn't flash orange during startup.
+            val serverOnline by appContainer.repository.serverOnline.collectAsState()
+            FabulaTheme(darkTheme = darkTheme, offline = serverOnline == false) {
                 DisposableEffect(Unit) {
                     appContainer.playerController.connect()
                     onDispose { }

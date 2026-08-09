@@ -14,6 +14,8 @@ import androidx.compose.ui.zIndex
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -21,6 +23,7 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -37,6 +40,7 @@ import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
@@ -60,6 +64,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
@@ -190,6 +195,9 @@ fun Navigation(
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
 
+    val serverOnline by repository.serverOnline.collectAsState()
+    val probing by repository.probing.collectAsState()
+
     var me by remember { mutableStateOf<app.fabula.data.AuthUserDto?>(null) }
     LaunchedEffect(authToken) {
         me = if (authToken.isNullOrBlank()) null else runCatching { repository.me() }.getOrNull()
@@ -212,6 +220,18 @@ fun Navigation(
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(horizontal = 28.dp, vertical = 8.dp),
                     style = MaterialTheme.typography.titleLarge
+                )
+                ConnectionStatusRow(
+                    online = serverOnline,
+                    probing = probing,
+                    onReconnect = {
+                        scope.launch {
+                            // Close on success so the refreshed screen is
+                            // visible; stay open on failure so the still-offline
+                            // status is the answer to the tap.
+                            if (repository.probeServer()) drawerState.close()
+                        }
+                    }
                 )
                 Spacer(Modifier.height(16.dp))
                 NavigationDrawerItem(
@@ -534,6 +554,70 @@ fun Navigation(
                         modifier = Modifier.fillMaxSize()
                     )
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Server reachability at the top of the drawer.
+ *
+ * [online] is null until the first request has been made -- shown as "wird
+ * geprüft" rather than guessing, so the drawer never claims offline during
+ * startup. The reconnect button only appears when we actually know we're
+ * offline; the accent is orange in that state, so the dot matches the rest of
+ * the app on its own.
+ */
+@Composable
+private fun ConnectionStatusRow(
+    online: Boolean?,
+    probing: Boolean,
+    onReconnect: () -> Unit
+) {
+    val offline = online == false
+    val dotColor = when {
+        offline -> MaterialTheme.colorScheme.primary   // orange while offline
+        online == true -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.outline
+    }
+    val label = when {
+        probing -> "Verbinde…"
+        offline -> "Offline"
+        online == true -> "Verbunden"
+        else -> "Verbindung wird geprüft"
+    }
+
+    Column(modifier = Modifier.padding(horizontal = 28.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(dotColor)
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
+        if (offline) {
+            Spacer(Modifier.height(8.dp))
+            Button(
+                onClick = onReconnect,
+                enabled = !probing,
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
+            ) {
+                if (probing) {
+                    CircularProgressIndicator(
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                }
+                Text("Verbinden")
             }
         }
     }
