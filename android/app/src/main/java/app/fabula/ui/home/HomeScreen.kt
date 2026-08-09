@@ -42,18 +42,23 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import app.fabula.FabulaApp
 import app.fabula.data.BookSummaryDto
 import app.fabula.data.FabulaRepository
 import app.fabula.data.ProgressSummaryDto
 import app.fabula.data.parseTimeSpan
+import app.fabula.data.toSummary
 import app.fabula.data.toTimeSpanString
 import app.fabula.player.PlayerController
 import app.fabula.ui.LocalContentBottomInset
+import app.fabula.ui.OfflineBanner
+import app.fabula.ui.OfflineEmptyMessage
 import coil3.compose.AsyncImage
 
 private val TileWidth = 140.dp
@@ -76,6 +81,16 @@ fun HomeScreen(
     var recentBooks by remember { mutableStateOf<List<BookSummaryDto>?>(null) }
     var inProgressBooks by remember { mutableStateOf<List<BookSummaryDto>>(emptyList()) }
     var error by remember { mutableStateOf<String?>(null) }
+
+    // Downloaded books, read from the on-disk manifests. They are what the
+    // screen falls back to when the server can't be reached -- otherwise
+    // opening the app offline would show nothing but a DNS error, even with a
+    // fully synced library on the device.
+    val offlineStore = (LocalContext.current.applicationContext as FabulaApp).offlineStore
+    val offlineRevision by offlineStore.revision.collectAsState()
+    val offlineBooks = remember(offlineRevision) {
+        offlineStore.listDownloadedBooks().map { it.book.toSummary() }
+    }
     var isRefreshing by remember { mutableStateOf(false) }
     val playerState by player.state.collectAsState()
     // Tick this counter on every ON_RESUME so books -- including their
@@ -225,7 +240,25 @@ fun HomeScreen(
                 contentAlignment = Alignment.Center
             ) {
             when {
-                error != null -> Text(error!!, color = MaterialTheme.colorScheme.error)
+                error != null && offlineBooks.isNotEmpty() -> LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                        top = 8.dp,
+                        bottom = 8.dp + LocalContentBottomInset.current.calculateBottomPadding()
+                    )
+                ) {
+                    item("offline-banner") { OfflineBanner(error!!) }
+                    item("h-offline") { SectionHeader("Offline verfügbar") }
+                    item("r-offline") {
+                        BookTilesRow(
+                            books = offlineBooks,
+                            repository = repository,
+                            onBookClick = onBookClick,
+                            keyPrefix = "offline"
+                        )
+                    }
+                }
+                error != null -> OfflineEmptyMessage(error!!)
                 books == null -> CircularProgressIndicator()
                 books!!.isEmpty() -> Text("Noch keine Hörbücher in deiner Bibliothek.")
                 else -> LazyColumn(

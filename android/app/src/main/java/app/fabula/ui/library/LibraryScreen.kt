@@ -30,6 +30,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -40,14 +41,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import app.fabula.FabulaApp
 import app.fabula.data.BookSummaryDto
 import app.fabula.data.FabulaRepository
 import app.fabula.data.LibraryType
 import app.fabula.data.formatDurationHuman
 import app.fabula.data.parseTimeSpan
+import app.fabula.data.toSummary
 import app.fabula.ui.LocalContentBottomInset
+import app.fabula.ui.OfflineBanner
+import app.fabula.ui.OfflineEmptyMessage
 import androidx.compose.runtime.CompositionLocalProvider
 import coil3.compose.AsyncImage
 
@@ -66,6 +72,13 @@ fun LibraryScreen(
 ) {
     var state by remember { mutableStateOf<LibraryState>(LibraryState.Loading) }
     var filter by remember { mutableStateOf<LibraryType?>(null) }
+
+    // Fallback for when the server is unreachable: the books already on disk.
+    val offlineStore = (LocalContext.current.applicationContext as FabulaApp).offlineStore
+    val offlineRevision by offlineStore.revision.collectAsState()
+    val offlineBooks = remember(offlineRevision) {
+        offlineStore.listDownloadedBooks().map { it.book.toSummary() }
+    }
     var isRefreshing by remember { mutableStateOf(false) }
     var refreshTrigger by remember { mutableIntStateOf(0) }
 
@@ -123,7 +136,31 @@ fun LibraryScreen(
                 ) {
                     when (val s = state) {
                         LibraryState.Loading -> CircularProgressIndicator()
-                        is LibraryState.Error -> Text(s.message, color = MaterialTheme.colorScheme.error)
+                        is LibraryState.Error -> {
+                            val offlineVisible =
+                                if (filter == null) offlineBooks
+                                else offlineBooks.filter { it.type == filter }
+                            if (offlineBooks.isEmpty()) {
+                                OfflineEmptyMessage(s.message)
+                            } else {
+                                Column(modifier = Modifier.fillMaxSize()) {
+                                    OfflineBanner(s.message)
+                                    if (offlineVisible.isEmpty()) {
+                                        Text(
+                                            "In dieser Kategorie ist nichts offline gespeichert.",
+                                            color = MaterialTheme.colorScheme.outline,
+                                            modifier = Modifier.padding(horizontal = 16.dp)
+                                        )
+                                    } else {
+                                        BookGrid(
+                                            books = offlineVisible,
+                                            repository = repository,
+                                            onClick = onBookClick
+                                        )
+                                    }
+                                }
+                            }
+                        }
                         is LibraryState.Loaded -> {
                             val visible = if (filter == null) s.books else s.books.filter { it.type == filter }
                             when {
