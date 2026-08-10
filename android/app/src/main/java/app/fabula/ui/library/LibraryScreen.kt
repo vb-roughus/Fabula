@@ -51,7 +51,10 @@ import app.fabula.data.LibraryType
 import app.fabula.data.formatDurationHuman
 import app.fabula.data.parseTimeSpan
 import app.fabula.data.toSummary
+import app.fabula.ui.DownloadBadge
+import app.fabula.ui.DownloadBadgeState
 import app.fabula.ui.LocalContentBottomInset
+import app.fabula.ui.rememberDownloadBadges
 import app.fabula.ui.OfflineBanner
 import app.fabula.ui.OfflineEmptyMessage
 import androidx.compose.runtime.CompositionLocalProvider
@@ -79,6 +82,8 @@ fun LibraryScreen(
     val offlineBooks = remember(offlineRevision) {
         offlineStore.listDownloadedBooks().map { it.book.toSummary() }
     }
+    // Collected once here; passing it down beats a collector per cover.
+    val badgeFor = rememberDownloadBadges()
     var isRefreshing by remember { mutableStateOf(false) }
     var refreshTrigger by remember { mutableIntStateOf(0) }
 
@@ -158,6 +163,7 @@ fun LibraryScreen(
                                         BookGrid(
                                             books = offlineVisible,
                                             repository = repository,
+                                            badgeFor = badgeFor,
                                             onClick = onBookClick
                                         )
                                     }
@@ -174,7 +180,12 @@ fun LibraryScreen(
                                     "In dieser Kategorie ist noch nichts vorhanden.",
                                     color = MaterialTheme.colorScheme.outline
                                 )
-                                else -> BookGrid(books = visible, repository = repository, onClick = onBookClick)
+                                else -> BookGrid(
+                                    books = visible,
+                                    repository = repository,
+                                    badgeFor = badgeFor,
+                                    onClick = onBookClick
+                                )
                             }
                         }
                     }
@@ -224,6 +235,7 @@ private fun FilterChipPill(label: String, active: Boolean, onClick: () -> Unit) 
 private fun BookGrid(
     books: List<BookSummaryDto>,
     repository: FabulaRepository,
+    badgeFor: (Int) -> DownloadBadgeState?,
     onClick: (Int) -> Unit
 ) {
     val bottomInset = LocalContentBottomInset.current.calculateBottomPadding()
@@ -235,7 +247,12 @@ private fun BookGrid(
         modifier = Modifier.fillMaxSize()
     ) {
         items(items = books, key = { it.id }) { book ->
-            BookCard(book = book, repository = repository, onClick = { onClick(book.id) })
+            BookCard(
+                book = book,
+                repository = repository,
+                badge = badgeFor(book.id),
+                onClick = { onClick(book.id) }
+            )
         }
     }
 }
@@ -244,6 +261,7 @@ private fun BookGrid(
 private fun BookCard(
     book: BookSummaryDto,
     repository: FabulaRepository,
+    badge: DownloadBadgeState?,
     onClick: () -> Unit
 ) {
     val durationSec = parseTimeSpan(book.duration)
@@ -279,6 +297,14 @@ private fun BookCard(
                     book.title,
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.align(Alignment.Center).padding(8.dp)
+                )
+            }
+
+            // Top-start so it never collides with the "FERTIG" chip.
+            if (badge != null) {
+                DownloadBadge(
+                    state = badge,
+                    modifier = Modifier.align(Alignment.TopStart).padding(6.dp)
                 )
             }
 

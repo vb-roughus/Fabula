@@ -44,6 +44,14 @@ class OfflineStore(context: Context, private val logStore: LogStore) {
     private val _totalBytes = MutableStateFlow(0L)
     val totalBytes: StateFlow<Long> = _totalBytes.asStateFlow()
 
+    /**
+     * bookId -> true when every track of that book is on disk, false when only
+     * some are. Lets the library and home tiles show a download badge without
+     * each of them reading manifests from disk.
+     */
+    private val _downloadedBooks = MutableStateFlow<Map<Int, Boolean>>(emptyMap())
+    val downloadedBooks: StateFlow<Map<Int, Boolean>> = _downloadedBooks.asStateFlow()
+
     /** Bumped whenever files appear or disappear, so Compose can re-read. */
     private val _revision = MutableStateFlow(0)
     val revision: StateFlow<Int> = _revision.asStateFlow()
@@ -65,15 +73,29 @@ class OfflineStore(context: Context, private val logStore: LogStore) {
     /** Rebuilds the in-memory index from disk. Cheap: a couple of dir listings. */
     fun reindex() {
         val map = HashMap<Int, File>()
+        val books = HashMap<Int, Boolean>()
         var bytes = 0L
         root.listFiles()?.filter { it.isDirectory }?.forEach { dir ->
+            val present = HashSet<Int>()
             completedFilesIn(dir).forEach { f ->
-                f.name.substringBefore('.').toIntOrNull()?.let { id -> map[id] = f }
+                f.name.substringBefore('.').toIntOrNull()?.let { id ->
+                    map[id] = f
+                    present += id
+                }
                 bytes += f.length()
+            }
+            // The manifest knows the full track list, so "complete" can be
+            // decided here instead of every tile working it out again.
+            val bookId = dir.name.removePrefix("book-").toIntOrNull()
+            if (bookId != null && present.isNotEmpty()) {
+                val expected = readManifest(bookId)?.book?.files?.map { it.id }
+                books[bookId] = expected != null && expected.isNotEmpty() &&
+                    expected.all { it in present }
             }
         }
         index = map
         _downloadedFileIds.value = map.keys.toSet()
+        _downloadedBooks.value = books
         _totalBytes.value = bytes
         _revision.value = _revision.value + 1
     }
