@@ -56,7 +56,10 @@ import app.fabula.data.parseTimeSpan
 import app.fabula.data.toSummary
 import app.fabula.data.toTimeSpanString
 import app.fabula.player.PlayerController
+import app.fabula.ui.DownloadBadge
+import app.fabula.ui.DownloadBadgeState
 import app.fabula.ui.LocalContentBottomInset
+import app.fabula.ui.rememberDownloadBadges
 import app.fabula.ui.OfflineBanner
 import app.fabula.ui.OfflineEmptyMessage
 import coil3.compose.AsyncImage
@@ -91,6 +94,8 @@ fun HomeScreen(
     val offlineBooks = remember(offlineRevision) {
         offlineStore.listDownloadedBooks().map { it.book.toSummary() }
     }
+    // Collected once here; passing it down beats a collector per cover.
+    val badgeFor = rememberDownloadBadges()
     var isRefreshing by remember { mutableStateOf(false) }
     val playerState by player.state.collectAsState()
     // Tick this counter on every ON_RESUME so books -- including their
@@ -258,6 +263,7 @@ fun HomeScreen(
                             books = offlineBooks,
                             repository = repository,
                             onBookClick = onBookClick,
+                            badgeFor = badgeFor,
                             keyPrefix = "offline"
                         )
                     }
@@ -278,7 +284,8 @@ fun HomeScreen(
                             BookTilesRow(
                                 books = continueListening,
                                 repository = repository,
-                                onBookClick = onBookClick
+                                onBookClick = onBookClick,
+                                badgeFor = badgeFor
                             )
                         }
                     }
@@ -292,6 +299,7 @@ fun HomeScreen(
                                 books = section.books,
                                 repository = repository,
                                 onBookClick = onBookClick,
+                                badgeFor = badgeFor,
                                 keyPrefix = "added-${section.folderId}"
                             )
                         }
@@ -318,6 +326,7 @@ private fun BookTilesRow(
     books: List<BookSummaryDto>,
     repository: FabulaRepository,
     onBookClick: (Int) -> Unit,
+    badgeFor: (Int) -> DownloadBadgeState?,
     keyPrefix: String = "tile"
 ) {
     LazyRow(
@@ -328,6 +337,7 @@ private fun BookTilesRow(
             BookTile(
                 book = book,
                 repository = repository,
+                badge = badgeFor(book.id),
                 onClick = { onBookClick(book.id) }
             )
         }
@@ -338,6 +348,7 @@ private fun BookTilesRow(
 private fun BookTile(
     book: BookSummaryDto,
     repository: FabulaRepository,
+    badge: DownloadBadgeState?,
     onClick: () -> Unit
 ) {
     val durationSec = parseTimeSpan(book.duration)
@@ -364,6 +375,14 @@ private fun BookTile(
                     contentDescription = book.title,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()
+                )
+            }
+
+            // Top-start so it never collides with the "FERTIG" chip.
+            if (badge != null) {
+                DownloadBadge(
+                    state = badge,
+                    modifier = Modifier.align(Alignment.TopStart).padding(6.dp)
                 )
             }
 

@@ -38,6 +38,8 @@ data class BookDownloadState(
     val doneTracks: Int = 0,
     val totalTracks: Int = 0,
     val doneFileIds: Set<Int> = emptySet(),
+    /** The track being fetched right now, so the UI can mark that row busy. */
+    val currentFileId: Int? = null,
     val error: String? = null
 ) {
     val percent: Int
@@ -255,6 +257,7 @@ class DownloadManager(
 
             awaitAllowedNetwork(book.id)
 
+            update(book.id) { it?.copy(currentFileId = file.id) }
             val baseDone = weightOf(book.files.filter { it.id in doneIds })
             downloadTrack(api, book, file, baseDone)
 
@@ -263,7 +266,8 @@ class DownloadManager(
                 it?.copy(
                     doneFileIds = doneIds,
                     doneTracks = doneIds.size,
-                    doneBytes = weightOf(book.files.filter { f -> f.id in doneIds })
+                    doneBytes = weightOf(book.files.filter { f -> f.id in doneIds }),
+                    currentFileId = null
                 )
             }
         }
@@ -272,7 +276,8 @@ class DownloadManager(
         update(book.id) { current ->
             current?.copy(
                 status = if (complete) DownloadStatus.Complete else DownloadStatus.Partial,
-                doneBytes = if (complete) total else current.doneBytes
+                doneBytes = if (complete) total else current.doneBytes,
+                currentFileId = null
             )
         }
         offlineStore.reindex()

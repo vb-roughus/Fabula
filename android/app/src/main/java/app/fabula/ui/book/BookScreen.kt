@@ -203,16 +203,21 @@ fun BookScreen(
         }
     }
 
-    // Re-load the player whenever the book changes -- including when only the
-    // underlying file list changes. After a server rescan that upserted this
-    // book, the AudioFile rows are deleted and re-created with fresh IDs, so
-    // the previously loaded MediaItems point at /api/stream/<oldId> which now
-    // 404s. Keying on the file id list instead of just book.id catches that.
+    // Refresh the player's media items when THIS book is the one already
+    // playing and its file ids changed underneath us: a server rescan deletes
+    // and re-creates the AudioFile rows, so the loaded MediaItems would point
+    // at /api/stream/<oldId> and 404.
+    //
+    // Deliberately does NOT adopt the book just because its page was opened --
+    // that would stop whatever is currently playing. Browsing has to leave
+    // playback alone; the play button and the chapter/bookmark rows load the
+    // book themselves when the user actually asks for it.
     val fileIds = book?.files?.map { it.id }
     LaunchedEffect(book?.id, fileIds) {
         val current = book ?: return@LaunchedEffect
-        val activeFileIds = playerState.book?.files?.map { it.id }
-        if (playerState.book?.id != current.id || activeFileIds != current.files.map { it.id }) {
+        val active = playerState.book ?: return@LaunchedEffect
+        if (active.id != current.id) return@LaunchedEffect
+        if (active.files.map { it.id } != current.files.map { it.id }) {
             player.loadBook(current)
         }
     }
@@ -841,8 +846,8 @@ private fun BookContent(
     var bookmarksExpanded by rememberSaveable(book.id) { mutableStateOf(false) }
     // Precomputed: the per-chapter check is O(chapters x files), which would
     // otherwise re-run for every ChapterRow on every recomposition.
-    val offlineFlags = remember(book, downloadedFileIds) {
-        offlineChapterFlags(book, downloadedFileIds)
+    val offlineFlags = remember(book, downloadedFileIds, downloadState?.currentFileId) {
+        offlineChapterFlags(book, downloadedFileIds, downloadState?.currentFileId)
     }
     // Group by local date, oldest day first; within each day, oldest first.
     // Newest bookmark therefore renders at the very bottom of the section.
@@ -1017,7 +1022,8 @@ private fun BookContent(
                     chapter = chapter,
                     isActive = isCurrent && currentChapterIndex == chapter.index,
                     hasHighlight = chapterHasHighlight(chapter, highlights),
-                    isOffline = offlineFlags.getOrElse(chapter.index) { false },
+                    isOffline = offlineFlags.offline.getOrElse(chapter.index) { false },
+                    isDownloading = offlineFlags.loading.getOrElse(chapter.index) { false },
                     onClick = { onChapterClick(chapter) }
                 )
             }
@@ -1042,9 +1048,23 @@ private fun chapterAt(book: BookDetailDto, posSec: Double): ChapterDto? {
  * with 30 chapters flips them all at once when its one track lands, while a
  * 60-track mp3 book fills in progressively.
  */
-private fun offlineChapterFlags(book: BookDetailDto, downloadedFileIds: Set<Int>): BooleanArray {
-    val flags = BooleanArray(book.chapters.size)
-    if (book.files.isEmpty() || downloadedFileIds.isEmpty()) return flags
+private class ChapterDownloadFlags(
+    val offline: BooleanArray,
+    /** Chapter covered by the track being fetched right now. */
+    val loading: BooleanArray
+)
+
+private fun offlineChapterFlags(
+    book: BookDetailDto,
+    downloadedFileIds: Set<Int>,
+    currentFileId: Int?
+): ChapterDownloadFlags {
+    val offline = BooleanArray(book.chapters.size)
+    val loading = BooleanArray(book.chapters.size)
+    if (book.files.isEmpty()) return ChapterDownloadFlags(offline, loading)
+    if (downloadedFileIds.isEmpty() && currentFileId == null) {
+        return ChapterDownloadFlags(offline, loading)
+    }
 
     // Prefer the server's offset; fall back to a running sum the same way
     // PlayerController.loadBook builds its fileStarts.
@@ -1064,20 +1084,22 @@ private fun offlineChapterFlags(book: BookDetailDto, downloadedFileIds: Set<Int>
         val ce = parseTimeSpan(c.end)
         var overlapped = false
         var all = true
+        var busy = false
         for (i in book.files.indices) {
             // Same 10 ms tolerance the rest of the codebase uses for the FP
             // drift around chapter boundaries (see chapterAt).
             if (starts[i] < ce - 0.010 && ends[i] > cs + 0.010) {
                 overlapped = true
-                if (book.files[i].id !in downloadedFileIds) {
-                    all = false
-                    break
-                }
+                if (book.files[i].id == currentFileId) busy = true
+                if (book.files[i].id !in downloadedFileIds) all = false
             }
         }
-        flags[ci] = overlapped && all
+        offline[ci] = overlapped && all
+        // Only "loading" while not yet complete, so the tick wins once the
+        // last overlapping track lands.
+        loading[ci] = busy && !(overlapped && all)
     }
-    return flags
+    return ChapterDownloadFlags(offline, loading)
 }
 
 /** Short status line shown in the book screen's app bar while syncing. */
@@ -1260,6 +1282,7 @@ private fun ChapterRow(
     isActive: Boolean,
     hasHighlight: Boolean,
     isOffline: Boolean,
+    isDownloading: Boolean,
     onClick: () -> Unit
 ) {
     val chapterDurationSec = parseTimeSpan(chapter.end) - parseTimeSpan(chapter.start)
@@ -1306,6 +1329,14 @@ private fun ChapterRow(
                     color = MaterialTheme.colorScheme.outline
                 )
             }
+        }
+        if (isDownloading) {
+            CircularProgressIndicator(
+                strokeWidth = 2.dp,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(Modifier.width(4.dp))
         }
         if (isOffline) {
             WhirlInIcon(
