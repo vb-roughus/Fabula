@@ -40,6 +40,9 @@ data class BookDownloadState(
     val doneFileIds: Set<Int> = emptySet(),
     /** The track being fetched right now, so the UI can mark that row busy. */
     val currentFileId: Int? = null,
+    /** How far that one track has come, 0..1. Null while unknown -- the row
+     *  then spins indeterminately instead of showing a ring stuck at zero. */
+    val currentFileProgress: Float? = null,
     val error: String? = null
 ) {
     val percent: Int
@@ -257,7 +260,7 @@ class DownloadManager(
 
             awaitAllowedNetwork(book.id)
 
-            update(book.id) { it?.copy(currentFileId = file.id) }
+            update(book.id) { it?.copy(currentFileId = file.id, currentFileProgress = null) }
             val baseDone = weightOf(book.files.filter { it.id in doneIds })
             downloadTrack(api, book, file, baseDone)
 
@@ -267,7 +270,8 @@ class DownloadManager(
                     doneFileIds = doneIds,
                     doneTracks = doneIds.size,
                     doneBytes = weightOf(book.files.filter { f -> f.id in doneIds }),
-                    currentFileId = null
+                    currentFileId = null,
+                    currentFileProgress = null
                 )
             }
         }
@@ -277,7 +281,8 @@ class DownloadManager(
             current?.copy(
                 status = if (complete) DownloadStatus.Complete else DownloadStatus.Partial,
                 doneBytes = if (complete) total else current.doneBytes,
-                currentFileId = null
+                currentFileId = null,
+                currentFileProgress = null
             )
         }
         offlineStore.reindex()
@@ -312,12 +317,22 @@ class DownloadManager(
             offlineStore.partFile(book.id, file.id, ext)
         }
 
-        // Total for this track: prefer the declared size, else what the body
-        // reports, else fall back to duration weighting via `weightOf`.
         val trackWeight = weightOf(listOf(file))
         var written = if (resumed) resumeFrom else 0L
         var lastEmit = 0L
         var lastBytes = written
+
+        // Size of THIS track, for the per-track ring. The declared size is best;
+        // failing that the response's own Content-Length works, remembering that
+        // on a resumed 206 it only covers the remaining bytes. 0 means unknown,
+        // and the UI then shows an indeterminate spinner rather than a ring
+        // frozen at zero.
+        val bodyLength = body.contentLength()
+        val trackTotal = when {
+            file.sizeBytes > 0 -> file.sizeBytes
+            bodyLength >= 0 -> (if (resumed) resumeFrom else 0L) + bodyLength
+            else -> 0L
+        }
 
         body.use { rb ->
             rb.byteStream().use { input ->
@@ -339,11 +354,16 @@ class DownloadManager(
                         if (now - lastEmit >= EMIT_INTERVAL_MS || written - lastBytes >= EMIT_BYTES) {
                             lastEmit = now
                             lastBytes = written
-                            val fraction = if (file.sizeBytes > 0) {
-                                (written.toDouble() / file.sizeBytes).coerceIn(0.0, 1.0)
-                            } else 0.0
-                            val partial = (trackWeight * fraction).toLong()
-                            update(book.id) { it?.copy(doneBytes = baseDone + partial) }
+                            val fraction = if (trackTotal > 0) {
+                                (written.toDouble() / trackTotal).coerceIn(0.0, 1.0)
+                            } else null
+                            val partial = ((fraction ?: 0.0) * trackWeight).toLong()
+                            update(book.id) {
+                                it?.copy(
+                                    doneBytes = baseDone + partial,
+                                    currentFileProgress = fraction?.toFloat()
+                                )
+                            }
                         }
                     }
                     output.fd.sync()

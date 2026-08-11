@@ -1036,6 +1036,8 @@ private fun BookContent(
                     hasHighlight = chapterHasHighlight(chapter, highlights),
                     isOffline = offlineFlags.offline.getOrElse(chapter.index) { false },
                     isDownloading = offlineFlags.loading.getOrElse(chapter.index) { false },
+                    downloadProgress = if (offlineFlags.loading.getOrElse(chapter.index) { false })
+                        downloadState?.currentFileProgress else null,
                     onClick = { onChapterClick(chapter) }
                 )
             }
@@ -1295,6 +1297,8 @@ private fun ChapterRow(
     hasHighlight: Boolean,
     isOffline: Boolean,
     isDownloading: Boolean,
+    /** 0..1 for this chapter's track, or null while the size is unknown. */
+    downloadProgress: Float?,
     onClick: () -> Unit
 ) {
     val chapterDurationSec = parseTimeSpan(chapter.end) - parseTimeSpan(chapter.start)
@@ -1343,11 +1347,22 @@ private fun ChapterRow(
             }
         }
         if (isDownloading) {
-            CircularProgressIndicator(
-                strokeWidth = 2.dp,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(16.dp)
-            )
+            if (downloadProgress != null) {
+                CircularProgressIndicator(
+                    progress = { downloadProgress },
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(16.dp)
+                )
+            } else {
+                // Size unknown (older server, no Content-Length): keep spinning
+                // rather than show a ring frozen at zero.
+                CircularProgressIndicator(
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
             Spacer(Modifier.width(4.dp))
         }
         if (isOffline) {
