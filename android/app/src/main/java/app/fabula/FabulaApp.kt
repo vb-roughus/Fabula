@@ -5,6 +5,7 @@ import app.fabula.data.DownloadManager
 import app.fabula.data.FabulaRepository
 import app.fabula.data.LogStore
 import app.fabula.data.OfflineStore
+import app.fabula.data.ProgressStore
 import app.fabula.data.ServerPreferences
 import app.fabula.player.DownloadService
 import app.fabula.player.PlayerController
@@ -38,6 +39,10 @@ class FabulaApp : Application() {
     lateinit var downloadManager: DownloadManager
         private set
 
+    /** Durable local listening progress; the player treats it as the truth. */
+    lateinit var progressStore: ProgressStore
+        private set
+
     /** Hot mirror of the persisted shower-boost preference — PlaybackService
      *  subscribes to this to avoid its own DataStore coroutine setup. */
     private val _showerBoostDb = MutableStateFlow(0f)
@@ -69,6 +74,14 @@ class FabulaApp : Application() {
             scope = appScope,
             startForegroundService = { DownloadService.start(this) }
         )
-        playerController = PlayerController(this, repository)
+        progressStore = ProgressStore(this, logStore)
+        playerController = PlayerController(this, repository, progressStore)
+
+        // One handover attempt per cold start, plus one after each successful
+        // manual reconnect. Never on a timer -- reconnecting is the user's call.
+        appScope.launch { playerController.syncPendingProgress() }
+        appScope.launch {
+            repository.reconnects.collect { playerController.syncPendingProgress() }
+        }
     }
 }

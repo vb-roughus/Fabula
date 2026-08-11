@@ -56,6 +56,11 @@ class FabulaRepository(
         explicitNulls = false
     }
 
+    /** Thrown instead of dialling out while the offline latch is set. */
+    class OfflineException : java.io.IOException(
+        "Offline – Verbindung über das Menü herstellen."
+    )
+
     /** Emits whenever the server responds with 401 -- the UI listens and
      *  routes back to the login screen. */
     private val _unauthorizedEvents = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
@@ -73,6 +78,23 @@ class FabulaRepository(
     private val _serverOnline = MutableStateFlow<Boolean?>(null)
     val serverOnline: StateFlow<Boolean?> = _serverOnline.asStateFlow()
 
+    /**
+     * Latched on the first transport failure and cleared only by a successful
+     * [probeServer] -- i.e. by the drawer's "Verbinden" button, or by a fresh
+     * process, since this is plain in-memory state.
+     *
+     * While it is set, requests are refused before they reach the network. That
+     * is what makes "no automatic reconnecting" true rather than merely quiet:
+     * the periodic progress sync and every screen refresh still run, but they
+     * fail instantly and locally instead of dialling out.
+     */
+    @Volatile
+    private var offlineLatched = false
+
+    /** Set around the explicit probe so it is allowed past the latch. */
+    @Volatile
+    private var probeInFlight = false
+
     /** True while an explicit reconnect attempt is in flight. */
     private val _probing = MutableStateFlow(false)
     val probing: StateFlow<Boolean> = _probing.asStateFlow()
@@ -87,15 +109,21 @@ class FabulaRepository(
      */
     suspend fun probeServer(): Boolean {
         _probing.value = true
+        probeInFlight = true
         return try {
             val reachable = checkNeedsSetup() != null
             _serverOnline.value = reachable
+            offlineLatched = !reachable
             if (reachable) _reconnects.value = _reconnects.value + 1
             reachable
         } finally {
+            probeInFlight = false
             _probing.value = false
         }
     }
+
+    /** True when requests are being refused locally. */
+    fun isOfflineLatched(): Boolean = offlineLatched
 
     private val okHttp = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
@@ -108,6 +136,12 @@ class FabulaRepository(
                     .build()
             } else {
                 chain.request()
+            }
+            // Refuse before touching the network once we know we're offline.
+            // Only the explicit probe gets through, so nothing reconnects on
+            // its own.
+            if (offlineLatched && !probeInFlight) {
+                throw OfflineException()
             }
             val started = System.currentTimeMillis()
             val response = try {
@@ -122,10 +156,12 @@ class FabulaRepository(
                     t
                 )
                 _serverOnline.value = false
+                offlineLatched = true
                 throw t
             }
             // Any reply means the server is reachable, even an error one.
             _serverOnline.value = true
+            offlineLatched = false
             if (response.code == 401 && !token.isNullOrBlank()) {
                 _unauthorizedEvents.tryEmit(Unit)
             }

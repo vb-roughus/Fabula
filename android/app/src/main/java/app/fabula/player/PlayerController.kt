@@ -16,12 +16,14 @@ import app.fabula.data.BookDetailDto
 import app.fabula.data.ChapterDto
 import app.fabula.data.CreateBookmarkRequest
 import app.fabula.data.FabulaRepository
+import app.fabula.data.ProgressStore
 import app.fabula.data.UpdateProgressRequest
 import app.fabula.data.parseTimeSpan
 import app.fabula.data.toTimeSpanString
 import com.google.common.util.concurrent.MoreExecutors
 import java.util.Calendar
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -66,13 +68,19 @@ data class PlayerUiState(
  */
 class PlayerController(
     private val context: Context,
-    private val repository: FabulaRepository
+    private val repository: FabulaRepository,
+    private val progressStore: ProgressStore
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var controller: MediaController? = null
     private var pollJob: Job? = null
     private var progressJob: Job? = null
+    private var syncJob: Job? = null
     private var sleepJob: Job? = null
+
+    /** Conflated: only the newest request matters, since the worker always
+     *  reads the current pending set when it runs. */
+    private val syncRequests = Channel<Unit>(Channel.CONFLATED)
 
     // Most recent sleep timer duration (defaults to 30 min). Used when the
     // timer auto-restarts after the user resumes playback.
@@ -140,6 +148,7 @@ class PlayerController(
             controller = future.get()
             controller?.addListener(playerListener)
             startPolling()
+            startProgressSync()
         }, MoreExecutors.directExecutor())
     }
 
@@ -147,6 +156,7 @@ class PlayerController(
         audioManager.unregisterAudioDeviceCallback(audioDeviceCallback)
         pollJob?.cancel()
         progressJob?.cancel()
+        syncJob?.cancel()
         sleepJob?.cancel()
         controller?.release()
         controller = null
@@ -204,9 +214,17 @@ class PlayerController(
         if (items.isEmpty()) return
 
         val savedProgress = runCatching { api?.getProgress(book.id) }.getOrNull()
-        val savedPosition = savedProgress?.position
-        val savedFinished = savedProgress?.finished == true
-        val startSec = parseTimeSpan(savedPosition)
+        val localProgress = progressStore.local(book.id)
+
+        // An unsynced local entry was produced here and never reached the
+        // server, so it is by definition newer -- taking the server value would
+        // rewind the listener by exactly the stretch that failed to save. Once
+        // synced, the two agree and the server value is used as before.
+        val useLocal = localProgress != null && (!localProgress.synced || savedProgress == null)
+        val startSec = if (useLocal) localProgress!!.positionSec
+            else parseTimeSpan(savedProgress?.position)
+        val savedFinished = if (useLocal) localProgress!!.finished
+            else savedProgress?.finished == true
         val (startIndex, startOffsetMs) = mapBookToMedia(startSec)
 
         c.setMediaItems(items, startIndex, startOffsetMs)
@@ -381,7 +399,7 @@ class PlayerController(
             // ("Weiter hören") and library reflect the new position the
             // moment the user navigates away -- the 4s background save
             // would otherwise race the navigation.
-            if (!isPlaying) flushProgress()
+            if (!isPlaying) recordProgress()
         }
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) { updateStateFromController() }
         override fun onPlaybackStateChanged(playbackState: Int) {
@@ -394,22 +412,66 @@ class PlayerController(
         }
     }
 
-    private fun flushProgress() {
+    /**
+     * Records the current position locally and asks the sync worker to hand it
+     * over. Recording never fails, so nothing is lost when the network isn't
+     * there -- the handover is a separate, retryable step.
+     */
+    private fun recordProgress() {
         val s = _state.value
         val book = s.book ?: return
-        scope.launch {
-            val api = repository.apiOrNull() ?: return@launch
-            runCatching {
-                api.saveProgress(
-                    book.id,
-                    UpdateProgressRequest(
-                        position = toTimeSpanString(s.positionInBook),
-                        finished = s.finished,
-                        device = repository.deviceId()
-                    )
-                )
+        progressStore.record(book.id, s.positionInBook, s.finished, System.currentTimeMillis())
+        syncRequests.trySend(Unit)
+    }
+
+    /**
+     * Single writer for progress. Requests are conflated, so however often the
+     * position moves there is only ever one save in flight and it always
+     * carries the newest value.
+     *
+     * This is what stops progress from overwriting itself: previously every
+     * tick launched its own coroutine, and on a slow link an earlier one could
+     * land later -- the server stamps its own arrival time, so an older
+     * position would win.
+     */
+    private fun startProgressSync() {
+        syncJob = scope.launch {
+            for (unused in syncRequests) {
+                val api = repository.apiOrNull() ?: continue
+                // Oldest observation first, so a book listened to earlier is
+                // handed over before the current one.
+                for (entry in progressStore.pending()) {
+                    val ok = runCatching {
+                        api.saveProgress(
+                            entry.bookId,
+                            UpdateProgressRequest(
+                                position = toTimeSpanString(entry.positionSec),
+                                finished = entry.finished,
+                                device = repository.deviceId()
+                            )
+                        )
+                    }.isSuccess
+                    if (!ok) break  // offline or failing; keep the rest pending
+                    progressStore.markSynced(entry.bookId, entry.updatedAtMs)
+                }
             }
         }
+    }
+
+    /** Hands over anything still pending. Called at app start and after the
+     *  drawer's reconnect succeeds -- never on a timer of its own. */
+    fun syncPendingProgress() {
+        if (progressStore.hasPending()) syncRequests.trySend(Unit)
+    }
+
+    /**
+     * Records a position the user set explicitly (reset to start, or marking a
+     * book heard / unheard) so it survives being offline like any other
+     * progress instead of relying on the one-shot request succeeding.
+     */
+    fun recordExplicitProgress(bookId: Int, positionSec: Double, finished: Boolean) {
+        progressStore.record(bookId, positionSec, finished, System.currentTimeMillis())
+        syncRequests.trySend(Unit)
     }
 
     private fun startPolling() {
@@ -420,31 +482,21 @@ class PlayerController(
             }
         }
         progressJob = scope.launch {
-            var lastSaved = -10.0
+            var lastRecorded = -10.0
             var lastBookId = -1
             while (true) {
                 delay(4000)
                 val s = _state.value
                 val book = s.book ?: continue
-                if (book.id == lastBookId && abs(lastSaved - s.positionInBook) < 2.0) continue
-                val api = repository.apiOrNull() ?: continue
+                if (book.id == lastBookId && abs(lastRecorded - s.positionInBook) < 2.0) continue
                 // `finished` is no longer derived from the position -- it
                 // would be sticky once true, because every subsequent
                 // auto-save near the end re-sent finished=true. Instead the
                 // flag lives on PlayerUiState and is flipped by either
                 // STATE_ENDED, the user's "Als gehört markieren" menu, or
                 // (back to false) a seek that goes well past the end zone.
-                runCatching {
-                    api.saveProgress(
-                        book.id,
-                        UpdateProgressRequest(
-                            position = toTimeSpanString(s.positionInBook),
-                            finished = s.finished,
-                            device = repository.deviceId()
-                        )
-                    )
-                }
-                lastSaved = s.positionInBook
+                recordProgress()
+                lastRecorded = s.positionInBook
                 lastBookId = book.id
             }
         }

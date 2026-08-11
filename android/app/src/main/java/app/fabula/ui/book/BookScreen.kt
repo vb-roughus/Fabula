@@ -374,6 +374,15 @@ fun BookScreen(
                                     // in sync, otherwise the next 4s auto-save
                                     // would overwrite the server value.
                                     player.setFinishedFlag(current.id, next)
+                                    // Also record it locally, so the change
+                                    // survives a failed request and is handed
+                                    // over on the next reconnect.
+                                    player.recordExplicitProgress(
+                                        bookId = current.id,
+                                        positionSec = if (next) parseTimeSpan(current.duration)
+                                            else pendingBookmarkPosition,
+                                        finished = next
+                                    )
                                     scope.launch {
                                         runCatching {
                                             val api = repository.apiOrNull() ?: return@runCatching
@@ -610,6 +619,9 @@ fun BookScreen(
                             player.seekInBook(0.0)
                             player.setFinishedFlag(current.id, false)
                         }
+                        // Record the reset locally too; otherwise an unsynced
+                        // local entry would resurrect the old position.
+                        player.recordExplicitProgress(current.id, 0.0, false)
                         // Refresh the book so the inline progress UI and the
                         // "Als gehört markieren" toggle reflect the new state.
                         runCatching {
