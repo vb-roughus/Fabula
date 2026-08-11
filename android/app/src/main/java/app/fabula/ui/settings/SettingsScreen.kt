@@ -33,6 +33,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -64,6 +65,7 @@ import app.fabula.FabulaApp
 import app.fabula.data.AppUpdateCheckDto
 import app.fabula.data.AppUpdateConfigDto
 import app.fabula.data.FabulaRepository
+import app.fabula.data.formatFileSize
 import app.fabula.data.UpdateAppConfigRequest
 import app.fabula.ui.LocalContentBottomInset
 import java.io.File
@@ -325,7 +327,9 @@ private sealed interface UpdateUiState {
     data object Checking : UpdateUiState
     data object UpToDate : UpdateUiState
     data class Available(val version: app.fabula.data.AppVersionDto) : UpdateUiState
-    data object Downloading : UpdateUiState
+    /** [total] is 0 when the server didn't report a length -- the bar is then
+     *  indeterminate rather than stuck at zero. */
+    data class Downloading(val done: Long, val total: Long) : UpdateUiState
     data class Error(val message: String) : UpdateUiState
 }
 
@@ -373,12 +377,14 @@ private fun AppUpdateSection(repository: FabulaRepository) {
             )
             Button(
                 onClick = {
-                    state = UpdateUiState.Downloading
+                    state = UpdateUiState.Downloading(0L, 0L)
                     scope.launch {
                         val result = runCatching {
                             val api = repository.apiOrNull()
                                 ?: throw IllegalStateException("Kein Server konfiguriert.")
-                            val apk = downloadApkToCache(context, api)
+                            val apk = downloadApkToCache(context, api) { done, total ->
+                                state = UpdateUiState.Downloading(done, total)
+                            }
                             launchInstaller(context, apk)
                         }
                         state = result.fold(
@@ -394,9 +400,28 @@ private fun AppUpdateSection(repository: FabulaRepository) {
                 modifier = Modifier.fillMaxWidth()
             ) { Text("Herunterladen & installieren") }
         }
-        UpdateUiState.Downloading -> {
+        is UpdateUiState.Downloading -> {
             Button(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth()) {
                 Text("Wird heruntergeladen…")
+            }
+            if (s.total > 0L) {
+                LinearProgressIndicator(
+                    progress = { (s.done.toFloat() / s.total).coerceIn(0f, 1f) },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(
+                    "${formatFileSize(s.done)} von ${formatFileSize(s.total)}" +
+                        " · ${(s.done * 100 / s.total).coerceIn(0, 100)} %",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline
+                )
+            } else {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                Text(
+                    "${formatFileSize(s.done)} geladen",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline
+                )
             }
         }
         else -> {
@@ -568,14 +593,48 @@ private fun installedVersion(context: Context): Pair<Long, String> {
     return code to (info.versionName ?: "?")
 }
 
-/** Streams the APK from the server into cacheDir/updates/fabula.apk. */
-private suspend fun downloadApkToCache(context: Context, api: app.fabula.data.FabulaApi): File =
+/**
+ * Streams the APK from the server into cacheDir/updates/fabula.apk, reporting
+ * (bytesWritten, totalBytes) as it goes. `total` is 0 when the server didn't
+ * report a length -- OkHttp also reports -1 if it had to decompress -- and the
+ * caller then shows an indeterminate bar.
+ *
+ * Copies by hand rather than with copyTo, which reports nothing.
+ */
+private suspend fun downloadApkToCache(
+    context: Context,
+    api: app.fabula.data.FabulaApi,
+    onProgress: (done: Long, total: Long) -> Unit
+): File =
     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         val dir = File(context.cacheDir, "updates").apply { mkdirs() }
         val target = File(dir, "fabula.apk")
         api.downloadApk().use { body ->
+            val total = body.contentLength().coerceAtLeast(0L)
+            onProgress(0L, total)
             body.byteStream().use { input ->
-                target.outputStream().use { output -> input.copyTo(output) }
+                target.outputStream().use { output ->
+                    val buffer = ByteArray(64 * 1024)
+                    var written = 0L
+                    var lastEmit = 0L
+                    var lastBytes = 0L
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read <= 0) break
+                        output.write(buffer, 0, read)
+                        written += read
+                        // Throttled like the audio downloader: emitting per
+                        // buffer would flood recomposition for no visible gain.
+                        val now = System.currentTimeMillis()
+                        if (now - lastEmit >= 250L || written - lastBytes >= 512L * 1024L) {
+                            lastEmit = now
+                            lastBytes = written
+                            onProgress(written, total)
+                        }
+                    }
+                    output.flush()
+                    onProgress(written, total)
+                }
             }
         }
         target
