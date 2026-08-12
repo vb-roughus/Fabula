@@ -4,8 +4,12 @@ import { Link, useParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { usePlayerContext } from '../hooks/playerContext';
 import { formatDurationHours, formatTimeSpan, parseTimeSpan } from '../lib/time';
+import { useAuth } from '../auth/AuthContext';
 
 export function BookPage() {
+  // Assigning a book to a series edits the shared catalogue -- admin-only.
+  const auth = useAuth();
+  const isAdmin = auth.user?.isAdmin === true;
   const { id } = useParams<{ id: string }>();
   const bookId = Number(id);
   const qc = useQueryClient();
@@ -134,7 +138,7 @@ export function BookPage() {
                 {book.seriesPosition != null && ` – Teil ${book.seriesPosition}`}
               </div>
             )}
-            {!editingSeries && (
+            {isAdmin && !editingSeries && (
               <button
                 onClick={startEditSeries}
                 className="text-ink-400 hover:text-ink-100 text-sm underline underline-offset-2"

@@ -102,6 +102,17 @@ class ServerPreferences(private val context: Context) {
         context.dataStore.edit { it[DOWNLOAD_WIFI_ONLY_KEY] = enabled }
     }
 
+    /**
+     * Whether the signed-in account is an admin. Cached so admin-only entries
+     * don't disappear while offline -- the flag can only change on the server,
+     * and it is refreshed on every successful login or /me.
+     */
+    val isAdmin: Flow<Boolean> = context.dataStore.data.map { it[IS_ADMIN_KEY] ?: false }
+
+    suspend fun setIsAdmin(value: Boolean) {
+        context.dataStore.edit { it[IS_ADMIN_KEY] = value }
+    }
+
     /** Stable id for this device, used when reporting progress back to the server. */
     fun deviceId(): String {
         val androidId = runCatching {
@@ -121,5 +132,6 @@ class ServerPreferences(private val context: Context) {
         private val SLEEP_TIMER_MINUTES_KEY = intPreferencesKey("sleep_timer_minutes")
         private val CHAPTER_FLIP_INTRO_KEY = booleanPreferencesKey("chapter_flip_intro_enabled")
         private val DOWNLOAD_WIFI_ONLY_KEY = booleanPreferencesKey("download_wifi_only")
+        private val IS_ADMIN_KEY = booleanPreferencesKey("is_admin")
     }
 }

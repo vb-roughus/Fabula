@@ -195,13 +195,15 @@ fun Navigation(
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
 
+    // Cached, so admin entries survive being offline. The server enforces the
+    // real restriction; this only decides what is offered.
+    val isAdmin by repository.isAdmin.collectAsState(initial = false)
     val serverOnline by repository.serverOnline.collectAsState()
     val probing by repository.probing.collectAsState()
 
-    var me by remember { mutableStateOf<app.fabula.data.AuthUserDto?>(null) }
-    LaunchedEffect(authToken) {
-        me = if (authToken.isNullOrBlank()) null else runCatching { repository.me() }.getOrNull()
-    }
+    // The admin flag used to be derived from a /me call held here. It now comes
+    // from the cached preference, which the boot gate above refreshes on every
+    // successful /me -- one request fewer, and it survives being offline.
 
     val openDrawer: () -> Unit = { scope.launch { drawerState.open() } }
 
@@ -234,16 +236,18 @@ fun Navigation(
                     }
                 )
                 Spacer(Modifier.height(16.dp))
-                NavigationDrawerItem(
-                    icon = { Icon(Icons.Outlined.Tune, contentDescription = null) },
-                    label = { Text("Serien verwalten") },
-                    selected = false,
-                    onClick = {
-                        scope.launch { drawerState.close() }
-                        navController.navigate("series-manage")
-                    },
-                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
-                )
+                if (isAdmin) {
+                    NavigationDrawerItem(
+                        icon = { Icon(Icons.Outlined.Tune, contentDescription = null) },
+                        label = { Text("Serien verwalten") },
+                        selected = false,
+                        onClick = {
+                            scope.launch { drawerState.close() }
+                            navController.navigate("series-manage")
+                        },
+                        modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                    )
+                }
                 NavigationDrawerItem(
                     icon = { Icon(Icons.Outlined.Person, contentDescription = null) },
                     label = { Text("Mein Konto") },
@@ -254,7 +258,7 @@ fun Navigation(
                     },
                     modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
                 )
-                if (me?.isAdmin == true) {
+                if (isAdmin) {
                     NavigationDrawerItem(
                         icon = { Icon(Icons.Outlined.PeopleAlt, contentDescription = null) },
                         label = { Text("Benutzer verwalten") },
@@ -419,7 +423,8 @@ fun Navigation(
                             onManageSeries = { navController.navigate("series-manage") },
                             // Entry point that works with no server: Home and
                             // Library are network-driven and empty offline.
-                            onOpenBook = { id -> navController.navigate("book/$id") }
+                            onOpenBook = { id -> navController.navigate("book/$id") },
+                            onManageUsers = { navController.navigate("users") }
                         )
                     }
                     composable("series-manage") {

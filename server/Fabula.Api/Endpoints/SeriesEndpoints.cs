@@ -10,6 +10,9 @@ public static class SeriesEndpoints
 {
     public static IEndpointRouteBuilder MapSeriesEndpoints(this IEndpointRouteBuilder app)
     {
+        // Reading the catalogue is open to every signed-in user; changing it is
+        // admin-only and enforced per endpoint below. Hiding the buttons in the
+        // clients is not enough -- the API is reachable directly.
         var group = app.MapGroup("/api/series").WithTags("Series").RequireAuthorization();
 
         group.MapGet("/", async (FabulaDbContext db, CancellationToken ct) =>
@@ -108,7 +111,7 @@ public static class SeriesEndpoints
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/series/{series.Id}",
                 new SeriesSummaryDto(series.Id, series.Name, series.Description, 0, null));
-        });
+        }).RequireAuthorization("Admin");
 
         group.MapPut("/{id:int}", async (int id, FabulaDbContext db, SeriesRequest req, CancellationToken ct) =>
         {
@@ -137,7 +140,7 @@ public static class SeriesEndpoints
                 .Select(c => (string?)$"/api/books/{c.Id}/cover")
                 .FirstOrDefault();
             return Results.Ok(new SeriesSummaryDto(series.Id, series.Name, series.Description, count, coverUrl));
-        });
+        }).RequireAuthorization("Admin");
 
         group.MapDelete("/{id:int}", async (int id, FabulaDbContext db, CancellationToken ct) =>
         {
@@ -146,7 +149,7 @@ public static class SeriesEndpoints
             db.Series.Remove(series);
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
-        });
+        }).RequireAuthorization("Admin");
 
         // Re-derives SeriesPosition for every book in the series from the
         // current folder name. Cheaper than a full library scan because we
@@ -215,7 +218,7 @@ public static class SeriesEndpoints
                 await db.SaveChangesAsync(ct);
 
             return Results.Ok(new { updated });
-        });
+        }).RequireAuthorization("Admin");
 
         return app;
     }

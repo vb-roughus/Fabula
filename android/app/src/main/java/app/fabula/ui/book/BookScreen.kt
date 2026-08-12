@@ -143,6 +143,7 @@ fun BookScreen(
     val downloadStates by downloads.states.collectAsState()
     val downloadState = downloadStates[bookId]
     val downloadedFileIds by offlineStore.downloadedFileIds.collectAsState()
+    val isAdmin by repository.isAdmin.collectAsState(initial = false)
     val uploadSyncer = app.uploadSyncer
     val pendingUploads = app.pendingUploads
     var cancelDownloadConfirmOpen by remember { mutableStateOf(false) }
@@ -417,7 +418,8 @@ fun BookScreen(
                                     resetProgressConfirmOpen = true
                                 }
                             )
-                            DropdownMenuItem(
+                            // Admin-only: the assignment is catalogue-wide.
+                            if (isAdmin) DropdownMenuItem(
                                 text = {
                                     Text(
                                         if (book?.series.isNullOrBlank()) "Serie zuweisen"
