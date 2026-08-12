@@ -5,7 +5,9 @@ import app.fabula.data.DownloadManager
 import app.fabula.data.FabulaRepository
 import app.fabula.data.LogStore
 import app.fabula.data.OfflineStore
+import app.fabula.data.PendingUploadStore
 import app.fabula.data.ProgressStore
+import app.fabula.data.UploadSyncer
 import app.fabula.data.ServerPreferences
 import app.fabula.player.DownloadService
 import app.fabula.player.PlayerController
@@ -43,6 +45,13 @@ class FabulaApp : Application() {
     lateinit var progressStore: ProgressStore
         private set
 
+    /** Bookmarks and highlights waiting to reach the server. */
+    lateinit var pendingUploads: PendingUploadStore
+        private set
+
+    lateinit var uploadSyncer: UploadSyncer
+        private set
+
     /** Hot mirror of the persisted shower-boost preference — PlaybackService
      *  subscribes to this to avoid its own DataStore coroutine setup. */
     private val _showerBoostDb = MutableStateFlow(0f)
@@ -75,13 +84,21 @@ class FabulaApp : Application() {
             startForegroundService = { DownloadService.start(this) }
         )
         progressStore = ProgressStore(this, logStore)
-        playerController = PlayerController(this, repository, progressStore)
+        pendingUploads = PendingUploadStore(this, logStore)
+        uploadSyncer = UploadSyncer(repository, pendingUploads, logStore, appScope).also { it.start() }
+        playerController = PlayerController(this, repository, progressStore, uploadSyncer)
 
         // One handover attempt per cold start, plus one after each successful
         // manual reconnect. Never on a timer -- reconnecting is the user's call.
-        appScope.launch { playerController.syncPendingProgress() }
         appScope.launch {
-            repository.reconnects.collect { playerController.syncPendingProgress() }
+            playerController.syncPendingProgress()
+            uploadSyncer.requestSync()
+        }
+        appScope.launch {
+            repository.reconnects.collect {
+                playerController.syncPendingProgress()
+                uploadSyncer.requestSync()
+            }
         }
     }
 }

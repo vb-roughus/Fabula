@@ -17,6 +17,7 @@ import app.fabula.data.ChapterDto
 import app.fabula.data.CreateBookmarkRequest
 import app.fabula.data.FabulaRepository
 import app.fabula.data.ProgressStore
+import app.fabula.data.UploadSyncer
 import app.fabula.data.UpdateProgressRequest
 import app.fabula.data.parseTimeSpan
 import app.fabula.data.toTimeSpanString
@@ -69,7 +70,8 @@ data class PlayerUiState(
 class PlayerController(
     private val context: Context,
     private val repository: FabulaRepository,
-    private val progressStore: ProgressStore
+    private val progressStore: ProgressStore,
+    private val uploadSyncer: UploadSyncer
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var controller: MediaController? = null
@@ -329,17 +331,13 @@ class PlayerController(
         playNotificationSound()
 
         if (book != null) {
-            val api = repository.apiOrNull() ?: return
-            runCatching {
-                api.createBookmark(
-                    book.id,
-                    CreateBookmarkRequest(
-                        position = toTimeSpanString(pos),
-                        note = "Gute Nacht!"
-                    )
-                )
-                repository.bumpBookmarksRevision()
-            }
+            // Queued rather than posted: this fires while the user is falling
+            // asleep, so a failed request is the one nobody would ever notice.
+            uploadSyncer.createBookmark(
+                bookId = book.id,
+                position = toTimeSpanString(pos),
+                note = "Gute Nacht!"
+            )
         }
     }
 

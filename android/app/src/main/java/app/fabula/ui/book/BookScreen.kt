@@ -74,6 +74,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -83,7 +84,6 @@ import app.fabula.data.BookDetailDto
 import app.fabula.data.BookDownloadState
 import app.fabula.data.BookmarkDto
 import app.fabula.data.ChapterDto
-import app.fabula.data.CreateBookmarkRequest
 import app.fabula.data.DownloadStatus
 import app.fabula.data.FabulaRepository
 import app.fabula.data.HighlightDto
@@ -143,6 +143,8 @@ fun BookScreen(
     val downloadStates by downloads.states.collectAsState()
     val downloadState = downloadStates[bookId]
     val downloadedFileIds by offlineStore.downloadedFileIds.collectAsState()
+    val uploadSyncer = app.uploadSyncer
+    val pendingUploads = app.pendingUploads
     var cancelDownloadConfirmOpen by remember { mutableStateOf(false) }
     var deleteDownloadConfirmOpen by remember { mutableStateOf(false) }
 
@@ -179,18 +181,23 @@ fun BookScreen(
         }
     }
 
+    // Pending entries are appended to whatever the server returns, so one
+    // created offline shows up straight away instead of looking like it was
+    // dropped. They carry negative ids, which is how the rows tell them apart.
     LaunchedEffect(bookId, bookmarksRevision) {
-        runCatching {
-            val api = repository.apiOrNull() ?: return@runCatching
-            bookmarks = api.listBookmarks(bookId)
-        }
+        val server = runCatching {
+            val api = repository.apiOrNull() ?: return@runCatching emptyList()
+            api.listBookmarks(bookId)
+        }.getOrDefault(emptyList())
+        bookmarks = server + pendingUploads.bookmarksFor(bookId).map { it.toDto() }
     }
 
     LaunchedEffect(bookId, highlightsRevision) {
-        runCatching {
-            val api = repository.apiOrNull() ?: return@runCatching
-            highlights = api.listHighlights(bookId)
-        }
+        val server = runCatching {
+            val api = repository.apiOrNull() ?: return@runCatching emptyList()
+            api.listHighlights(bookId)
+        }.getOrDefault(emptyList())
+        highlights = server + pendingUploads.highlightsFor(bookId).map { it.toDto() }
     }
 
     // Pre-load the series list when the assign dialog is opened.
@@ -515,11 +522,17 @@ fun BookScreen(
                         }
                     },
                     onBookmarkDelete = { bookmark ->
-                        scope.launch {
-                            runCatching {
-                                val api = repository.apiOrNull() ?: return@runCatching
-                                api.deleteBookmark(bookmark.id)
-                                repository.bumpBookmarksRevision()
+                        if (bookmark.id < 0) {
+                            // Never reached the server; drop it from the queue.
+                            pendingUploads.removeBookmark(bookmark.id)
+                            repository.bumpBookmarksRevision()
+                        } else {
+                            scope.launch {
+                                runCatching {
+                                    val api = repository.apiOrNull() ?: return@runCatching
+                                    api.deleteBookmark(bookmark.id)
+                                    repository.bumpBookmarksRevision()
+                                }
                             }
                         }
                     }
@@ -667,21 +680,12 @@ fun BookScreen(
                     val pos = pendingBookmarkPosition
                     addBookmarkOpen = false
                     bookmarkNote = ""
-                    scope.launch {
-                        runCatching {
-                            val api = repository.apiOrNull() ?: return@runCatching
-                            api.createBookmark(
-                                bookId,
-                                CreateBookmarkRequest(
-                                    position = toTimeSpanString(pos),
-                                    note = note
-                                )
-                            )
-                            repository.bumpBookmarksRevision()
-                        }.onFailure { t ->
-                            repository.logFailure("BookScreen.createBookmark book=$bookId pos=$pos", t)
-                        }
-                    }
+                    // Queued, so it exists even without a connection.
+                    uploadSyncer.createBookmark(
+                        bookId = bookId,
+                        position = toTimeSpanString(pos),
+                        note = note
+                    )
                 }) { Text("Speichern") }
             },
             dismissButton = {
@@ -1431,6 +1435,16 @@ private fun BookmarkRow(
                         " · $chapterTitle",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.outline,
+                        maxLines = 1
+                    )
+                }
+                // Negative id = queued locally, not on the server yet.
+                if (bookmark.id < 0) {
+                    Text(
+                        " · wird übertragen",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline,
+                        fontStyle = FontStyle.Italic,
                         maxLines = 1
                     )
                 }
