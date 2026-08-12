@@ -120,6 +120,24 @@ class OfflineStore(context: Context, private val logStore: LogStore) {
             .mapNotNull { it.name.substringBefore('.').toIntOrNull() }
             .toSet()
 
+    /**
+     * The downloaded cover, if any. Stored as `cover.<ext>`, whose stem isn't a
+     * number -- that is why the audio index above quietly skips it.
+     */
+    fun localCover(bookId: Int): File? {
+        val dir = bookDir(bookId)
+        if (!dir.isDirectory) return null
+        return dir.listFiles()?.firstOrNull {
+            it.isFile && it.name.startsWith("cover.") &&
+                !it.name.endsWith(PART_SUFFIX) && it.length() > 0
+        }
+    }
+
+    fun coverFile(bookId: Int, ext: String): File {
+        val dir = bookDir(bookId).apply { mkdirs() }
+        return File(dir, "cover.$ext")
+    }
+
     // --- manifest / cached book detail --------------------------------------
 
     fun readManifest(bookId: Int): OfflineManifest? {
@@ -224,6 +242,17 @@ class OfflineStore(context: Context, private val logStore: LogStore) {
     companion object {
         private const val PART_SUFFIX = ".part"
         private const val MANIFEST = "manifest.json"
+
+        /** Image extension for a cover response; only cosmetic, Coil sniffs. */
+        fun coverExtensionFor(contentType: String?): String {
+            val t = contentType?.lowercase() ?: return "img"
+            return when {
+                t.contains("jpeg") || t.contains("jpg") -> "jpg"
+                t.contains("png") -> "png"
+                t.contains("webp") -> "webp"
+                else -> "img"
+            }
+        }
 
         /** Maps a response content type onto a file extension. Cosmetic only --
          *  ExoPlayer sniffs the container -- but it keeps the folder readable. */

@@ -19,7 +19,10 @@ import java.util.concurrent.TimeUnit
 
 class FabulaRepository(
     private val preferences: ServerPreferences,
-    private val logStore: LogStore
+    private val logStore: LogStore,
+    /** Consulted first for cover art, so downloaded books keep their artwork
+     *  with no server. Constructed before the repository in FabulaApp. */
+    private val offlineStore: OfflineStore
 ) {
 
     private val _baseUrl = MutableStateFlow("")
@@ -226,8 +229,16 @@ class FabulaRepository(
         _baseUrl.value = url
     }
 
-    fun coverUrl(book: BookSummaryDto): String? = book.coverUrl?.let { resolveRelative(it) }
-    fun coverUrl(book: BookDetailDto): String? = book.coverUrl?.let { resolveRelative(it) }
+    // A downloaded cover wins over the server URL: it is the same image, works
+    // offline, and costs no request. Coil and media3 both read file:// URIs.
+    fun coverUrl(book: BookSummaryDto): String? =
+        localCoverUri(book.id) ?: book.coverUrl?.let { resolveRelative(it) }
+
+    fun coverUrl(book: BookDetailDto): String? =
+        localCoverUri(book.id) ?: book.coverUrl?.let { resolveRelative(it) }
+
+    private fun localCoverUri(bookId: Int): String? =
+        offlineStore.localCover(bookId)?.let { android.net.Uri.fromFile(it).toString() }
     fun coverUrl(series: SeriesSummaryDto): String? = series.coverUrl?.let { resolveRelative(it) }
 
     fun resolveUrl(path: String): String? = resolveRelative(path)
