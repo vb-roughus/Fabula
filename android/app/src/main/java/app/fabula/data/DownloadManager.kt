@@ -255,6 +255,10 @@ class DownloadManager(
             )
         }
 
+        // Best-effort and deliberately non-fatal: a missing cover must not
+        // fail the book download.
+        runCatching { downloadCoverIfMissing(api, book) }
+
         for (file in book.files.sortedBy { it.trackIndex }) {
             if (file.id in doneIds) continue
 
@@ -286,6 +290,24 @@ class DownloadManager(
             )
         }
         offlineStore.reindex()
+    }
+
+    private suspend fun downloadCoverIfMissing(api: FabulaApi, book: BookDetailDto) {
+        if (offlineStore.localCover(book.id) != null) return
+        if (book.coverUrl == null) return
+        withContext(Dispatchers.IO) {
+            val response = api.downloadCover(book.id)
+            if (!response.isSuccessful) return@withContext
+            val body = response.body() ?: return@withContext
+            val ext = OfflineStore.coverExtensionFor(response.headers()["Content-Type"])
+            val target = offlineStore.coverFile(book.id, ext)
+            body.use { rb ->
+                rb.byteStream().use { input ->
+                    java.io.FileOutputStream(target).use { output -> input.copyTo(output) }
+                }
+            }
+            offlineStore.reindex()
+        }
     }
 
     private suspend fun downloadTrack(

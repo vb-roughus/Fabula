@@ -73,8 +73,9 @@ class FabulaApp : Application() {
         appScope.launch {
             preferences.showerBoostDb.collect { _showerBoostDb.value = it }
         }
-        repository = FabulaRepository(preferences, logStore)
+        // Before the repository: it consults the store for offline cover art.
         offlineStore = OfflineStore(this, logStore)
+        repository = FabulaRepository(preferences, logStore, offlineStore)
         downloadManager = DownloadManager(
             context = this,
             repository = repository,

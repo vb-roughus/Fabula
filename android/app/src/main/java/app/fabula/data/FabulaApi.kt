@@ -118,6 +118,12 @@ interface FabulaApi {
     @GET("api/app/apk")
     suspend fun downloadApk(): ResponseBody
 
+    /** The book's cover image, saved next to the offline audio so the tiles
+     *  still show artwork with no server. */
+    @Streaming
+    @GET("api/books/{bookId}/cover")
+    suspend fun downloadCover(@Path("bookId") bookId: Int): retrofit2.Response<ResponseBody>
+
     /** One audio file, for offline download. Same endpoint the player streams
      *  from; @Streaming keeps it off the heap. Pass [range] as "bytes=<n>-" to
      *  resume a partial file -- the server enables range processing. The raw
