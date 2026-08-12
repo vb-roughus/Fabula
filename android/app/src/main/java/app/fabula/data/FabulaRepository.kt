@@ -263,10 +263,15 @@ class FabulaRepository(
         return runCatching { api.getSetupStatus().needsSetup }.getOrNull()
     }
 
+    /** Cached admin flag; drives the admin-only entries in the UI. The server
+     *  enforces the real thing -- this only decides what is offered. */
+    val isAdmin: Flow<Boolean> = preferences.isAdmin
+
     suspend fun login(username: String, password: String): AuthUserDto {
         val api = apiOrNull() ?: throw IllegalStateException("Server-URL fehlt")
         val res = api.login(LoginRequest(username.trim(), password))
         preferences.setAuthToken(res.token)
+        preferences.setIsAdmin(res.user.isAdmin)
         return res.user
     }
 
@@ -274,16 +279,19 @@ class FabulaRepository(
         val api = apiOrNull() ?: throw IllegalStateException("Server-URL fehlt")
         val res = api.setup(SetupRequest(username.trim(), password))
         preferences.setAuthToken(res.token)
+        preferences.setIsAdmin(res.user.isAdmin)
         return res.user
     }
 
     suspend fun me(): AuthUserDto? {
         val api = apiOrNull() ?: return null
         return runCatching { api.getMe() }.getOrNull()
+            ?.also { preferences.setIsAdmin(it.isAdmin) }
     }
 
     suspend fun logout() {
         preferences.setAuthToken(null)
+        preferences.setIsAdmin(false)
         // Force the next request to rebuild Retrofit so the interceptor
         // re-reads the (now empty) token immediately.
         currentApi = null

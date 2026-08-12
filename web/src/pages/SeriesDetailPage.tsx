@@ -1,8 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../api/client';
+import { useAuth } from '../auth/AuthContext';
 
 export function SeriesDetailPage() {
+  // Recomputing positions rewrites the catalogue -- admin-only.
+  const auth = useAuth();
+  const isAdmin = auth.user?.isAdmin === true;
   const { id } = useParams<{ id: string }>();
   const seriesId = Number(id);
   const qc = useQueryClient();
@@ -50,14 +54,16 @@ export function SeriesDetailPage() {
                     : 'Bereits aktuell'}
                 </span>
               )}
-              <button
-                onClick={() => reorder.mutate()}
-                disabled={reorder.isPending}
-                title="Positionen aus den Ordnernamen neu ableiten (manuelle Werte bleiben erhalten)."
-                className="text-sm px-3 py-1.5 rounded bg-ink-700 hover:bg-ink-600 disabled:bg-ink-800 disabled:text-ink-500"
-              >
-                {reorder.isPending ? 'Berechnet...' : 'Reihenfolge neu berechnen'}
-              </button>
+              {isAdmin && (
+                <button
+                  onClick={() => reorder.mutate()}
+                  disabled={reorder.isPending}
+                  title="Positionen aus den Ordnernamen neu ableiten (manuelle Werte bleiben erhalten)."
+                  className="text-sm px-3 py-1.5 rounded bg-ink-700 hover:bg-ink-600 disabled:bg-ink-800 disabled:text-ink-500"
+                >
+                  {reorder.isPending ? 'Berechnet...' : 'Reihenfolge neu berechnen'}
+                </button>
+              )}
             </div>
           )}
         </div>

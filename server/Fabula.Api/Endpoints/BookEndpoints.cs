@@ -161,7 +161,7 @@ public static class BookEndpoints
 
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
-        });
+        }).RequireAuthorization("Admin");
 
         // Covers are anonymous so &lt;img src=...&gt; in the browser and AsyncImage on
         // Android can render them without juggling tokens. They expose only

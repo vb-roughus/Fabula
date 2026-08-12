@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.DownloadForOffline
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.LibraryBooks
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.PeopleAlt
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -87,8 +88,12 @@ fun SettingsScreen(
     repository: FabulaRepository,
     onDone: () -> Unit,
     onManageSeries: () -> Unit,
-    onOpenBook: (Int) -> Unit
+    onOpenBook: (Int) -> Unit,
+    onManageUsers: () -> Unit
 ) {
+    // Cached flag, so the admin entries don't vanish while offline. The server
+    // enforces the restriction; this only decides what is offered.
+    val isAdmin by repository.isAdmin.collectAsState(initial = false)
     // Which sub-page is open; null shows the category menu. Survives rotation.
     var section by rememberSaveable { mutableStateOf<SettingsSection?>(null) }
 
@@ -135,7 +140,21 @@ fun SettingsScreen(
                     SettingsMenuItem(Icons.Filled.DownloadForOffline, "Downloads", "Offline verfügbare Hörbücher") {
                         section = SettingsSection.Downloads
                     }
-                    SettingsMenuItem(Icons.Filled.LibraryBooks, "Serien verwalten", "Reihenfolge & Zuordnung", onManageSeries)
+                    // Admin-only: changing the catalogue affects every user.
+                    if (isAdmin) {
+                        SettingsMenuItem(
+                            Icons.Filled.LibraryBooks,
+                            "Serien verwalten",
+                            "Reihenfolge & Zuordnung",
+                            onManageSeries
+                        )
+                        SettingsMenuItem(
+                            Icons.Filled.PeopleAlt,
+                            "Benutzer verwalten",
+                            "Konten, Rechte, Passwörter",
+                            onManageUsers
+                        )
+                    }
                     SettingsMenuItem(Icons.Filled.SystemUpdate, "App-Update", "Version & Aktualisierung") {
                         section = SettingsSection.AppUpdate
                     }

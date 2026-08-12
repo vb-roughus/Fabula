@@ -3,8 +3,13 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import type { SeriesSummary } from '../api/types';
+import { useAuth } from '../auth/AuthContext';
 
 export function SeriesPage() {
+  // Admin-only controls. The API enforces this; hiding them keeps the page
+  // honest about what the reader can actually do.
+  const auth = useAuth();
+  const isAdmin = auth.user?.isAdmin === true;
   const qc = useQueryClient();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -54,6 +59,7 @@ export function SeriesPage() {
     <div className="p-6 max-w-3xl mx-auto w-full">
       <h1 className="text-2xl font-semibold mb-6">Serien</h1>
 
+      {isAdmin && (
       <section className="bg-ink-800 ring-1 ring-ink-700 rounded-lg p-4 mb-6">
         <h2 className="text-lg font-semibold mb-3">Neue Serie anlegen</h2>
         <div className="flex flex-col gap-3">
@@ -82,6 +88,7 @@ export function SeriesPage() {
           )}
         </div>
       </section>
+      )}
 
       <section>
         <h2 className="text-lg font-semibold mb-3">Vorhandene Serien</h2>
@@ -138,21 +145,25 @@ export function SeriesPage() {
                       {s.bookCount} {s.bookCount === 1 ? 'Hörbuch' : 'Hörbücher'}
                     </div>
                   </div>
-                  <button
-                    onClick={() => beginEdit(s)}
-                    className="px-3 py-1.5 rounded bg-ink-700 hover:bg-ink-600 text-sm"
-                  >
-                    Bearbeiten
-                  </button>
-                  <button
-                    onClick={() => {
-                      if (confirm(`Serie "${s.name}" wirklich entfernen? Zugeordnete Hörbücher bleiben erhalten.`))
-                        deleteMutation.mutate(s.id);
-                    }}
-                    className="px-3 py-1.5 rounded bg-ink-700 hover:bg-red-600 text-sm"
-                  >
-                    Löschen
-                  </button>
+                  {isAdmin && (
+                    <>
+                      <button
+                        onClick={() => beginEdit(s)}
+                        className="px-3 py-1.5 rounded bg-ink-700 hover:bg-ink-600 text-sm"
+                      >
+                        Bearbeiten
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (confirm(`Serie "${s.name}" wirklich entfernen? Zugeordnete Hörbücher bleiben erhalten.`))
+                            deleteMutation.mutate(s.id);
+                        }}
+                        className="px-3 py-1.5 rounded bg-ink-700 hover:bg-red-600 text-sm"
+                      >
+                        Löschen
+                      </button>
+                    </>
+                  )}
                 </div>
               )}
             </li>
