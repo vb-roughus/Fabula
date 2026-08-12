@@ -125,6 +125,13 @@ fun BookScreen(
     var seriesList by remember { mutableStateOf<List<SeriesSummaryDto>>(emptyList()) }
     val seriesRevision by repository.seriesRevision.collectAsState()
     var hasAutoScrolled by remember(bookId) { mutableStateOf(false) }
+    // True once the server copy has arrived -- or the attempt has finished
+    // without one, which is the normal offline case. `book` is filled in twice:
+    // first from the cached manifest, then from the server. The manifest's
+    // progress is only as fresh as the last online visit to this screen (and is
+    // absent entirely for a book downloaded before it was ever started), so the
+    // one-shots below must not spend themselves on that first value.
+    var resumeSettled by remember(bookId) { mutableStateOf(false) }
     // Chapter page-flip intro: play once per book open, landing on the resume
     // chapter. `introHandled` is saveable so it doesn't replay after process
     // death / restore; `showFlipIntro` drives the visible overlay.
@@ -199,6 +206,7 @@ fun BookScreen(
         try {
             val api = repository.apiOrNull() ?: run {
                 if (book == null) error = "Kein Server konfiguriert."
+                resumeSettled = true
                 return@LaunchedEffect
             }
             val fresh = api.getBook(bookId)
@@ -211,6 +219,9 @@ fun BookScreen(
             // Offline with a cached copy is a normal state, not an error.
             if (book == null) error = t.message
         }
+        // Either the fresh copy is in or there won't be one; the resume
+        // position is now as good as it gets.
+        resumeSettled = true
     }
 
     // Pending entries are appended to whatever the server returns, so one
@@ -264,10 +275,14 @@ fun BookScreen(
     // Auto-scroll the chapter list to wherever playback left off (or where it
     // is right now if this book is the active one). Runs once per book id;
     // re-keys when bookId changes via the `remember(bookId)` above.
-    LaunchedEffect(book?.id, bookmarks.size, resumeIndex) {
+    LaunchedEffect(book?.id, bookmarks.size, resumeIndex, resumeSettled) {
         if (hasAutoScrolled) return@LaunchedEffect
         val current = book ?: return@LaunchedEffect
         if (current.chapters.isEmpty()) return@LaunchedEffect
+        // "Nothing to resume yet" is not "nothing to resume". Returning without
+        // setting the flag leaves this armed for the fresh copy; spending it on
+        // the cached manifest is what stopped the list scrolling at all.
+        if (!resumeSettled) return@LaunchedEffect
 
         val chapterIdx = resumeIndex
         if (chapterIdx == null || chapterIdx <= 0) {
@@ -292,9 +307,12 @@ fun BookScreen(
     // Kick off the chapter page-flip intro once the book has loaded. It lands on
     // the same chapter the list scrolls to and the row highlights -- a flip that
     // stopped somewhere else would read as a bug.
-    LaunchedEffect(book?.id, flipIntroEnabled) {
+    LaunchedEffect(book?.id, flipIntroEnabled, resumeIndex, resumeSettled) {
         if (introHandled) return@LaunchedEffect
         val current = book ?: return@LaunchedEffect
+        // Same reason as the auto-scroll: landing the flip on the cached
+        // manifest's idea of the position would put it on chapter one.
+        if (!resumeSettled) return@LaunchedEffect
         introHandled = true
         if (!flipIntroEnabled || current.chapters.isEmpty()) return@LaunchedEffect
 
