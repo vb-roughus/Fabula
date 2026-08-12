@@ -144,10 +144,41 @@ fun BookScreen(
     val downloadState = downloadStates[bookId]
     val downloadedFileIds by offlineStore.downloadedFileIds.collectAsState()
     val isAdmin by repository.isAdmin.collectAsState(initial = false)
+    val progressStore = app.progressStore
+    val progressRevision by progressStore.revision.collectAsState()
     val uploadSyncer = app.uploadSyncer
     val pendingUploads = app.pendingUploads
     var cancelDownloadConfirmOpen by remember { mutableStateOf(false) }
     var deleteDownloadConfirmOpen by remember { mutableStateOf(false) }
+
+    // local() is a plain read, not a flow -- keying the remember on the store's
+    // revision is what makes this pick up a progress write.
+    val localProgress = remember(bookId, progressRevision) { progressStore.local(bookId) }
+
+    // Where playback would continue. Prefers an unsynced local entry over the
+    // server value -- the same rule loadBook applies -- so the scroll, the
+    // flip intro and the chapter highlight all point at the position that will
+    // actually be resumed.
+    // Remembered rather than recomputed: playerState ticks several times a
+    // second while playing, and scanning the chapter list parses a TimeSpan per
+    // entry.
+    val activeBookId = playerState.book?.id
+    val activeChapter = playerState.currentChapter?.index
+    val resumeIndex: Int? = remember(book, localProgress, activeBookId, activeChapter) {
+        book?.let { b ->
+            val stored = when {
+                localProgress != null && !localProgress.synced -> localProgress.positionSec
+                else -> b.progress?.let { parseTimeSpan(it.position) }
+                    ?: localProgress?.positionSec ?: 0.0
+            }
+            resumeChapterIndex(
+                book = b,
+                isActiveBook = activeBookId == b.id,
+                activeChapterIndex = activeChapter,
+                storedPositionSec = stored
+            )
+        }
+    }
 
     // Position the bookmark would be saved at: current playback position when
     // playing this book, otherwise the saved progress on the book itself
@@ -233,23 +264,13 @@ fun BookScreen(
     // Auto-scroll the chapter list to wherever playback left off (or where it
     // is right now if this book is the active one). Runs once per book id;
     // re-keys when bookId changes via the `remember(bookId)` above.
-    LaunchedEffect(book?.id, bookmarks.size, playerState.book?.id, playerState.currentChapter?.index) {
+    LaunchedEffect(book?.id, bookmarks.size, resumeIndex) {
         if (hasAutoScrolled) return@LaunchedEffect
         val current = book ?: return@LaunchedEffect
         if (current.chapters.isEmpty()) return@LaunchedEffect
 
-        val activeIdx: Int? = if (playerState.book?.id == current.id) {
-            playerState.currentChapter?.index
-        } else {
-            val pos = current.progress?.let { parseTimeSpan(it.position) } ?: 0.0
-            if (pos > 1.0) {
-                current.chapters.indexOfFirst { c ->
-                    pos >= parseTimeSpan(c.start) && pos < parseTimeSpan(c.end)
-                }.takeIf { it >= 0 }
-            } else null
-        }
-
-        if (activeIdx == null || activeIdx <= 0) {
+        val chapterIdx = resumeIndex
+        if (chapterIdx == null || chapterIdx <= 0) {
             hasAutoScrolled = true
             return@LaunchedEffect
         }
@@ -262,33 +283,22 @@ fun BookScreen(
         if (!current.description.isNullOrBlank()) target += 1
         if (bookmarks.isNotEmpty()) target += 1
         target += 1  // chapter header
-        target += activeIdx
+        target += chapterIdx
 
         listState.scrollToItem(target)
         hasAutoScrolled = true
     }
 
-    // Kick off the chapter page-flip intro once the book has loaded. Compute
-    // the resume chapter the same way the auto-scroll does: the active player
-    // chapter when this book is playing, otherwise the chapter at the saved
-    // progress position (else the first chapter).
+    // Kick off the chapter page-flip intro once the book has loaded. It lands on
+    // the same chapter the list scrolls to and the row highlights -- a flip that
+    // stopped somewhere else would read as a bug.
     LaunchedEffect(book?.id, flipIntroEnabled) {
         if (introHandled) return@LaunchedEffect
         val current = book ?: return@LaunchedEffect
         introHandled = true
         if (!flipIntroEnabled || current.chapters.isEmpty()) return@LaunchedEffect
 
-        val activeIdx: Int? = if (playerState.book?.id == current.id) {
-            playerState.currentChapter?.index
-        } else {
-            val pos = current.progress?.let { parseTimeSpan(it.position) } ?: 0.0
-            if (pos > 1.0) {
-                current.chapters.indexOfFirst { c ->
-                    pos >= parseTimeSpan(c.start) && pos < parseTimeSpan(c.end)
-                }.takeIf { it >= 0 }
-            } else null
-        }
-        flipTargetIndex = (activeIdx ?: 0).coerceIn(0, current.chapters.lastIndex)
+        flipTargetIndex = (resumeIndex ?: 0).coerceIn(0, current.chapters.lastIndex)
         showFlipIntro = true
     }
 
@@ -478,7 +488,7 @@ fun BookScreen(
                     repository = repository,
                     isCurrent = playerState.book?.id == b.id,
                     isPlaying = playerState.isPlaying,
-                    currentChapterIndex = playerState.currentChapter?.index,
+                    resumeChapterIndex = resumeIndex,
                     bookmarks = bookmarks,
                     highlights = highlights,
                     downloadState = downloadState,
@@ -863,7 +873,12 @@ private fun BookContent(
     repository: FabulaRepository,
     isCurrent: Boolean,
     isPlaying: Boolean,
-    currentChapterIndex: Int?,
+    /**
+     * Chapter playback would continue at -- the live one while this book plays,
+     * otherwise the one at the stored progress. Null when the book hasn't been
+     * started. Marking it does not require loading the book into the player.
+     */
+    resumeChapterIndex: Int?,
     bookmarks: List<BookmarkDto>,
     highlights: List<HighlightDto>,
     downloadState: BookDownloadState?,
@@ -1056,7 +1071,7 @@ private fun BookContent(
             items(items = book.chapters, key = { "chapter-${it.index}" }) { chapter ->
                 ChapterRow(
                     chapter = chapter,
-                    isActive = isCurrent && currentChapterIndex == chapter.index,
+                    isActive = chapter.index == resumeChapterIndex,
                     hasHighlight = chapterHasHighlight(chapter, highlights),
                     isOffline = offlineFlags.offline.getOrElse(chapter.index) { false },
                     isDownloading = offlineFlags.loading.getOrElse(chapter.index) { false },
