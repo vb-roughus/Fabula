@@ -1,0 +1,76 @@
+# Compiles every part of the project on pull requests, so a build break is
+# caught before it reaches main.
+#
+# The release workflows only run after a merge, which meant a compile error was
+# found once the branch was already merged and had to be fixed forward. These
+# jobs deliberately need no secrets: the Android app is built as a debug variant
+# (the debug signing config needs no keystore), and nothing is published.
+
+name: CI
+
+on:
+  pull_request:
+    paths:
+      - "android/**"
+      - "server/**"
+      - "web/**"
+      - ".github/workflows/ci.yml"
+  workflow_dispatch:
+
+# Superseded pushes to the same branch can be dropped -- only the newest commit
+# matters for a merge decision.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    name: Android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Compile app
+        working-directory: android
+        run: ./gradlew :app:assembleDebug --no-daemon
+
+  server:
+    name: Server
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Build solution
+        run: dotnet build server/Fabula.slnx --configuration Release
+
+  web:
+    name: Web UI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        working-directory: web
+        run: npm ci
+
+      # `npm run build` is `tsc -b && vite build`, so this type-checks too.
+      - name: Build
+        working-directory: web
+        run: npm run build
