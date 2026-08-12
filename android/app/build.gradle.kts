@@ -97,6 +97,8 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.okhttp.logging)
 
+    testImplementation(libs.junit)
+
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
 }

@@ -19,13 +19,21 @@ fun parseTimeSpan(ts: String?): Double {
     return days * 86400.0 + h * 3600.0 + m * 60.0 + s
 }
 
-/** Formats seconds back to a .NET TimeSpan literal. */
+/**
+ * Formats seconds back to a .NET TimeSpan literal.
+ *
+ * Locale.ROOT is essential, not tidiness: this string goes on the wire, and the
+ * default locale decides the decimal separator. On a comma locale (de-DE, fr,
+ * …) the result would be "00:01:30,500", which the server cannot parse as a
+ * TimeSpan -- so every position sent from such a device would be rejected.
+ * Swiss German happens to use a period, which is why this went unnoticed.
+ */
 fun toTimeSpanString(seconds: Double): String {
     val total = seconds.coerceAtLeast(0.0)
     val h = (total / 3600.0).toInt()
     val m = ((total % 3600.0) / 60.0).toInt()
     val s = total - h * 3600 - m * 60
-    return "%02d:%02d:%06.3f".format(h, m, s)
+    return String.format(java.util.Locale.ROOT, "%02d:%02d:%06.3f", h, m, s)
 }
 
 fun formatClock(seconds: Double): String {

@@ -450,15 +450,7 @@ class DownloadManager(
             caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
     }
 
-    /**
-     * Byte size when the server reported it for *every* file, otherwise
-     * seconds of audio -- both are just weights, so the percentage works out
-     * either way. Requiring all sizes avoids a skewed total when only some
-     * tracks carry a size (older server, partially rescanned library).
-     */
-    private fun weightOf(files: List<AudioFileDto>): Long =
-        if (files.isNotEmpty() && files.all { it.sizeBytes > 0 }) files.sumOf { it.sizeBytes }
-        else files.sumOf { parseTimeSpan(it.duration).toLong() }
+    private fun weightOf(files: List<AudioFileDto>): Long = downloadWeightOf(files)
 
     private fun update(bookId: Int, transform: (BookDownloadState?) -> BookDownloadState?) {
         val current = _states.value
