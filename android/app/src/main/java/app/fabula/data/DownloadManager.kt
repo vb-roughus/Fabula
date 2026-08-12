@@ -146,6 +146,27 @@ class DownloadManager(
         ensureWorker()
     }
 
+    /**
+     * Queues several books by id, fetching each detail first because the series
+     * listing carries no file list. Runs on the manager's own scope so the
+     * caller doesn't have to wait, and skips books already complete or queued.
+     *
+     * Failures are per book: one unreachable detail must not abandon the rest.
+     */
+    fun enqueueBooks(bookIds: List<Int>) {
+        if (bookIds.isEmpty()) return
+        scope.launch {
+            val api = repository.apiOrNull() ?: return@launch
+            for (id in bookIds) {
+                if (_states.value[id]?.status == DownloadStatus.Complete) continue
+                val book = runCatching { api.getBook(id) }
+                    .onFailure { logStore.w("Download", "Detail buch=$id nicht abrufbar: ${it.message}") }
+                    .getOrNull() ?: continue
+                enqueue(book)
+            }
+        }
+    }
+
     fun cancel(bookId: Int) {
         synchronized(lock) { queue.removeAll { it.id == bookId } }
         val wasActive = _states.value[bookId]?.active == true

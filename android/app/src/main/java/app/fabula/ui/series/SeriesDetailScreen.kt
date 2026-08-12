@@ -16,8 +16,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -30,6 +33,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -40,12 +44,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.fabula.data.FabulaRepository
+import app.fabula.FabulaApp
 import app.fabula.data.SeriesBookDto
 import app.fabula.data.SeriesDetailDto
 import app.fabula.ui.LocalContentBottomInset
+import app.fabula.ui.DownloadBadge
+import app.fabula.ui.DownloadBadgeState
+import app.fabula.ui.rememberDownloadBadges
 import coil3.compose.AsyncImage
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -56,6 +65,12 @@ fun SeriesDetailScreen(
     onBack: () -> Unit,
     onBookClick: (Int) -> Unit
 ) {
+    val app = LocalContext.current.applicationContext as FabulaApp
+    val downloads = app.downloadManager
+    val downloadStates by downloads.states.collectAsState()
+    val downloadedBooks by app.offlineStore.downloadedBooks.collectAsState()
+    val badgeFor = rememberDownloadBadges()
+
     var series by remember { mutableStateOf<SeriesDetailDto?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var isRefreshing by remember { mutableStateOf(false) }
@@ -108,6 +123,17 @@ fun SeriesDetailScreen(
                         bottom = LocalContentBottomInset.current.calculateBottomPadding()
                     )
                 ) {
+                    item("series-download") {
+                        val books = series!!.books
+                        val complete = books.count { downloadedBooks[it.id] == true }
+                        val busy = books.any { downloadStates[it.id]?.active == true }
+                        SeriesDownloadRow(
+                            total = books.size,
+                            complete = complete,
+                            busy = busy,
+                            onDownloadAll = { downloads.enqueueBooks(books.map { it.id }) }
+                        )
+                    }
                     series!!.description?.takeIf { it.isNotBlank() }?.let { desc ->
                         item {
                             Text(
@@ -119,7 +145,12 @@ fun SeriesDetailScreen(
                         }
                     }
                     items(items = series!!.books, key = { it.id }) { book ->
-                        SeriesBookRow(book = book, repository = repository, onClick = { onBookClick(book.id) })
+                        SeriesBookRow(
+                            book = book,
+                            repository = repository,
+                            badge = badgeFor(book.id),
+                            onClick = { onBookClick(book.id) }
+                        )
                     }
                     item { Spacer(Modifier.height(16.dp)) }
                 }
@@ -133,6 +164,7 @@ fun SeriesDetailScreen(
 private fun SeriesBookRow(
     book: SeriesBookDto,
     repository: FabulaRepository,
+    badge: DownloadBadgeState?,
     onClick: () -> Unit
 ) {
     Row(
@@ -154,6 +186,12 @@ private fun SeriesBookRow(
                     contentDescription = book.title,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.size(64.dp)
+                )
+            }
+            if (badge != null) {
+                DownloadBadge(
+                    state = badge,
+                    modifier = Modifier.align(Alignment.TopStart).padding(3.dp)
                 )
             }
         }
@@ -220,5 +258,59 @@ private fun parseHmsToSeconds(value: String): Double? {
         }
     } catch (_: NumberFormatException) {
         null
+    }
+}
+
+/**
+ * Header action for downloading a whole series.
+ *
+ * The count is what makes it useful: with a long series you want to see how far
+ * along you are, not just a button. Books already complete are skipped when
+ * queueing, so tapping it again only picks up what's missing.
+ */
+@Composable
+private fun SeriesDownloadRow(
+    total: Int,
+    complete: Int,
+    busy: Boolean,
+    onDownloadAll: () -> Unit
+) {
+    if (total == 0) return
+    val allDone = complete == total
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                if (allDone) "Serie ist offline verfügbar" else "Offline verfügbar",
+                style = MaterialTheme.typography.bodyLarge
+            )
+            Text(
+                "$complete von $total Hörbüchern",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.outline
+            )
+        }
+        if (!allDone) {
+            Button(onClick = onDownloadAll, enabled = !busy) {
+                Icon(
+                    Icons.Filled.Download,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(if (busy) "Lädt…" else "Alle laden")
+            }
+        } else {
+            Icon(
+                Icons.Filled.DownloadDone,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary
+            )
+        }
     }
 }
