@@ -505,6 +505,12 @@ fun BookScreen(
                             }
                         }
                     },
+                    // Same dialog as the app bar entry, so the note can be
+                    // filled in before saving.
+                    onAddBookmark = {
+                        bookmarkNote = ""
+                        addBookmarkOpen = true
+                    },
                     onChapterClick = { chapter ->
                         scope.launch {
                             if (playerState.book?.id != b.id) player.loadBook(b)
@@ -512,6 +518,15 @@ fun BookScreen(
                             player.play()
                             onPlaybackStarted()
                         }
+                    },
+                    onChapterBookmark = { chapter ->
+                        // Queued like every other bookmark, so it survives
+                        // being offline.
+                        uploadSyncer.createBookmark(
+                            bookId = b.id,
+                            position = chapter.start,
+                            note = chapter.title.takeIf { it.isNotBlank() }
+                        )
                     },
                     onBookmarkClick = { bookmark ->
                         scope.launch {
@@ -854,7 +869,9 @@ private fun BookContent(
     onDownloadClick: () -> Unit,
     listState: androidx.compose.foundation.lazy.LazyListState,
     onPlay: () -> Unit,
+    onAddBookmark: () -> Unit,
     onChapterClick: (ChapterDto) -> Unit,
+    onChapterBookmark: (ChapterDto) -> Unit,
     onBookmarkClick: (BookmarkDto) -> Unit,
     onBookmarkDelete: (BookmarkDto) -> Unit
 ) {
@@ -979,7 +996,8 @@ private fun BookContent(
                 onPlay = onPlay,
                 isPlaying = isCurrent && isPlaying,
                 downloadState = downloadState,
-                onDownloadClick = onDownloadClick
+                onDownloadClick = onDownloadClick,
+                onAddBookmark = onAddBookmark
             )
         }
 
@@ -1042,7 +1060,8 @@ private fun BookContent(
                     isDownloading = offlineFlags.loading.getOrElse(chapter.index) { false },
                     downloadProgress = if (offlineFlags.loading.getOrElse(chapter.index) { false })
                         downloadState?.currentFileProgress else null,
-                    onClick = { onChapterClick(chapter) }
+                    onClick = { onChapterClick(chapter) },
+                    onBookmarkHere = { onChapterBookmark(chapter) }
                 )
             }
         }
@@ -1186,7 +1205,8 @@ private fun ActionRow(
     onPlay: () -> Unit,
     isPlaying: Boolean,
     downloadState: BookDownloadState?,
-    onDownloadClick: () -> Unit
+    onDownloadClick: () -> Unit,
+    onAddBookmark: () -> Unit
 ) {
     // Same reasoning as the chapter rows: seeded so an already-downloaded book
     // doesn't celebrate on open, and saveable because this row sits in a
@@ -1205,10 +1225,10 @@ private fun ActionRow(
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        IconButton(onClick = { /* bookmark placeholder */ }) {
+        IconButton(onClick = onAddBookmark) {
             Icon(
                 Icons.Filled.BookmarkBorder,
-                contentDescription = "Lesezeichen",
+                contentDescription = "Lesezeichen setzen",
                 tint = MaterialTheme.colorScheme.outline,
                 modifier = Modifier.size(26.dp)
             )
@@ -1265,14 +1285,8 @@ private fun ActionRow(
                 )
             }
         }
-        IconButton(onClick = { /* more placeholder */ }) {
-            Icon(
-                Icons.Filled.MoreHoriz,
-                contentDescription = "Mehr",
-                tint = MaterialTheme.colorScheme.outline,
-                modifier = Modifier.size(26.dp)
-            )
-        }
+        // The former second "Mehr" button here duplicated the app bar's
+        // overflow menu and did nothing; removed rather than wired twice.
 
         Spacer(Modifier.weight(1f))
 
@@ -1303,8 +1317,10 @@ private fun ChapterRow(
     isDownloading: Boolean,
     /** 0..1 for this chapter's track, or null while the size is unknown. */
     downloadProgress: Float?,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onBookmarkHere: () -> Unit
 ) {
+    var menuOpen by remember { mutableStateOf(false) }
     val chapterDurationSec = parseTimeSpan(chapter.end) - parseTimeSpan(chapter.start)
 
     // Seeded with isOffline at first composition: a chapter that was already
@@ -1388,12 +1404,32 @@ private fun ChapterRow(
                 modifier = Modifier.size(20.dp)
             )
         }
-        IconButton(onClick = { /* chapter menu placeholder */ }) {
-            Icon(
-                Icons.Filled.MoreHoriz,
-                contentDescription = "Mehr",
-                tint = MaterialTheme.colorScheme.outline
-            )
+        Box {
+            IconButton(onClick = { menuOpen = true }) {
+                Icon(
+                    Icons.Filled.MoreHoriz,
+                    contentDescription = "Mehr",
+                    tint = MaterialTheme.colorScheme.outline
+                )
+            }
+            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                DropdownMenuItem(
+                    text = { Text("Ab hier abspielen") },
+                    leadingIcon = { Icon(Icons.Filled.PlayArrow, contentDescription = null) },
+                    onClick = {
+                        menuOpen = false
+                        onClick()
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("Lesezeichen hier setzen") },
+                    leadingIcon = { Icon(Icons.Filled.BookmarkBorder, contentDescription = null) },
+                    onClick = {
+                        menuOpen = false
+                        onBookmarkHere()
+                    }
+                )
+            }
         }
     }
 }
