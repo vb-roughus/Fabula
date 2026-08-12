@@ -42,9 +42,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import app.fabula.FabulaApp
 import app.fabula.data.BookDetailDto
 import app.fabula.data.BookmarkDto
 import app.fabula.data.FabulaRepository
@@ -70,6 +72,7 @@ fun BookmarkManagerSheet(
     onDismiss: () -> Unit,
     onPlayBookmark: (BookmarkDto) -> Unit
 ) {
+    val pendingUploads = (LocalContext.current.applicationContext as FabulaApp).pendingUploads
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     val bookmarksRevision by repository.bookmarksRevision.collectAsState()
@@ -78,10 +81,13 @@ fun BookmarkManagerSheet(
 
     LaunchedEffect(bookId, bookmarksRevision) {
         loading = true
-        runCatching {
-            val api = repository.apiOrNull() ?: return@runCatching
-            bookmarks = api.listBookmarks(bookId)
-        }
+        val server = runCatching {
+            val api = repository.apiOrNull() ?: return@runCatching emptyList()
+            api.listBookmarks(bookId)
+        }.getOrDefault(emptyList())
+        // Queued entries carry negative ids and are appended, so one created
+        // offline is manageable here too instead of being invisible.
+        bookmarks = server + pendingUploads.bookmarksFor(bookId).map { it.toDto() }
         loading = false
     }
 
@@ -144,11 +150,17 @@ fun BookmarkManagerSheet(
             onDismiss = { editing = null },
             onSave = { newNote ->
                 editing = null
-                scope.launch {
-                    runCatching {
-                        val api = repository.apiOrNull() ?: return@runCatching
-                        api.updateBookmark(current.id, UpdateBookmarkRequest(note = newNote))
-                        repository.bumpBookmarksRevision()
+                if (current.id < 0) {
+                    // No server row to PATCH yet -- edit the queued entry.
+                    pendingUploads.updateBookmarkNote(current.id, newNote)
+                    repository.bumpBookmarksRevision()
+                } else {
+                    scope.launch {
+                        runCatching {
+                            val api = repository.apiOrNull() ?: return@runCatching
+                            api.updateBookmark(current.id, UpdateBookmarkRequest(note = newNote))
+                            repository.bumpBookmarksRevision()
+                        }
                     }
                 }
             }
@@ -167,11 +179,16 @@ fun BookmarkManagerSheet(
             confirmButton = {
                 TextButton(onClick = {
                     deleting = null
-                    scope.launch {
-                        runCatching {
-                            val api = repository.apiOrNull() ?: return@runCatching
-                            api.deleteBookmark(current.id)
-                            repository.bumpBookmarksRevision()
+                    if (current.id < 0) {
+                        pendingUploads.removeBookmark(current.id)
+                        repository.bumpBookmarksRevision()
+                    } else {
+                        scope.launch {
+                            runCatching {
+                                val api = repository.apiOrNull() ?: return@runCatching
+                                api.deleteBookmark(current.id)
+                                repository.bumpBookmarksRevision()
+                            }
                         }
                     }
                 }) { Text("Löschen") }

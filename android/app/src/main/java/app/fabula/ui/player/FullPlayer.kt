@@ -74,7 +74,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -86,12 +85,12 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import app.fabula.data.CreateBookmarkRequest
-import app.fabula.data.CreateHighlightRequest
+import app.fabula.FabulaApp
 import app.fabula.data.FabulaRepository
 import app.fabula.data.HighlightDto
 import app.fabula.data.formatClock
@@ -99,7 +98,6 @@ import app.fabula.data.parseTimeSpan
 import app.fabula.data.toTimeSpanString
 import app.fabula.player.PlayerController
 import coil3.compose.AsyncImage
-import kotlinx.coroutines.launch
 
 private val SPEED_CHOICES = listOf(0.8f, 0.9f, 1.0f, 1.1f, 1.25f, 1.5f, 1.75f, 2.0f)
 
@@ -113,7 +111,7 @@ fun FullPlayer(
 ) {
     val state by player.state.collectAsState()
     val book = state.book ?: return
-    val scope = rememberCoroutineScope()
+    val uploadSyncer = (LocalContext.current.applicationContext as FabulaApp).uploadSyncer
     val sleepMinutes by repository.sleepTimerMinutes.collectAsState(initial = 30)
 
     var bookmarkManagerOpen by remember { mutableStateOf(false) }
@@ -199,26 +197,15 @@ fun FullPlayer(
     val playerFg = MaterialTheme.colorScheme.onBackground
     val playerMuted = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.65f)
 
+    // Queued rather than posted: recording can't fail, so the bookmark exists
+    // even with no connection and is handed over later.
     val onAddBookmark: () -> Unit = {
-        scope.launch {
-            val api = repository.apiOrNull() ?: return@launch
-            runCatching {
-                api.createBookmark(
-                    book.id,
-                    CreateBookmarkRequest(
-                        position = toTimeSpanString(state.positionInBook),
-                        note = null
-                    )
-                )
-                repository.bumpBookmarksRevision()
-                bookmarkSavedFlash = true
-            }.onFailure { t ->
-                repository.logFailure(
-                    "FullPlayer.createBookmark book=${book.id} pos=${state.positionInBook}",
-                    t
-                )
-            }
-        }
+        uploadSyncer.createBookmark(
+            bookId = book.id,
+            position = toTimeSpanString(state.positionInBook),
+            note = null
+        )
+        bookmarkSavedFlash = true
     }
 
     // First tap marks the start, second tap freezes the end and opens the
@@ -456,26 +443,13 @@ fun FullPlayer(
             onSave = { title, note ->
                 highlightDialogOpen = false
                 player.cancelHighlight()
-                scope.launch {
-                    val api = repository.apiOrNull() ?: return@launch
-                    runCatching {
-                        api.createHighlight(
-                            book.id,
-                            CreateHighlightRequest(
-                                start = toTimeSpanString(lo),
-                                end = toTimeSpanString(hi),
-                                title = title,
-                                note = note
-                            )
-                        )
-                        repository.bumpHighlightsRevision()
-                    }.onFailure { t ->
-                        repository.logFailure(
-                            "FullPlayer.createHighlight book=${book.id} $lo..$hi",
-                            t
-                        )
-                    }
-                }
+                uploadSyncer.createHighlight(
+                    bookId = book.id,
+                    start = toTimeSpanString(lo),
+                    end = toTimeSpanString(hi),
+                    title = title,
+                    note = note
+                )
             }
         )
     }

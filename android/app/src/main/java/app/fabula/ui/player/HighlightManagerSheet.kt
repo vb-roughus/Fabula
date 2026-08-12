@@ -42,9 +42,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import app.fabula.FabulaApp
 import app.fabula.data.BookDetailDto
 import app.fabula.data.FabulaRepository
 import app.fabula.data.HighlightDto
@@ -67,6 +69,7 @@ fun HighlightManagerSheet(
     onDismiss: () -> Unit,
     onPlayHighlight: (HighlightDto) -> Unit
 ) {
+    val pendingUploads = (LocalContext.current.applicationContext as FabulaApp).pendingUploads
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     val highlightsRevision by repository.highlightsRevision.collectAsState()
@@ -75,10 +78,11 @@ fun HighlightManagerSheet(
 
     LaunchedEffect(bookId, highlightsRevision) {
         loading = true
-        runCatching {
-            val api = repository.apiOrNull() ?: return@runCatching
-            highlights = api.listHighlights(bookId)
-        }
+        val server = runCatching {
+            val api = repository.apiOrNull() ?: return@runCatching emptyList()
+            api.listHighlights(bookId)
+        }.getOrDefault(emptyList())
+        highlights = server + pendingUploads.highlightsFor(bookId).map { it.toDto() }
         loading = false
     }
 
@@ -141,11 +145,16 @@ fun HighlightManagerSheet(
             onDismiss = { editing = null },
             onSave = { newTitle, newNote ->
                 editing = null
-                scope.launch {
-                    runCatching {
-                        val api = repository.apiOrNull() ?: return@runCatching
-                        api.updateHighlight(current.id, UpdateHighlightRequest(title = newTitle, note = newNote))
-                        repository.bumpHighlightsRevision()
+                if (current.id < 0) {
+                    pendingUploads.updateHighlight(current.id, newTitle, newNote)
+                    repository.bumpHighlightsRevision()
+                } else {
+                    scope.launch {
+                        runCatching {
+                            val api = repository.apiOrNull() ?: return@runCatching
+                            api.updateHighlight(current.id, UpdateHighlightRequest(title = newTitle, note = newNote))
+                            repository.bumpHighlightsRevision()
+                        }
                     }
                 }
             }
@@ -164,11 +173,16 @@ fun HighlightManagerSheet(
             confirmButton = {
                 TextButton(onClick = {
                     deleting = null
-                    scope.launch {
-                        runCatching {
-                            val api = repository.apiOrNull() ?: return@runCatching
-                            api.deleteHighlight(current.id)
-                            repository.bumpHighlightsRevision()
+                    if (current.id < 0) {
+                        pendingUploads.removeHighlight(current.id)
+                        repository.bumpHighlightsRevision()
+                    } else {
+                        scope.launch {
+                            runCatching {
+                                val api = repository.apiOrNull() ?: return@runCatching
+                                api.deleteHighlight(current.id)
+                                repository.bumpHighlightsRevision()
+                            }
                         }
                     }
                 }) { Text("Löschen") }
