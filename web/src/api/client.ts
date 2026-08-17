@@ -13,6 +13,9 @@ import type {
   ScanStatus,
   SeriesDetail,
   SeriesSummary,
+  ServerUpdateCheck,
+  ServerUpdateInfo,
+  ServerUpdateStatus,
   SetupStatus,
   UserDetail
 } from './types';
@@ -221,7 +224,22 @@ export const api = {
       body: JSON.stringify({ repo, token })
     }),
 
-  checkUpdateNow: () => request<AppUpdateCheck>('/api/app/check', { method: 'POST' })
+  checkUpdateNow: () => request<AppUpdateCheck>('/api/app/check', { method: 'POST' }),
+
+  // --- server self-update (admin) ----------------------------------------
+  getServerUpdate: () => request<ServerUpdateInfo>('/api/server/update'),
+
+  checkServerUpdateNow: () =>
+    request<ServerUpdateCheck>('/api/server/update/check', { method: 'POST' }),
+
+  // Cheap enough to poll: no network on the server's side, just the recorded
+  // state re-judged against the clock.
+  getServerUpdateStatus: () => request<ServerUpdateStatus>('/api/server/update/status'),
+
+  // Returns as soon as the download starts. The server stops answering a few
+  // seconds later, when the installer takes it down.
+  startServerUpdate: () =>
+    request<ServerUpdateStatus>('/api/server/update', { method: 'POST' })
 };
 
 // `<audio src=...>` cannot send custom headers, so the JWT travels as a

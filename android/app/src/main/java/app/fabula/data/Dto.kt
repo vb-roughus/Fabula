@@ -261,3 +261,43 @@ data class AppUpdateCheckDto(
     val versionCode: Int? = null,
     val versionName: String? = null
 )
+
+// --- server self-update ----------------------------------------------------
+
+/**
+ * How far a server update has got. Sent as a name, not a number, and defaulted
+ * so an older server that doesn't know the field can't break deserialisation.
+ */
+@Serializable
+enum class ServerUpdateState {
+    Idle, Downloading, Verifying, Installing, Succeeded, Failed
+}
+
+@Serializable
+data class ServerUpdateStatusDto(
+    val state: ServerUpdateState = ServerUpdateState.Idle,
+    val fromVersion: String? = null,
+    val toVersion: String? = null,
+    val startedAtUtc: String? = null,
+    val handoffAtUtc: String? = null,
+    val message: String? = null
+)
+
+@Serializable
+data class ServerUpdateInfoDto(
+    /** False where there is no service to restart -- a dev run, or Linux. */
+    val supported: Boolean = false,
+    val unsupportedReason: String? = null,
+    val currentVersion: String? = null,
+    val latestVersion: String? = null,
+    val available: Boolean = false,
+    val status: ServerUpdateStatusDto = ServerUpdateStatusDto()
+)
+
+@Serializable
+data class ServerUpdateCheckDto(
+    val configured: Boolean,
+    val ok: Boolean,
+    val message: String,
+    val latestVersion: String? = null
+)

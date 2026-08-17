@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.DownloadForOffline
@@ -67,6 +68,10 @@ import app.fabula.data.AppUpdateCheckDto
 import app.fabula.data.AppUpdateConfigDto
 import app.fabula.data.FabulaRepository
 import app.fabula.data.formatFileSize
+import app.fabula.data.ServerUpdateCheckDto
+import app.fabula.data.ServerUpdateInfoDto
+import app.fabula.data.ServerUpdateState
+import app.fabula.data.ServerUpdateStatusDto
 import app.fabula.data.UpdateAppConfigRequest
 import app.fabula.ui.LocalContentBottomInset
 import java.io.File
@@ -79,6 +84,7 @@ private enum class SettingsSection(val title: String) {
     Playback("Wiedergabe"),
     Downloads("Downloads"),
     AppUpdate("App-Update"),
+    ServerUpdate("Server-Update"),
     Diagnostics("Diagnose")
 }
 
@@ -154,6 +160,11 @@ fun SettingsScreen(
                             "Konten, Rechte, Passwörter",
                             onManageUsers
                         )
+                        SettingsMenuItem(
+                            Icons.Filled.CloudSync,
+                            "Server-Update",
+                            "Serverversion prüfen & installieren"
+                        ) { section = SettingsSection.ServerUpdate }
                     }
                     SettingsMenuItem(Icons.Filled.SystemUpdate, "App-Update", "Version & Aktualisierung") {
                         section = SettingsSection.AppUpdate
@@ -167,6 +178,7 @@ fun SettingsScreen(
                 SettingsSection.Playback -> PlaybackSection(repository)
                 SettingsSection.Downloads -> DownloadsSection(repository, onOpenBook)
                 SettingsSection.AppUpdate -> AppUpdateSection(repository)
+                SettingsSection.ServerUpdate -> ServerUpdateSection(repository)
                 SettingsSection.Diagnostics -> DiagnoseSection(repository)
             }
         }
@@ -339,6 +351,220 @@ private fun PlaybackSection(repository: FabulaRepository) {
             }
         }
     ) { Text("Aufwach-Uhrzeit speichern") }
+}
+
+/**
+ * Server self-update.
+ *
+ * The awkward part is the middle: the server stops answering while the
+ * installer swaps its files, and the first failed request sets the offline
+ * latch, after which nothing reconnects on its own -- deliberately, but in the
+ * way here. So the wait loop reconnects through [FabulaRepository.probeServer],
+ * the only call allowed past the latch, and treats a failure as "restarting"
+ * rather than as lost connection.
+ */
+@Composable
+private fun ServerUpdateSection(repository: FabulaRepository) {
+    val scope = rememberCoroutineScope()
+    var info by remember { mutableStateOf<ServerUpdateInfoDto?>(null) }
+    var status by remember { mutableStateOf<ServerUpdateStatusDto?>(null) }
+    var loadError by remember { mutableStateOf<String?>(null) }
+    var checkMessage by remember { mutableStateOf<ServerUpdateCheckDto?>(null) }
+    var checking by remember { mutableStateOf(false) }
+    var restarting by remember { mutableStateOf(false) }
+    var confirmOpen by remember { mutableStateOf(false) }
+
+    suspend fun loadInfo() {
+        runCatching {
+            val api = repository.apiOrNull() ?: error("Kein Server konfiguriert.")
+            api.getServerUpdate()
+        }.fold(
+            onSuccess = { info = it; status = it.status; loadError = null },
+            onFailure = { t ->
+                if (t is kotlinx.coroutines.CancellationException) throw t
+                repository.logFailure("ServerUpdate.info", t)
+                loadError = t.message ?: "Abfrage fehlgeschlagen"
+            }
+        )
+    }
+
+    LaunchedEffect(Unit) { loadInfo() }
+
+    val state = status?.state ?: ServerUpdateState.Idle
+    val busy = state == ServerUpdateState.Downloading ||
+        state == ServerUpdateState.Verifying ||
+        state == ServerUpdateState.Installing
+
+    // Follows an update to its end. Bounded rather than endless: the server
+    // gives its own verdict after 15 minutes, and re-opening this page picks
+    // that up -- a loop running forever behind the user's back would not.
+    suspend fun followUntilSettled() {
+        repeat(150) {  // 150 x 2 s = 5 minutes
+            kotlinx.coroutines.delay(2000)
+            val fresh = runCatching {
+                val api = repository.apiOrNull() ?: return@runCatching null
+                api.getServerUpdateStatus()
+            }.getOrNull()
+
+            if (fresh == null) {
+                // Gone: this is the normal middle of a successful update. The
+                // probe is what clears the latch the failure just set.
+                restarting = true
+                runCatching { repository.probeServer() }
+                return@repeat
+            }
+
+            restarting = false
+            status = fresh
+            if (fresh.state == ServerUpdateState.Succeeded || fresh.state == ServerUpdateState.Failed) {
+                loadInfo()
+                return
+            }
+        }
+    }
+
+    Text(
+        "Installiert den Windows-Installer aus den Releases direkt auf dem Server.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.outline
+    )
+
+    Text(
+        "Installiert: ${info?.currentVersion ?: "unbekannt"}" +
+            (info?.latestVersion?.let { " · Verfügbar: $it" } ?: ""),
+        style = MaterialTheme.typography.bodyMedium
+    )
+
+    if (info?.available == true) {
+        Text(
+            "Update verfügbar.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.primary,
+            fontWeight = FontWeight.SemiBold
+        )
+    }
+
+    val notSupported = info?.let { !it.supported } == true
+    if (notSupported) {
+        Text(
+            info?.unsupportedReason ?: "Selbst-Update hier nicht möglich.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.outline
+        )
+    } else {
+        Text(
+            "Der Dienst wird dabei gestoppt und neu gestartet – laufende Wiedergabe " +
+                "bricht für etwa eine halbe Minute ab.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.outline
+        )
+        Button(
+            onClick = { confirmOpen = true },
+            enabled = !busy && info?.available == true,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(if (busy) "Aktualisiert…" else "Jetzt aktualisieren")
+        }
+        OutlinedButton(
+            onClick = {
+                scope.launch {
+                    checking = true
+                    checkMessage = runCatching {
+                        val api = repository.apiOrNull() ?: error("Kein Server konfiguriert.")
+                        api.checkServerUpdateNow()
+                    }.fold(
+                        onSuccess = { it },
+                        onFailure = { t ->
+                            if (t is kotlinx.coroutines.CancellationException) throw t
+                            repository.logFailure("ServerUpdate.check", t)
+                            ServerUpdateCheckDto(
+                                configured = true,
+                                ok = false,
+                                message = t.message ?: "Prüfung fehlgeschlagen"
+                            )
+                        }
+                    )
+                    loadInfo()
+                    checking = false
+                }
+            },
+            enabled = !checking && !busy,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(if (checking) "Suche…" else "Nach Update suchen")
+        }
+    }
+
+    if (restarting) {
+        Text(
+            "Server startet neu… Sobald er wieder antwortet, erscheint hier das Ergebnis.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.outline
+        )
+        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+    } else {
+        status?.message?.let { message ->
+            if (state != ServerUpdateState.Idle) {
+                Text(
+                    message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = when (state) {
+                        ServerUpdateState.Failed -> MaterialTheme.colorScheme.error
+                        ServerUpdateState.Succeeded -> MaterialTheme.colorScheme.primary
+                        else -> MaterialTheme.colorScheme.outline
+                    }
+                )
+            }
+        }
+    }
+
+    checkMessage?.let { c ->
+        Text(
+            c.message,
+            style = MaterialTheme.typography.bodySmall,
+            color = if (c.ok) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.error
+        )
+    }
+
+    loadError?.let {
+        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+    }
+
+    if (confirmOpen) {
+        AlertDialog(
+            onDismissRequest = { confirmOpen = false },
+            title = { Text("Server aktualisieren?") },
+            text = {
+                Text(
+                    "Auf Version ${info?.latestVersion ?: "?"} aktualisieren. Der Dienst wird " +
+                        "gestoppt und neu gestartet; laufende Wiedergabe bricht ab."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmOpen = false
+                    scope.launch {
+                        checkMessage = null
+                        runCatching {
+                            val api = repository.apiOrNull() ?: error("Kein Server konfiguriert.")
+                            api.startServerUpdate()
+                        }.fold(
+                            onSuccess = { status = it },
+                            onFailure = { t ->
+                                if (t is kotlinx.coroutines.CancellationException) throw t
+                                repository.logFailure("ServerUpdate.start", t)
+                                loadError = t.message ?: "Start fehlgeschlagen"
+                            }
+                        )
+                        if (loadError == null) followUntilSettled()
+                    }
+                }) { Text("Aktualisieren") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmOpen = false }) { Text("Abbrechen") }
+            }
+        )
+    }
 }
 
 private sealed interface UpdateUiState {

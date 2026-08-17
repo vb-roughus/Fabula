@@ -167,3 +167,39 @@ export interface AppUpdateCheck {
   versionCode: number | null;
   versionName: string | null;
 }
+
+// --- server self-update --------------------------------------------------
+
+export type ServerUpdateState =
+  | 'Idle'
+  | 'Downloading'
+  | 'Verifying'
+  | 'Installing'
+  | 'Succeeded'
+  | 'Failed';
+
+export interface ServerUpdateStatus {
+  state: ServerUpdateState;
+  fromVersion: string | null;
+  toVersion: string | null;
+  startedAtUtc: string | null;
+  handoffAtUtc: string | null;
+  message: string | null;
+}
+
+export interface ServerUpdateInfo {
+  /** False on a dev run or a non-Windows host: there is no service to restart. */
+  supported: boolean;
+  unsupportedReason: string | null;
+  currentVersion: string | null;
+  latestVersion: string | null;
+  available: boolean;
+  status: ServerUpdateStatus;
+}
+
+export interface ServerUpdateCheck {
+  configured: boolean;
+  ok: boolean;
+  message: string;
+  latestVersion: string | null;
+}

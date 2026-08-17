@@ -1,7 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import type { AppUpdateCheck, LibraryFolder, LibraryType, ScanStatus } from '../api/types';
+import type {
+  AppUpdateCheck,
+  LibraryFolder,
+  LibraryType,
+  ScanStatus,
+  ServerUpdateCheck,
+  ServerUpdateState
+} from '../api/types';
 import { LIBRARY_TYPE_LABEL } from '../api/types';
 import { useAuth } from '../auth/AuthContext';
 
@@ -84,6 +91,7 @@ export function SettingsPage() {
         </div>
       </section>
 
+      {auth.user?.isAdmin && <ServerUpdateSection />}
       {auth.user?.isAdmin && <AppUpdateSection />}
 
       <section>
@@ -198,6 +206,148 @@ function AppUpdateSection() {
           <div className="text-red-400 text-sm">{(checkMutation.error as Error).message}</div>
         )}
       </div>
+    </section>
+  );
+}
+
+/** States during which the server is busy and may vanish mid-request. */
+const SERVER_UPDATE_BUSY: ServerUpdateState[] = ['Downloading', 'Verifying', 'Installing'];
+const isBusy = (state: ServerUpdateState | undefined) =>
+  state !== undefined && SERVER_UPDATE_BUSY.includes(state);
+
+function ServerUpdateSection() {
+  const qc = useQueryClient();
+  const [check, setCheck] = useState<ServerUpdateCheck | null>(null);
+
+  const { data: info } = useQuery({
+    queryKey: ['server-update'],
+    queryFn: api.getServerUpdate
+  });
+
+  // Polled separately from the info above: this one costs the server nothing,
+  // while the info query may ask GitHub. `retry: false` matters -- react-query
+  // would otherwise back off exactly when we want to keep knocking.
+  const {
+    data: status,
+    isError: statusUnreachable
+  } = useQuery({
+    queryKey: ['server-update-status'],
+    queryFn: api.getServerUpdateStatus,
+    refetchInterval: (query) => (isBusy(query.state.data?.state) ? 2000 : false),
+    retry: false
+  });
+
+  const state = status?.state ?? info?.status.state;
+  const message = status?.message ?? info?.status.message;
+
+  // While the service restarts, every request fails. That is the expected
+  // middle of a successful update, not an error -- so it keeps polling and says
+  // so. react-query holds on to the last successful data, which is what keeps
+  // the interval alive through the outage.
+  const restarting = statusUnreachable && isBusy(state);
+
+  // Once it settles, the version in the info block is stale.
+  useEffect(() => {
+    if (state === 'Succeeded' || state === 'Failed') {
+      qc.invalidateQueries({ queryKey: ['server-update'] });
+    }
+  }, [state, qc]);
+
+  const startMutation = useMutation({
+    mutationFn: () => api.startServerUpdate(),
+    onSuccess: (s) => {
+      setCheck(null);
+      qc.setQueryData(['server-update-status'], s);
+    }
+  });
+
+  const checkMutation = useMutation({
+    mutationFn: () => api.checkServerUpdateNow(),
+    onSuccess: (r) => {
+      setCheck(r);
+      qc.invalidateQueries({ queryKey: ['server-update'] });
+    }
+  });
+
+  const busy = isBusy(state) || startMutation.isPending;
+
+  return (
+    <section className="bg-ink-800 ring-1 ring-ink-700 rounded-lg p-4 mb-6">
+      <h2 className="text-lg font-semibold mb-1">Server-Update</h2>
+      <p className="text-ink-400 text-sm mb-3">
+        Installiert den Windows-Installer aus den Releases direkt auf dem Server. Der Dienst wird
+        dabei gestoppt und neu gestartet – laufende Wiedergabe bricht für etwa eine halbe Minute ab.
+      </p>
+
+      <div className="text-ink-300 text-sm mb-3">
+        Installiert: {info?.currentVersion ?? 'unbekannt'}
+        {info?.latestVersion && <> · Verfügbar: {info.latestVersion}</>}
+        {info?.available && <span className="text-accent-400"> · Update verfügbar</span>}
+      </div>
+
+      {info && !info.supported ? (
+        <div className="text-ink-400 text-sm">{info.unsupportedReason}</div>
+      ) : (
+        <div className="flex flex-col gap-3">
+          <div className="flex gap-2">
+            <button
+              disabled={busy || !info?.available}
+              onClick={() => {
+                if (
+                  confirm(
+                    `Server auf Version ${info?.latestVersion} aktualisieren?\n\n` +
+                      'Der Dienst wird dabei gestoppt und neu gestartet. Laufende Wiedergabe bricht ab.'
+                  )
+                ) {
+                  startMutation.mutate();
+                }
+              }}
+              className="bg-accent-500 hover:bg-accent-600 disabled:bg-ink-600 disabled:text-ink-400 text-ink-900 font-medium px-4 py-2 rounded-lg"
+            >
+              {busy ? 'Aktualisiere...' : 'Jetzt aktualisieren'}
+            </button>
+            <button
+              disabled={checkMutation.isPending || busy}
+              onClick={() => checkMutation.mutate()}
+              className="px-4 py-2 rounded-lg bg-ink-700 hover:bg-ink-600 disabled:opacity-60 text-sm"
+            >
+              {checkMutation.isPending ? 'Suche...' : 'Nach Update suchen'}
+            </button>
+          </div>
+
+          {restarting ? (
+            <div className="text-ink-300 text-sm">
+              Server startet neu... Diese Seite meldet sich von selbst, sobald er wieder da ist.
+            </div>
+          ) : (
+            state &&
+            state !== 'Idle' && (
+              <div
+                className={`text-sm ${
+                  state === 'Failed'
+                    ? 'text-red-400'
+                    : state === 'Succeeded'
+                      ? 'text-accent-400'
+                      : 'text-ink-300'
+                }`}
+              >
+                {message ?? state}
+              </div>
+            )
+          )}
+
+          {check && !check.ok && <div className="text-red-400 text-sm">{check.message}</div>}
+          {check && check.ok && !info?.available && (
+            <div className="text-ink-300 text-sm">{check.message}</div>
+          )}
+          {startMutation.isError && (
+            <div className="text-red-400 text-sm">{(startMutation.error as Error).message}</div>
+          )}
+          {checkMutation.isError && (
+            <div className="text-red-400 text-sm">{(checkMutation.error as Error).message}</div>
+          )}
+        </div>
+      )}
     </section>
   );
 }
