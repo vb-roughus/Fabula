@@ -48,6 +48,14 @@ public class AppUpdateService
         _options = options.Value;
         _logger = logger;
         _repo = Blank(_options.UpdateRepo);
+        if (_repo is not null && !ServerUpdateLogic.IsValidRepo(_repo))
+        {
+            // Refuse rather than interpolate it into a URL. The settings file is
+            // the one input here an operator can get wrong by hand.
+            _logger.LogError(
+                "Configured UpdateRepo \"{Repo}\" is not of the form owner/name; ignoring it.", _repo);
+            _repo = null;
+        }
         _token = Blank(_options.UpdateGithubToken);
         _checkMinutes = Math.Max(1, _options.UpdateCheckMinutes);
 
@@ -74,6 +82,13 @@ public class AppUpdateService
         _http.DefaultRequestHeaders.Authorization =
             string.IsNullOrWhiteSpace(_token) ? null : new AuthenticationHeaderValue("Bearer", _token);
 
+    /// <summary>
+    /// Repo and token as currently configured. The server self-update shares
+    /// this one configuration rather than keeping a second copy -- two places to
+    /// set the same token is how they end up disagreeing.
+    /// </summary>
+    internal (string? Repo, string? Token) GitHubCredentials() => (_repo, _token);
+
     public AppUpdateSettings GetSettings() => new(
         Repo: _repo,
         HasToken: !string.IsNullOrWhiteSpace(_token),
@@ -88,10 +103,17 @@ public class AppUpdateService
     /// </summary>
     public async Task<AppUpdateSettings> UpdateSettingsAsync(string? repo, string? token, CancellationToken ct)
     {
+        // Validated here as well as at the endpoint: this value is interpolated
+        // into a GitHub URL, and since the server self-update downloads an
+        // executable from it, a bogus value is more than a cosmetic problem.
+        var cleaned = Blank(repo);
+        if (cleaned is not null && !ServerUpdateLogic.IsValidRepo(cleaned))
+            throw new ArgumentException($"Ungültiges Repository \"{cleaned}\" – erwartet wird \"owner/name\".", nameof(repo));
+
         await _gate.WaitAsync(ct);
         try
         {
-            _repo = Blank(repo);
+            _repo = cleaned;
             if (!string.IsNullOrWhiteSpace(token))
             {
                 _token = token.Trim();

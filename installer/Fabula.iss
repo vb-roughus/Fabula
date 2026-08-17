@@ -64,7 +64,16 @@ Source: "{#PublishDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
 ; Persistent data lives in %ProgramData%\Fabula. Installer creates it but
 ; never removes it on uninstall (uninstallneveruninstall) so the user
 ; doesn't lose their library or DB.
-Name: "{commonappdata}\{#AppName}"; Permissions: users-modify; Flags: uninsneveruninstall
+;
+; The top level deliberately does NOT grant users-modify, unlike the data and
+; log folders below it. The sensitive files live here -- fabula.settings.json
+; (GitHub repo + token) and secrets.json (the JWT signing key) -- and since the
+; server now downloads and executes an installer as SYSTEM based on the repo in
+; that settings file, a user who could rewrite it would gain SYSTEM. Restricting
+; the file alone would not help: write access to a folder is enough to delete a
+; file and put your own in its place. HardenDataPermissions in [Code] enforces
+; this on upgrades too, because Inno only ever grants permissions, never revokes.
+Name: "{commonappdata}\{#AppName}"; Flags: uninsneveruninstall
 Name: "{commonappdata}\{#AppName}\data"; Permissions: users-modify; Flags: uninsneveruninstall
 Name: "{commonappdata}\{#AppName}\data\covers"; Permissions: users-modify; Flags: uninsneveruninstall
 Name: "{commonappdata}\{#AppName}\logs"; Permissions: users-modify; Flags: uninsneveruninstall
@@ -201,12 +210,57 @@ begin
   SaveStringToFile(Dir + '\fabula.settings.json', Json, False);
 end;
 
+// Runs icacls, ignoring failures: a missing file (e.g. secrets.json before the
+// server's first start) is expected, and none of this is worth aborting an
+// install over.
+procedure Icacls(Args: String);
+var
+  ResultCode: Integer;
+begin
+  Exec(ExpandConstant('{sys}\icacls.exe'), Args, '', SW_HIDE,
+    ewWaitUntilTerminated, ResultCode);
+end;
+
+// Locks down %ProgramData%\Fabula so only SYSTEM and administrators can write
+// there. See the comment in [Dirs] for why this matters: the settings file
+// decides where the server fetches an installer it then runs as SYSTEM.
+//
+// Runs on every install, silent upgrades included -- the whole point is to undo
+// the users-modify grant that earlier versions of this installer applied, and
+// Inno's Permissions parameter only adds permissions, it never takes them away.
+//
+// Well-known SIDs rather than group names, because those are localised
+// ("Benutzer", "Administratoren") and would not match on a German system.
+procedure HardenDataPermissions;
+var
+  Root: String;
+begin
+  Root := ExpandConstant('{commonappdata}\{#AppName}');
+
+  // Replace the Users entry with read/execute on the folder itself. Not
+  // inheritable, so data\ and logs\ keep their own users-modify grants -- and
+  // the Start-menu "Datenordner" shortcut still opens for a normal user.
+  Icacls('"' + Root + '" /grant:r *S-1-5-32-545:(RX)');
+  Icacls('"' + Root + '" /remove:g *S-1-1-0');
+
+  // The two secrets: no inheritance, SYSTEM and administrators only.
+  Icacls('"' + Root + '\fabula.settings.json" /inheritance:r ' +
+         '/grant:r *S-1-5-18:(F) *S-1-5-32-544:(F)');
+  Icacls('"' + Root + '\secrets.json" /inheritance:r ' +
+         '/grant:r *S-1-5-18:(F) *S-1-5-32-544:(F)');
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssInstall then
     StopServiceQuiet
   else if CurStep = ssPostInstall then
+  begin
     WriteUpdateSettings;
+    // After WriteUpdateSettings, so a freshly written settings file is locked
+    // down in the same pass.
+    HardenDataPermissions;
+  end;
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
