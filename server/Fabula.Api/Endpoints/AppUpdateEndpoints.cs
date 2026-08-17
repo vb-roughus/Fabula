@@ -36,8 +36,18 @@ public static class AppUpdateEndpoints
 
         group.MapPut("/config", async (UpdateAppConfigRequest req, AppUpdateService updates, CancellationToken ct) =>
         {
-            var settings = await updates.UpdateSettingsAsync(req.Repo, req.Token, ct);
-            return Results.Ok(settings);
+            try
+            {
+                var settings = await updates.UpdateSettingsAsync(req.Repo, req.Token, ct);
+                return Results.Ok(settings);
+            }
+            catch (ArgumentException ex)
+            {
+                // A malformed repo is a client mistake, not a server fault --
+                // and it must not be stored, because the server self-update
+                // downloads an executable from whatever this points at.
+                return Results.BadRequest(new { error = ex.Message });
+            }
         }).RequireAuthorization("Admin");
 
         // Force an immediate GitHub check and report exactly what happened, so

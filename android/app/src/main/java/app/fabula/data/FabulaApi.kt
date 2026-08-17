@@ -149,6 +149,27 @@ interface FabulaApi {
     @POST("api/app/check")
     suspend fun checkUpdateNow(): AppUpdateCheckDto
 
+    /** Admin-only: the server's own version, the newest installer release, and
+     *  where a previous update attempt got to. `supported` is false where the
+     *  server can't restart itself (dev run, non-Windows). */
+    @GET("api/server/update")
+    suspend fun getServerUpdate(): ServerUpdateInfoDto
+
+    /** Admin-only: ask GitHub right now, bypassing the check interval. */
+    @POST("api/server/update/check")
+    suspend fun checkServerUpdateNow(): ServerUpdateCheckDto
+
+    /** Admin-only: state of the current or last attempt. Costs the server no
+     *  network, so it is the one to poll while it restarts. */
+    @GET("api/server/update/status")
+    suspend fun getServerUpdateStatus(): ServerUpdateStatusDto
+
+    /** Admin-only: start the update. Returns as soon as the download begins --
+     *  the server stops answering a few seconds later, when the installer takes
+     *  it down. A 400 means it refused (already current, nothing to install). */
+    @POST("api/server/update")
+    suspend fun startServerUpdate(): ServerUpdateStatusDto
+
     // --- auth -------------------------------------------------------------
 
     @GET("api/setup")

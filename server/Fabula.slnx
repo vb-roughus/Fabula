@@ -2,4 +2,5 @@
   <Project Path="Fabula.Api/Fabula.Api.csproj" />
   <Project Path="Fabula.Core/Fabula.Core.csproj" />
   <Project Path="Fabula.Data/Fabula.Data.csproj" />
+  <Project Path="Fabula.Tests/Fabula.Tests.csproj" />
 </Solution>

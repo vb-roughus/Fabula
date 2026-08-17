@@ -61,8 +61,11 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
-      - name: Build solution
-        run: dotnet build server/Fabula.slnx --configuration Release
+      # `dotnet test` builds the whole solution first, so this covers the
+      # compile check as well. The update logic it exercises -- which release to
+      # install, whether to trust the download -- fails quietly when wrong.
+      - name: Build solution and run tests
+        run: dotnet test server/Fabula.slnx --configuration Release
 
   web:
     name: Web UI

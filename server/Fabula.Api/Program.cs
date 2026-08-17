@@ -78,6 +78,7 @@ builder.Services.AddSingleton<IAudioMetadataReader, AtlAudioMetadataReader>();
 builder.Services.AddSingleton<ICoverStore, FileSystemCoverStore>();
 builder.Services.AddSingleton<ScanCoordinator>();
 builder.Services.AddSingleton<AppUpdateService>();
+builder.Services.AddSingleton<ServerUpdateService>();
 
 // Serialise enums as their string names so the web client can compare
 // against e.g. "Running" instead of the underlying numeric value.
@@ -136,6 +137,12 @@ using (var scope = app.Services.CreateScope())
     db.Database.Migrate();
 }
 
+// Resolved eagerly so it judges the outcome of a self-update on boot and logs
+// it. If we waited for the first request, an update that nobody watched would
+// leave no trace at all -- and the log is the fallback account when the admin
+// closed the browser while the service was down.
+app.Services.GetRequiredService<ServerUpdateService>();
+
 // Static files have to be wired up BEFORE the API endpoints and the
 // SPA fallback, otherwise index.html and the /assets/*.js bundles
 // never reach the browser.
@@ -159,6 +166,7 @@ app.MapProgressEndpoints();
 app.MapBookmarkEndpoints();
 app.MapHighlightEndpoints();
 app.MapAppUpdateEndpoints();
+app.MapServerUpdateEndpoints();
 
 app.MapFallbackToFile("index.html");
 
