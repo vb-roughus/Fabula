@@ -87,7 +87,7 @@ class FabulaApp : Application() {
         progressStore = ProgressStore(this, logStore)
         pendingUploads = PendingUploadStore(this, logStore)
         uploadSyncer = UploadSyncer(repository, pendingUploads, logStore, appScope).also { it.start() }
-        playerController = PlayerController(this, repository, progressStore, uploadSyncer)
+        playerController = PlayerController(this, repository, progressStore, uploadSyncer, offlineStore)
 
         // One handover attempt per cold start, plus one after each successful
         // manual reconnect. Never on a timer -- reconnecting is the user's call.

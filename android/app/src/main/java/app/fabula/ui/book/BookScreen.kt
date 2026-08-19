@@ -40,6 +40,7 @@ import androidx.compose.material.icons.outlined.RemoveDone
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -535,6 +536,24 @@ fun BookScreen(
                             }
                         }
                     },
+                    // Same as the play button, plus: at the end of the book,
+                    // carry on with the next one in the series. While this book
+                    // is already playing it only flips the mode -- the point is
+                    // that it can be applied without interrupting anything.
+                    onPlaySeries = {
+                        scope.launch {
+                            val isThisBook = playerState.book?.id == b.id
+                            if (isThisBook && playerState.isPlaying) {
+                                player.setSeriesMode(!playerState.seriesMode)
+                            } else {
+                                if (!isThisBook) player.loadBook(b)
+                                player.setSeriesMode(true)
+                                player.play()
+                                onPlaybackStarted()
+                            }
+                        }
+                    },
+                    seriesMode = playerState.seriesMode,
                     // Same dialog as the app bar entry, so the note can be
                     // filled in before saving.
                     onAddBookmark = {
@@ -904,6 +923,9 @@ private fun BookContent(
     onDownloadClick: () -> Unit,
     listState: androidx.compose.foundation.lazy.LazyListState,
     onPlay: () -> Unit,
+    /** Play/resume and keep going into the series, or switch that back off. */
+    onPlaySeries: () -> Unit,
+    seriesMode: Boolean,
     onAddBookmark: () -> Unit,
     onChapterClick: (ChapterDto) -> Unit,
     onChapterBookmark: (ChapterDto) -> Unit,
@@ -1030,6 +1052,8 @@ private fun BookContent(
             ActionRow(
                 onPlay = onPlay,
                 isPlaying = isCurrent && isPlaying,
+                onPlaySeries = if (book.seriesId != null) onPlaySeries else null,
+                seriesMode = seriesMode,
                 downloadState = downloadState,
                 onDownloadClick = onDownloadClick,
                 onAddBookmark = onAddBookmark
@@ -1185,6 +1209,9 @@ private fun formatDayHeader(date: java.time.LocalDate): String =
 private fun ActionRow(
     onPlay: () -> Unit,
     isPlaying: Boolean,
+    /** Null when the book is in no series -- then there is nothing to continue. */
+    onPlaySeries: (() -> Unit)?,
+    seriesMode: Boolean,
     downloadState: BookDownloadState?,
     onDownloadClick: () -> Unit,
     onAddBookmark: () -> Unit
@@ -1270,6 +1297,33 @@ private fun ActionRow(
         // overflow menu and did nothing; removed rather than wired twice.
 
         Spacer(Modifier.weight(1f))
+
+        if (onPlaySeries != null) {
+            // Outlined rather than filled, so the plain play button stays the
+            // obvious one and this reads as the variant it is. Filled while the
+            // mode is on, which doubles as the way to switch it back off.
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(
+                        if (seriesMode) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.surfaceVariant
+                    )
+                    .clickable(onClick = onPlaySeries),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Filled.PlaylistPlay,
+                    contentDescription = if (seriesMode) "Serie weiterhören aus"
+                        else "Serie hören – am Buchende weiter mit dem nächsten Band",
+                    tint = if (seriesMode) MaterialTheme.colorScheme.onPrimary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(26.dp)
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+        }
 
         Box(
             modifier = Modifier
