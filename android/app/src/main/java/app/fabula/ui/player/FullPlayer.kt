@@ -49,6 +49,7 @@ import androidx.compose.material.icons.filled.Replay30
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.BorderColor
+import androidx.compose.material.icons.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material.icons.outlined.Bedtime
@@ -296,6 +297,9 @@ fun FullPlayer(
             onToggleShower = { showerExpanded = !showerExpanded },
             pulseEnabled = pulseEnabled,
             onTogglePulse = { pulseEnabled = !pulseEnabled },
+            // Only offered where there is a series to continue into.
+            seriesMode = if (state.book?.seriesId != null) state.seriesMode else null,
+            onToggleSeriesMode = { player.setSeriesMode(!state.seriesMode) },
             sleepRemainingMs = state.sleepTimerRemainingMs,
             sleepMinutes = sleepMinutes,
             onStartSleep = { player.startSleepTimer(sleepMinutes * 60_000L) },
@@ -897,6 +901,9 @@ private fun PlayerUtilityRow(
     onToggleShower: () -> Unit,
     pulseEnabled: Boolean,
     onTogglePulse: () -> Unit,
+    /** Null when this book is in no series; then the toggle is hidden. */
+    seriesMode: Boolean?,
+    onToggleSeriesMode: () -> Unit,
     sleepRemainingMs: Long?,
     sleepMinutes: Int,
     onStartSleep: () -> Unit,
@@ -971,6 +978,22 @@ private fun PlayerUtilityRow(
                 tint = if (pulseEnabled) MaterialTheme.colorScheme.primary else playerFg.copy(alpha = 0.7f),
                 modifier = Modifier.size(20.dp)
             )
+        }
+
+        if (seriesMode != null) {
+            IconButton(
+                onClick = onToggleSeriesMode,
+                modifier = Modifier.size(40.dp)
+            ) {
+                Icon(
+                    Icons.Filled.PlaylistPlay,
+                    contentDescription = if (seriesMode) "Serie weiterhören aus"
+                        else "Serie hören – am Buchende weiter mit dem nächsten Band",
+                    tint = if (seriesMode) MaterialTheme.colorScheme.primary
+                        else playerFg.copy(alpha = 0.7f),
+                    modifier = Modifier.size(22.dp)
+                )
+            }
         }
 
         if (sleepRemainingMs != null) {

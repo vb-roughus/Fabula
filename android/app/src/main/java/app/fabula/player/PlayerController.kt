@@ -16,6 +16,7 @@ import app.fabula.data.BookDetailDto
 import app.fabula.data.ChapterDto
 import app.fabula.data.CreateBookmarkRequest
 import app.fabula.data.FabulaRepository
+import app.fabula.data.OfflineStore
 import app.fabula.data.ProgressStore
 import app.fabula.data.UploadSyncer
 import app.fabula.data.UpdateProgressRequest
@@ -49,6 +50,9 @@ data class PlayerUiState(
      *  true by Player.STATE_ENDED, flipped back to false when the user seeks
      *  more than a minute back from the end. */
     val finished: Boolean = false,
+    /** When on, the end of a book automatically continues with the next one in
+     *  its series. Shown in the UI as a toggle, so it is never hidden state. */
+    val seriesMode: Boolean = false,
     /** Remaining sleep timer in milliseconds. Null when the timer is off. */
     val sleepTimerRemainingMs: Long? = null,
     /** Configured shower boost in dB (0 = off). Persisted in DataStore. */
@@ -71,7 +75,8 @@ class PlayerController(
     private val context: Context,
     private val repository: FabulaRepository,
     private val progressStore: ProgressStore,
-    private val uploadSyncer: UploadSyncer
+    private val uploadSyncer: UploadSyncer,
+    private val offlineStore: OfflineStore
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var controller: MediaController? = null
@@ -133,6 +138,11 @@ class PlayerController(
         scope.launch {
             repository.showerBoostDb.collect { db ->
                 _state.value = _state.value.copy(showerBoostDb = db)
+            }
+        }
+        scope.launch {
+            repository.seriesModeEnabled.collect { on ->
+                _state.value = _state.value.copy(seriesMode = on)
             }
         }
         audioManager.registerAudioDeviceCallback(audioDeviceCallback, null)
@@ -232,13 +242,23 @@ class PlayerController(
         c.setMediaItems(items, startIndex, startOffsetMs)
         c.prepare()
 
+        // Session-scoped state has to survive swapping the book, otherwise
+        // series mode would forget itself the moment it did its job -- and a
+        // running sleep timer would lose its countdown while its job kept
+        // ticking. Only `highlightStartSec` is deliberately dropped: a capture
+        // in progress belongs to the book being left behind.
+        val carried = _state.value
         _state.value = PlayerUiState(
             book = book,
             isPlaying = false,
             positionInBook = startSec,
             durationInBook = parseTimeSpan(book.duration),
             currentChapter = chapterAt(book, startSec),
-            finished = savedFinished
+            finished = savedFinished,
+            seriesMode = carried.seriesMode,
+            sleepTimerRemainingMs = carried.sleepTimerRemainingMs,
+            showerBoostDb = carried.showerBoostDb,
+            showerSpeakerOnly = carried.showerSpeakerOnly
         )
     }
 
@@ -406,9 +426,88 @@ class PlayerController(
             // tick and persists it.
             if (playbackState == Player.STATE_ENDED) {
                 _state.value = _state.value.copy(finished = true)
+                if (_state.value.seriesMode) continueWithSeries()
             }
         }
     }
+
+    // --- series playback ---------------------------------------------------
+
+    /**
+     * Turns automatic continuation within a series on or off.
+     *
+     * Takes effect immediately and mid-playback: it only flips a flag, so
+     * nothing is interrupted and nothing has to be restarted.
+     */
+    fun setSeriesMode(enabled: Boolean) {
+        // Set locally first so the button responds at once rather than after
+        // DataStore has been round-tripped.
+        _state.value = _state.value.copy(seriesMode = enabled)
+        scope.launch { repository.setSeriesModeEnabled(enabled) }
+    }
+
+    /** Stops a second advance from starting while one is already under way. */
+    private var advancingSeries = false
+
+    /**
+     * Continues with the next unheard book of the series the finished book
+     * belongs to. Called from STATE_ENDED, so it must not block.
+     */
+    private fun continueWithSeries() {
+        if (advancingSeries) return
+        val finishedBook = _state.value.book ?: return
+        if (finishedBook.seriesId == null) return
+        advancingSeries = true
+        scope.launch {
+            try {
+                // Persist the book we are leaving before its state is replaced:
+                // the 4-second recorder would never see this final position.
+                recordProgress()
+                val next = nextUnheardInSeries(finishedBook) ?: return@launch
+                loadBook(next)
+                play()
+            } catch (c: kotlinx.coroutines.CancellationException) {
+                throw c
+            } catch (t: Throwable) {
+                repository.logFailure("Series.continue", t)
+            } finally {
+                advancingSeries = false
+            }
+        }
+    }
+
+    /**
+     * The next book of the series that hasn't been heard yet, or null at the
+     * end of the series. The skipping rule itself lives in SeriesContinuation.kt
+     * so it can be tested.
+     */
+    private suspend fun nextUnheardInSeries(current: BookDetailDto): BookDetailDto? {
+        val seriesId = current.seriesId ?: return null
+        for (id in idsAfter(seriesOrder(seriesId), current.id)) {
+            val candidate = bookDetail(id) ?: continue
+            if (!alreadyHeard(candidate, progressStore.local(id))) return candidate
+        }
+        return null
+    }
+
+    /**
+     * Book ids of a series in reading order. The server knows the whole series,
+     * including books that were never downloaded, so it is asked first; the
+     * downloaded manifests are the offline fallback.
+     */
+    private suspend fun seriesOrder(seriesId: Int): List<Int> {
+        runCatching {
+            val api = repository.apiOrNull() ?: return@runCatching null
+            api.getSeries(seriesId).books.map { it.id }
+        }.getOrNull()?.let { if (it.isNotEmpty()) return it }
+
+        val cached = offlineStore.downloadedBooks.value.keys.mapNotNull { offlineStore.cachedBook(it) }
+        return seriesOrderFromLibrary(cached, seriesId)
+    }
+
+    private suspend fun bookDetail(id: Int): BookDetailDto? =
+        runCatching { repository.apiOrNull()?.getBook(id) }.getOrNull()
+            ?: offlineStore.cachedBook(id)
 
     /**
      * Records the current position locally and asks the sync worker to hand it

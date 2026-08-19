@@ -93,6 +93,17 @@ class ServerPreferences(private val context: Context) {
         context.dataStore.edit { it[CHAPTER_FLIP_INTRO_KEY] = enabled }
     }
 
+    /** When on, finishing a book automatically continues with the next one in
+     *  its series. Persisted rather than kept in memory: a book runs for hours,
+     *  the process will be killed in between, and a mode that quietly forgot
+     *  itself would break the one promise it makes. Default: off. */
+    val seriesModeEnabled: Flow<Boolean> = context.dataStore.data
+        .map { it[SERIES_MODE_KEY] ?: false }
+
+    suspend fun setSeriesModeEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[SERIES_MODE_KEY] = enabled }
+    }
+
     /** When on, offline downloads only run on Wi-Fi/Ethernet and park
      *  themselves on mobile data. Default: on. */
     val downloadWifiOnly: Flow<Boolean> = context.dataStore.data
@@ -133,5 +144,6 @@ class ServerPreferences(private val context: Context) {
         private val CHAPTER_FLIP_INTRO_KEY = booleanPreferencesKey("chapter_flip_intro_enabled")
         private val DOWNLOAD_WIFI_ONLY_KEY = booleanPreferencesKey("download_wifi_only")
         private val IS_ADMIN_KEY = booleanPreferencesKey("is_admin")
+        private val SERIES_MODE_KEY = booleanPreferencesKey("series_mode_enabled")
     }
 }

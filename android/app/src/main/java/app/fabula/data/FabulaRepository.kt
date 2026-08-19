@@ -193,6 +193,11 @@ class FabulaRepository(
     val themeMode: Flow<String> = preferences.themeMode
     suspend fun setThemeMode(mode: String) = preferences.setThemeMode(mode)
     val chapterFlipIntroEnabled: Flow<Boolean> = preferences.chapterFlipIntroEnabled
+
+    /** When on, the end of a book continues with the next one in its series. */
+    val seriesModeEnabled: Flow<Boolean> = preferences.seriesModeEnabled
+
+    suspend fun setSeriesModeEnabled(enabled: Boolean) = preferences.setSeriesModeEnabled(enabled)
     suspend fun setChapterFlipIntroEnabled(enabled: Boolean) =
         preferences.setChapterFlipIntroEnabled(enabled)
     val downloadWifiOnly: Flow<Boolean> = preferences.downloadWifiOnly
