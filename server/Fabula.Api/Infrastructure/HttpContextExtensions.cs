@@ -14,6 +14,9 @@ public static class HttpContextExtensions
         return int.Parse(sub, CultureInfo.InvariantCulture);
     }
 
+    // Reads the same claim the Admin policy checks, which OnTokenValidated has
+    // already refreshed from the database -- so this is current, not whatever
+    // was true when the token was issued.
     public static bool IsAdmin(this HttpContext ctx) =>
-        ctx.User.FindFirstValue("admin") == "true";
+        ctx.User.FindFirstValue(TokenIdentity.AdminClaim) == "true";
 }

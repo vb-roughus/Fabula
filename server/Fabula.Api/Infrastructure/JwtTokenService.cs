@@ -18,7 +18,7 @@ public class JwtTokenService(IOptions<JwtOptions> options)
             new("username", user.Username)
         };
         if (user.IsAdmin)
-            claims.Add(new Claim("admin", "true"));
+            claims.Add(new Claim(TokenIdentity.AdminClaim, "true"));
 
         var key = new SymmetricSecurityKey(Convert.FromBase64String(_opts.SigningKey));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);

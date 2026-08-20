@@ -119,12 +119,48 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                     ctx.Token = token;
                 }
                 return Task.CompletedTask;
+            },
+
+            // A valid signature only proves the token was ours; it says nothing
+            // about whether the account still exists or still has the rights
+            // the token claims. Tokens live for 30 days and carry the admin
+            // flag, so without this a deleted user keeps reading and streaming
+            // and a demoted admin keeps administering until it expires.
+            //
+            // Costs one primary-key lookup per authenticated request, which is
+            // the price of the answer being current rather than up to a month
+            // old. Deliberately not cached: a revocation that takes effect
+            // "soon" is the thing we are fixing.
+            OnTokenValidated = async ctx =>
+            {
+                var id = TokenIdentity.SubjectId(ctx.Principal!);
+                if (id is null)
+                {
+                    ctx.Fail("Token ohne verwertbare Benutzerkennung.");
+                    return;
+                }
+
+                var db = ctx.HttpContext.RequestServices.GetRequiredService<FabulaDbContext>();
+                var account = await db.Users
+                    .AsNoTracking()
+                    .Where(u => u.Id == id.Value)
+                    .Select(u => new { u.IsAdmin })
+                    .FirstOrDefaultAsync(ctx.HttpContext.RequestAborted);
+
+                if (account is null)
+                {
+                    // 401, which both clients already handle as "log out".
+                    ctx.Fail("Benutzerkonto existiert nicht mehr.");
+                    return;
+                }
+
+                ctx.Principal = TokenIdentity.WithCurrentAdmin(ctx.Principal!, account.IsAdmin);
             }
         };
     });
 
 builder.Services.AddAuthorization(o =>
-    o.AddPolicy("Admin", p => p.RequireAuthenticatedUser().RequireClaim("admin", "true")));
+    o.AddPolicy("Admin", p => p.RequireAuthenticatedUser().RequireClaim(TokenIdentity.AdminClaim, "true")));
 // ------------------------------------------------------------------------
 
 builder.Services.AddOpenApi();
