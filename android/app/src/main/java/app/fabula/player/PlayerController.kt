@@ -7,7 +7,6 @@ import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.media.RingtoneManager
 import androidx.media3.common.MediaItem
-import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
@@ -196,68 +195,13 @@ class PlayerController(
         }
     }
 
-    /**
-     * Cover bytes for the media metadata, downscaled for the trip through the
-     * system session.
-     *
-     * Prefers the downloaded copy, so a synced book needs no network at all --
-     * which is the case where the car matters most. Any failure returns null and
-     * simply leaves the metadata without embedded artwork.
-     */
-    private suspend fun coverArtwork(book: BookDetailDto): ByteArray? =
-        withContext(Dispatchers.IO) {
-            runCatching {
-                val local = offlineStore.localCover(book.id)
-                val raw = if (local != null) {
-                    local.readBytes()
-                } else {
-                    repository.apiOrNull()?.downloadCover(book.id)
-                        ?.takeIf { it.isSuccessful }?.body()?.bytes()
-                }
-                raw?.takeIf { it.isNotEmpty() }?.let { downscaleCoverArt(it) }
-            }.getOrNull()
-        }
-
     suspend fun loadBook(book: BookDetailDto) {
         val c = controller ?: return
         val api = repository.apiOrNull()
 
-        val starts = DoubleArray(book.files.size)
-        var acc = 0.0
-        book.files.forEachIndexed { i, f ->
-            starts[i] = acc
-            acc += parseTimeSpan(f.duration)
-        }
-        fileStarts = starts
+        fileStarts = fileStartsOf(book)
 
-        // Embedded as bytes, not just as a URI. A URI leaves it to whoever
-        // displays the metadata to fetch the image, and the two consumers that
-        // matter here cannot: a car head unit reads the cover over Bluetooth
-        // from the system media session and has no way to reach this server,
-        // and a downloaded cover sits in the app's private storage where no
-        // other process may look. Bytes need neither network nor permission.
-        val artwork = coverArtwork(book)
-
-        // Built once and shared: every track of a book carries the same title,
-        // author and cover, so re-encoding it per track would be pure waste.
-        val metadata = MediaMetadata.Builder()
-            .setTitle(book.title)
-            .setArtist(book.authors.joinToString(", "))
-            .setAlbumTitle(book.series ?: book.title)
-            .setArtworkUri(repository.coverUrl(book)?.let { android.net.Uri.parse(it) })
-            .apply {
-                if (artwork != null) setArtworkData(artwork, MediaMetadata.PICTURE_TYPE_FRONT_COVER)
-            }
-            .build()
-
-        val items = book.files.map { f ->
-            val url = repository.streamUrl(f.id) ?: return@map null
-            MediaItem.Builder()
-                .setMediaId("book-${book.id}-file-${f.id}")
-                .setUri(url)
-                .setMediaMetadata(metadata)
-                .build()
-        }.filterNotNull()
+        val items = buildPlaybackItems(book, repository, offlineStore)
 
         if (items.isEmpty()) return
 
@@ -418,23 +362,8 @@ class PlayerController(
         }
     }
 
-    private fun mapBookToMedia(seconds: Double): Pair<Int, Long> {
-        if (fileStarts.isEmpty()) return 0 to 0L
-        val clamped = max(0.0, seconds)
-        var index = fileStarts.size - 1
-        // Tolerance for FP drift between the server's exact OffsetInBook and
-        // the client's cumulative sum of parseTimeSpan(file.duration). Without
-        // it, seeking to the start of file N can land on the last millisecond
-        // of file N-1 if the cumulative sum overshoots the chapter start by a
-        // few microseconds.
-        val epsilon = 0.010
-        for (i in fileStarts.indices) {
-            val nextStart = if (i + 1 < fileStarts.size) fileStarts[i + 1] else Double.MAX_VALUE
-            if (clamped + epsilon < nextStart) { index = i; break }
-        }
-        val localMs = ((clamped - fileStarts[index]) * 1000.0).toLong().coerceAtLeast(0L)
-        return index to localMs
-    }
+    private fun mapBookToMedia(seconds: Double): Pair<Int, Long> =
+        mapBookPositionToMedia(fileStarts, seconds)
 
     private val playerListener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {

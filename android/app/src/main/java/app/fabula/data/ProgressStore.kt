@@ -120,6 +120,14 @@ class ProgressStore(context: Context, private val logStore: LogStore) {
 
     fun hasPending(): Boolean = entries.values.any { !it.synced }
 
+    /**
+     * The book this device touched most recently, or null when nothing has been
+     * played yet. Used to answer the system when it asks what to resume: the
+     * media button may arrive long after the process died, with nothing loaded
+     * and no UI to ask.
+     */
+    fun mostRecent(): LocalProgress? = entries.values.maxByOrNull { it.updatedAtMs }
+
     /** Used when the user resets a book's progress. */
     fun clear(bookId: Int) {
         if (!entries.containsKey(bookId)) return
