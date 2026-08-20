@@ -27,6 +27,7 @@ import java.util.Calendar
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
@@ -195,6 +196,28 @@ class PlayerController(
         }
     }
 
+    /**
+     * Cover bytes for the media metadata, downscaled for the trip through the
+     * system session.
+     *
+     * Prefers the downloaded copy, so a synced book needs no network at all --
+     * which is the case where the car matters most. Any failure returns null and
+     * simply leaves the metadata without embedded artwork.
+     */
+    private suspend fun coverArtwork(book: BookDetailDto): ByteArray? =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val local = offlineStore.localCover(book.id)
+                val raw = if (local != null) {
+                    local.readBytes()
+                } else {
+                    repository.apiOrNull()?.downloadCover(book.id)
+                        ?.takeIf { it.isSuccessful }?.body()?.bytes()
+                }
+                raw?.takeIf { it.isNotEmpty() }?.let { downscaleCoverArt(it) }
+            }.getOrNull()
+        }
+
     suspend fun loadBook(book: BookDetailDto) {
         val c = controller ?: return
         val api = repository.apiOrNull()
@@ -207,19 +230,32 @@ class PlayerController(
         }
         fileStarts = starts
 
+        // Embedded as bytes, not just as a URI. A URI leaves it to whoever
+        // displays the metadata to fetch the image, and the two consumers that
+        // matter here cannot: a car head unit reads the cover over Bluetooth
+        // from the system media session and has no way to reach this server,
+        // and a downloaded cover sits in the app's private storage where no
+        // other process may look. Bytes need neither network nor permission.
+        val artwork = coverArtwork(book)
+
+        // Built once and shared: every track of a book carries the same title,
+        // author and cover, so re-encoding it per track would be pure waste.
+        val metadata = MediaMetadata.Builder()
+            .setTitle(book.title)
+            .setArtist(book.authors.joinToString(", "))
+            .setAlbumTitle(book.series ?: book.title)
+            .setArtworkUri(repository.coverUrl(book)?.let { android.net.Uri.parse(it) })
+            .apply {
+                if (artwork != null) setArtworkData(artwork, MediaMetadata.PICTURE_TYPE_FRONT_COVER)
+            }
+            .build()
+
         val items = book.files.map { f ->
             val url = repository.streamUrl(f.id) ?: return@map null
             MediaItem.Builder()
                 .setMediaId("book-${book.id}-file-${f.id}")
                 .setUri(url)
-                .setMediaMetadata(
-                    MediaMetadata.Builder()
-                        .setTitle(book.title)
-                        .setArtist(book.authors.joinToString(", "))
-                        .setAlbumTitle(book.series ?: book.title)
-                        .setArtworkUri(repository.coverUrl(book)?.let { android.net.Uri.parse(it) })
-                        .build()
-                )
+                .setMediaMetadata(metadata)
                 .build()
         }.filterNotNull()
 
