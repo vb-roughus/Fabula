@@ -25,8 +25,8 @@ import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.DownloadForOffline
-import androidx.compose.material.icons.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.LibraryBooks
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.LibraryBooks
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PeopleAlt
 import androidx.compose.material.icons.filled.SystemUpdate
@@ -149,7 +149,7 @@ fun SettingsScreen(
                     // Admin-only: changing the catalogue affects every user.
                     if (isAdmin) {
                         SettingsMenuItem(
-                            Icons.Filled.LibraryBooks,
+                            Icons.AutoMirrored.Filled.LibraryBooks,
                             "Serien verwalten",
                             "Reihenfolge & Zuordnung",
                             onManageSeries
@@ -211,7 +211,7 @@ private fun SettingsMenuItem(
             )
         }
         Icon(
-            Icons.Filled.KeyboardArrowRight,
+            Icons.AutoMirrored.Filled.KeyboardArrowRight,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.outline
         )
@@ -983,7 +983,7 @@ private fun DownloadsSection(repository: FabulaRepository, onOpenBook: (Int) -> 
     }
 
     Text(
-        "Belegter Speicher: ${formatBytes(totalBytes)}",
+        "Belegter Speicher: ${formatFileSize(totalBytes)}",
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.outline
     )
@@ -1019,7 +1019,7 @@ private fun DownloadsSection(repository: FabulaRepository, onOpenBook: (Int) -> 
                 )
                 Text(
                     buildString {
-                        append(formatBytes(bytes))
+                        append(formatFileSize(bytes))
                         if (trackCount > 0) {
                             append(" · ")
                             append(
@@ -1099,7 +1099,7 @@ private fun DiagnoseSection(repository: FabulaRepository) {
         )
     }
     Text(
-        "Logdatei: ${formatBytes(logBytes)}",
+        "Logdatei: ${formatFileSize(logBytes)}",
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.outline
     )
@@ -1133,13 +1133,6 @@ private fun shareLog(context: Context, file: File) {
     context.startActivity(Intent.createChooser(intent, "Log teilen").apply {
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     })
-}
-
-private fun formatBytes(bytes: Long): String = when {
-    bytes <= 0L -> "leer"
-    bytes < 1024L -> "$bytes B"
-    bytes < 1024L * 1024L -> "${bytes / 1024L} KB"
-    else -> "%.1f MB".format(bytes / (1024.0 * 1024.0))
 }
 
 private fun parseHhMm(text: String): Int? {

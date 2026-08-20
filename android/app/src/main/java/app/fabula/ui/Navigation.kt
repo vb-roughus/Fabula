@@ -31,7 +31,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.LibraryBooks
+import androidx.compose.material.icons.automirrored.outlined.LibraryBooks
 import androidx.compose.material.icons.outlined.PeopleAlt
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Settings
@@ -108,7 +108,7 @@ private enum class Tab(
     val icon: ImageVector
 ) {
     Home("home", "Startseite", Icons.Outlined.Home),
-    Library("library", "Bibliothek", Icons.Outlined.LibraryBooks),
+    Library("library", "Bibliothek", Icons.AutoMirrored.Outlined.LibraryBooks),
     Series("series", "Serien", Icons.Outlined.Style);
 
     companion object {

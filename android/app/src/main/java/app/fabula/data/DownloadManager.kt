@@ -474,6 +474,19 @@ class DownloadManager(
 }
 
 /** Human-readable byte size, e.g. "1,2 GB". */
+/**
+ * Byte sizes for display.
+ *
+ * The locale is pinned to German on purpose rather than following the device:
+ * every string around these numbers is German, and a phone set to English would
+ * otherwise put an English decimal point in the middle of a German sentence.
+ * (Contrast toTimeSpanString, which pins to ROOT -- that one is parsed by the
+ * server and must never carry a comma.)
+ *
+ * Decimal units, matching the KB/MB/GB labels. There used to be a second
+ * formatter in the settings screen counting in 1024s while labelling the result
+ * MB, so the same book could be shown as two different sizes a few rows apart.
+ */
 fun formatFileSize(bytes: Long): String = when {
     bytes >= 1_000_000_000L -> String.format(java.util.Locale.GERMAN, "%.1f GB", bytes / 1_000_000_000.0)
     bytes >= 1_000_000L -> String.format(java.util.Locale.GERMAN, "%.0f MB", bytes / 1_000_000.0)

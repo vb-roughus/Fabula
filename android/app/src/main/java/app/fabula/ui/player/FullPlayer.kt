@@ -49,7 +49,7 @@ import androidx.compose.material.icons.filled.Replay30
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.BorderColor
-import androidx.compose.material.icons.filled.PlaylistPlay
+import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material.icons.outlined.Bedtime
@@ -986,7 +986,7 @@ private fun PlayerUtilityRow(
                 modifier = Modifier.size(40.dp)
             ) {
                 Icon(
-                    Icons.Filled.PlaylistPlay,
+                    Icons.AutoMirrored.Filled.PlaylistPlay,
                     contentDescription = if (seriesMode) "Serie weiterhören aus"
                         else "Serie hören – am Buchende weiter mit dem nächsten Band",
                     tint = if (seriesMode) MaterialTheme.colorScheme.primary
