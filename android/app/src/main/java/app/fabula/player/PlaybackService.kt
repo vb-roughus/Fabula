@@ -16,6 +16,8 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import app.fabula.FabulaApp
+import com.google.common.util.concurrent.ListenableFuture
+import com.google.common.util.concurrent.SettableFuture
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -138,7 +140,9 @@ class PlaybackService : MediaSessionService() {
             .setHandleAudioBecomingNoisy(true)
             .build()
 
-        mediaSession = MediaSession.Builder(this, player).build()
+        mediaSession = MediaSession.Builder(this, player)
+            .setCallback(ResumptionCallback(app, serviceScope))
+            .build()
 
         runCatching {
             loudnessEnhancer = LoudnessEnhancer(player.audioSessionId)
@@ -174,5 +178,60 @@ class PlaybackService : MediaSessionService() {
             mediaSession = null
         }
         super.onDestroy()
+    }
+}
+
+/**
+ * Answers the system when it wants to resume playback with nothing loaded.
+ *
+ * This happens on a headphone or steering-wheel button press after the service
+ * has been stopped, and from the resume control in the system's media area. The
+ * session is asked what to play; a session that does not answer leaves the
+ * system to pick another app, which is how a button press ends up starting
+ * something else entirely.
+ *
+ * Answered from the local record only where possible -- the last position is in
+ * the progress store and a downloaded book's detail is in its manifest -- so a
+ * button press works with no connection at all. The server is consulted only for
+ * a book that was never downloaded, which could not be played offline anyway.
+ */
+private class ResumptionCallback(
+    private val app: FabulaApp,
+    private val scope: CoroutineScope
+) : MediaSession.Callback {
+
+    override fun onPlaybackResumption(
+        mediaSession: MediaSession,
+        controller: MediaSession.ControllerInfo
+    ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
+        val future = SettableFuture.create<MediaSession.MediaItemsWithStartPosition>()
+        scope.launch {
+            runCatching { lastPlayed() }.fold(
+                onSuccess = { resumption ->
+                    if (resumption != null) future.set(resumption)
+                    // No history, or nothing playable: reject rather than
+                    // hand back an empty queue, so the system can fall back
+                    // instead of silently doing nothing.
+                    else future.setException(
+                        UnsupportedOperationException("Keine fortsetzbare Wiedergabe")
+                    )
+                },
+                onFailure = { future.setException(it) }
+            )
+        }
+        return future
+    }
+
+    private suspend fun lastPlayed(): MediaSession.MediaItemsWithStartPosition? {
+        val recent = app.progressStore.mostRecent() ?: return null
+        val book = app.offlineStore.cachedBook(recent.bookId)
+            ?: runCatching { app.repository.apiOrNull()?.getBook(recent.bookId) }.getOrNull()
+            ?: return null
+
+        val items = buildPlaybackItems(book, app.repository, app.offlineStore)
+        if (items.isEmpty()) return null
+
+        val (index, offsetMs) = mapBookPositionToMedia(fileStartsOf(book), recent.positionSec)
+        return MediaSession.MediaItemsWithStartPosition(items, index, offsetMs)
     }
 }

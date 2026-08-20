@@ -36,12 +36,20 @@
             </intent-filter>
         </activity>
 
+        <!-- Exported, and listening for MEDIA_BUTTON, because both are what let
+             anything outside the app reach this session: a Bluetooth headset or
+             car head unit, a headphone button, Wear. Without them the system has
+             no way to hand a media button to Fabula once it is no longer in the
+             foreground, and routes it to whichever other app still holds a
+             session instead. What this exposes is playback control, which is the
+             whole point of a media session. -->
         <service
             android:name=".player.PlaybackService"
-            android:exported="false"
+            android:exported="true"
             android:foregroundServiceType="mediaPlayback">
             <intent-filter>
                 <action android:name="androidx.media3.session.MediaSessionService" />
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
             </intent-filter>
         </service>
 
