@@ -25,7 +25,7 @@ import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.DoneAll
@@ -35,12 +35,12 @@ import androidx.compose.material.icons.filled.DownloadForOffline
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.BorderColor
-import androidx.compose.material.icons.filled.LibraryBooks
+import androidx.compose.material.icons.automirrored.filled.LibraryBooks
 import androidx.compose.material.icons.outlined.RemoveDone
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.PlaylistPlay
+import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -53,6 +53,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Scaffold
@@ -456,7 +457,7 @@ fun BookScreen(
                                     )
                                 },
                                 leadingIcon = {
-                                    Icon(Icons.Filled.LibraryBooks, contentDescription = null)
+                                    Icon(Icons.AutoMirrored.Filled.LibraryBooks, contentDescription = null)
                                 },
                                 onClick = {
                                     moreMenuOpen = false
@@ -852,7 +853,9 @@ private fun AssignSeriesDialog(
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = dropdownOpen) },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .menuAnchor()
+                            // PrimaryNotEditable, because the field above is
+                            // readOnly: the menu is the only way to change it.
+                            .menuAnchor(MenuAnchorType.PrimaryNotEditable)
                     )
                     DropdownMenu(
                         expanded = dropdownOpen,
@@ -1183,7 +1186,7 @@ private fun BookmarksSectionHeader(count: Int, expanded: Boolean, onToggle: () -
             modifier = Modifier.weight(1f)
         )
         Icon(
-            imageVector = if (expanded) Icons.Filled.KeyboardArrowDown else Icons.Filled.KeyboardArrowRight,
+            imageVector = if (expanded) Icons.Filled.KeyboardArrowDown else Icons.AutoMirrored.Filled.KeyboardArrowRight,
             contentDescription = if (expanded) "Lesezeichen einklappen" else "Lesezeichen ausklappen",
             tint = MaterialTheme.colorScheme.outline
         )
@@ -1314,7 +1317,7 @@ private fun ActionRow(
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    Icons.Filled.PlaylistPlay,
+                    Icons.AutoMirrored.Filled.PlaylistPlay,
                     contentDescription = if (seriesMode) "Serie weiterhören aus"
                         else "Serie hören – am Buchende weiter mit dem nächsten Band",
                     tint = if (seriesMode) MaterialTheme.colorScheme.onPrimary
