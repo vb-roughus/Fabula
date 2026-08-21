@@ -15,9 +15,14 @@ import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import java.util.concurrent.TimeUnit
 
 class FabulaRepository(
+    private val context: Context,
     private val preferences: ServerPreferences,
     private val logStore: LogStore,
     /** Consulted first for cover art, so downloaded books keep their artwork
@@ -82,14 +87,19 @@ class FabulaRepository(
     val serverOnline: StateFlow<Boolean?> = _serverOnline.asStateFlow()
 
     /**
-     * Latched on the first transport failure and cleared only by a successful
-     * [probeServer] -- i.e. by the drawer's "Verbinden" button, or by a fresh
-     * process, since this is plain in-memory state.
+     * Set once a request has genuinely failed to reach the server -- not on the
+     * first stumble: a fast failure while a network is present buys one retry
+     * first, because that is what a Wi-Fi/mobile handover looks like.
      *
      * While it is set, requests are refused before they reach the network. That
      * is what makes "no automatic reconnecting" true rather than merely quiet:
      * the periodic progress sync and every screen refresh still run, but they
      * fail instantly and locally instead of dialling out.
+     *
+     * Cleared by a successful [probeServer] -- the drawer's "Verbinden" button
+     * -- by a fresh process, since this is plain in-memory state, and by the
+     * device gaining a network, which makes the latch's knowledge stale. That
+     * last one only stops the refusing; it contacts nothing by itself.
      */
     @Volatile
     private var offlineLatched = false
@@ -128,6 +138,60 @@ class FabulaRepository(
     /** True when requests are being refused locally. */
     fun isOfflineLatched(): Boolean = offlineLatched
 
+    /**
+     * Whether the device has a network at all right now.
+     *
+     * Deliberately does not require the network to be validated: during a
+     * handover the replacement is usable well before Android has confirmed it
+     * reaches the internet, and a server on the local network never needs the
+     * internet in the first place. Being unable to ask counts as yes -- the
+     * point here is to be forgiving.
+     */
+    private fun hasUsableNetwork(): Boolean {
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            ?: return true
+        val caps = runCatching { cm.getNetworkCapabilities(cm.activeNetwork) }.getOrNull()
+            ?: return false
+        return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
+
+    /**
+     * Releases the offline latch when the device gains a network.
+     *
+     * The latch means "we know the server is unreachable". A new default
+     * network makes that knowledge stale -- it was measured over a connection
+     * that no longer exists. So we stop refusing requests.
+     *
+     * What this deliberately does NOT do is contact the server or bump
+     * [reconnects]. Nothing reconnects on its own and no screen refetches; the
+     * next request the user's own actions produce simply goes out instead of
+     * being turned away in advance. `serverOnline` goes back to unknown rather
+     * than to true, because that is honestly all we know.
+     */
+    private fun watchForNetworkChanges() {
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            ?: return
+        runCatching {
+            cm.registerDefaultNetworkCallback(object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) {
+                    if (!offlineLatched) return
+                    offlineLatched = false
+                    _serverOnline.value = null
+                    logStore.i(
+                        "Http",
+                        "Neues Netzwerk verfügbar – Offline-Sperre gelöst (ohne Verbindungsversuch)."
+                    )
+                }
+            })
+        }.onFailure {
+            logStore.w("Http", "Netzwerküberwachung nicht möglich: ${it.message}")
+        }
+    }
+
+    init {
+        watchForNetworkChanges()
+    }
+
     private val okHttp = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
@@ -149,18 +213,44 @@ class FabulaRepository(
             val started = System.currentTimeMillis()
             val response = try {
                 chain.proceed(request)
-            } catch (t: Throwable) {
-                // Network-level failure (DNS, timeout, TLS, server down).
-                // Surface to LogStore so a user-shared log makes the cause
-                // diagnosable; the original throwable propagates as before.
-                logStore.e(
+            } catch (first: Throwable) {
+                val elapsed = System.currentTimeMillis() - started
+                if (!shouldRetryBeforeLatching(first, elapsed, hasUsableNetwork())) {
+                    // Network-level failure (DNS, timeout, TLS, server down).
+                    // Surface to LogStore so a user-shared log makes the cause
+                    // diagnosable; the original throwable propagates as before.
+                    logStore.e(
+                        "Http",
+                        "${request.method} ${request.url} -> network error after $elapsed ms",
+                        first
+                    )
+                    _serverOnline.value = false
+                    offlineLatched = true
+                    throw first
+                }
+
+                // Looks like a Wi-Fi <-> mobile handover: the socket died on an
+                // interface that just went away, and the replacement is already
+                // up. One more attempt costs a moment; getting it wrong cost the
+                // user their connection until they pressed a button.
+                logStore.i(
                     "Http",
-                    "${request.method} ${request.url} -> network error after ${System.currentTimeMillis() - started} ms",
-                    t
+                    "${request.method} ${request.url} -> ${first.javaClass.simpleName} after " +
+                        "$elapsed ms, ein erneuter Versuch (Netzwechsel?)"
                 )
-                _serverOnline.value = false
-                offlineLatched = true
-                throw t
+                Thread.sleep(HANDOVER_RETRY_DELAY_MS)
+                try {
+                    chain.proceed(request)
+                } catch (second: Throwable) {
+                    logStore.e(
+                        "Http",
+                        "${request.method} ${request.url} -> auch der zweite Versuch scheiterte",
+                        second
+                    )
+                    _serverOnline.value = false
+                    offlineLatched = true
+                    throw second
+                }
             }
             // Any reply means the server is reachable, even an error one.
             _serverOnline.value = true

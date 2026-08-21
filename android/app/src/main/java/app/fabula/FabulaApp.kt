@@ -75,7 +75,7 @@ class FabulaApp : Application() {
         }
         // Before the repository: it consults the store for offline cover art.
         offlineStore = OfflineStore(this, logStore)
-        repository = FabulaRepository(preferences, logStore, offlineStore)
+        repository = FabulaRepository(this, preferences, logStore, offlineStore)
         downloadManager = DownloadManager(
             context = this,
             repository = repository,
