@@ -164,6 +164,24 @@ fun Navigation(
     LaunchedEffect(repository) {
         repository.unauthorizedEvents.collect {
             repository.logout()
+            // Clearing the token was not enough to get the user anywhere. The
+            // gate below only chooses the graph's *start* destination, and that
+            // is read when the graph is built -- so a session that ended
+            // mid-use left the app sitting on a fully drawn screen whose every
+            // request came back 401, with no route to the login screen at all.
+            // An involuntary logout now ends where the drawer's voluntary one
+            // does, back stack cleared so Back cannot return to the dead screen.
+            //
+            // Guarded because this collector outlives the graph: while the boot
+            // gate is still deciding there is no destination yet, and none is
+            // needed -- the start destination itself points at the login screen
+            // once the token is gone.
+            if (navController.currentDestination != null) {
+                navController.navigate("login") {
+                    popUpTo(0) { inclusive = true }
+                    launchSingleTop = true
+                }
+            }
         }
     }
 
