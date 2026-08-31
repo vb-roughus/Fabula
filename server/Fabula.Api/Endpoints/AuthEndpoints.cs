@@ -67,25 +67,49 @@ public static class AuthEndpoints
         }).WithTags("Auth");
 
         // Login + me ------------------------------------------------------
+        // Four different refusals share one 401 on the wire, and that is
+        // deliberate: telling a caller "this user exists but the password is
+        // wrong" hands them half the credential. The distinction belongs in the
+        // log, where the operator can see it and an attacker cannot.
         app.MapPost("/api/auth/login", async (
             LoginRequest req,
             FabulaDbContext db,
             IPasswordHasher<User> hasher,
             JwtTokenService tokens,
+            ILoggerFactory loggers,
             CancellationToken ct) =>
         {
-            if (string.IsNullOrWhiteSpace(req.Username) || string.IsNullOrEmpty(req.Password))
-                return Results.Unauthorized();
+            var log = loggers.CreateLogger("Fabula.Auth");
 
-            var user = await db.Users.FirstOrDefaultAsync(
-                u => u.Username == req.Username.Trim(),
-                ct);
-            if (user is null || string.IsNullOrEmpty(user.PasswordHash))
+            if (string.IsNullOrWhiteSpace(req.Username) || string.IsNullOrEmpty(req.Password))
+            {
+                log.LogWarning("Anmeldung abgewiesen: Benutzername oder Passwort war leer.");
                 return Results.Unauthorized();
+            }
+
+            var name = req.Username.Trim();
+            var user = await db.Users.FirstOrDefaultAsync(u => u.Username == name, ct);
+            if (user is null)
+            {
+                log.LogWarning("Anmeldung abgewiesen für \"{User}\": kein Konto mit diesem Namen.", name);
+                return Results.Unauthorized();
+            }
+            if (string.IsNullOrEmpty(user.PasswordHash))
+            {
+                log.LogWarning(
+                    "Anmeldung abgewiesen für \"{User}\" (id {UserId}): für das Konto ist kein Passwort gesetzt.",
+                    name, user.Id);
+                return Results.Unauthorized();
+            }
 
             var verify = hasher.VerifyHashedPassword(user, user.PasswordHash, req.Password);
             if (verify == PasswordVerificationResult.Failed)
+            {
+                log.LogWarning(
+                    "Anmeldung abgewiesen für \"{User}\" (id {UserId}): Passwort stimmt nicht.",
+                    name, user.Id);
                 return Results.Unauthorized();
+            }
 
             if (verify == PasswordVerificationResult.SuccessRehashNeeded)
             {
@@ -93,13 +117,33 @@ public static class AuthEndpoints
                 await db.SaveChangesAsync(ct);
             }
 
+            // The counterpart to the refusals: seeing a success here and a
+            // rejection a moment later is what separates "cannot log in" from
+            // "logged in, then thrown out again".
+            log.LogInformation(
+                "Anmeldung erfolgreich: \"{User}\" (id {UserId}, Admin: {IsAdmin}).",
+                name, user.Id, user.IsAdmin);
             return Results.Ok(new AuthResponse(tokens.Issue(user), ToDto(user)));
         }).WithTags("Auth");
 
-        app.MapGet("/api/auth/me", async (HttpContext http, FabulaDbContext db, CancellationToken ct) =>
+        app.MapGet("/api/auth/me", async (
+            HttpContext http,
+            FabulaDbContext db,
+            ILoggerFactory loggers,
+            CancellationToken ct) =>
         {
-            var user = await db.Users.FirstOrDefaultAsync(u => u.Id == http.UserId(), ct);
-            return user is null ? Results.Unauthorized() : Results.Ok(ToDto(user));
+            var id = http.UserId();
+            var user = await db.Users.FirstOrDefaultAsync(u => u.Id == id, ct);
+            if (user is null)
+            {
+                // A token that names an account which is not there. Same
+                // question the token check asks, reached by a different route,
+                // so it is worth being able to tell the two apart in the log.
+                loggers.CreateLogger("Fabula.Auth").LogWarning(
+                    "/api/auth/me abgewiesen: Token nennt Konto {UserId}, das es nicht gibt.", id);
+                return Results.Unauthorized();
+            }
+            return Results.Ok(ToDto(user));
         }).RequireAuthorization().WithTags("Auth");
 
         app.MapPost("/api/me/password", async (
