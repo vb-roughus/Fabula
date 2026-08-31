@@ -133,9 +133,22 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             // "soon" is the thing we are fixing.
             OnTokenValidated = async ctx =>
             {
+                // Logged under our own category, at Warning. The framework's own
+                // rejection notices go to Microsoft.AspNetCore at Information,
+                // which the file logger filters out -- so without this a refused
+                // request reaches the operator as a bare 401 with no reason,
+                // which is exactly as much help as it sounds.
+                var log = ctx.HttpContext.RequestServices
+                    .GetRequiredService<ILoggerFactory>().CreateLogger("Fabula.Auth");
+
                 var id = TokenIdentity.SubjectId(ctx.Principal!);
                 if (id is null)
                 {
+                    // The claim *types* say whether the subject was mapped to
+                    // something unexpected. Values are left out on purpose.
+                    log.LogWarning(
+                        "Token abgewiesen: keine verwertbare Benutzerkennung. Vorhandene Angaben: {ClaimTypes}",
+                        string.Join(", ", ctx.Principal!.Claims.Select(c => c.Type).Distinct()));
                     ctx.Fail("Token ohne verwertbare Benutzerkennung.");
                     return;
                 }
@@ -150,6 +163,9 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 if (account is null)
                 {
                     // 401, which both clients already handle as "log out".
+                    log.LogWarning(
+                        "Token abgewiesen: Konto {UserId} existiert nicht (mehr). Angefragt: {Method} {Path}",
+                        id.Value, ctx.HttpContext.Request.Method, ctx.HttpContext.Request.Path);
                     ctx.Fail("Benutzerkonto existiert nicht mehr.");
                     return;
                 }
