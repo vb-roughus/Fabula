@@ -87,22 +87,71 @@ class FabulaRepository(
     val serverOnline: StateFlow<Boolean?> = _serverOnline.asStateFlow()
 
     /**
-     * Set once a request has genuinely failed to reach the server -- not on the
-     * first stumble: a fast failure while a network is present buys one retry
-     * first, because that is what a Wi-Fi/mobile handover looks like.
+     * Set once requests have genuinely failed to reach the server. Not on the
+     * first stumble, and not on every kind of failure: see
+     * [shouldRetryBeforeLatching], [OFFLINE_FAILURE_THRESHOLD] and
+     * [failureCountsAsOffline] for the three filters in front of it.
      *
-     * While it is set, requests are refused before they reach the network. That
-     * is what makes "no automatic reconnecting" true rather than merely quiet:
-     * the periodic progress sync and every screen refresh still run, but they
-     * fail instantly and locally instead of dialling out.
+     * While it is set, requests are refused before they reach the network --
+     * which is the point on a dead connection: no screen sits in a ten-second
+     * timeout and no battery is spent dialling a number that does not answer.
      *
-     * Cleared by a successful [probeServer] -- the drawer's "Verbinden" button
-     * -- by a fresh process, since this is plain in-memory state, and by the
-     * device gaining a network, which makes the latch's knowledge stale. That
-     * last one only stops the refusing; it contacts nothing by itself.
+     * It is no longer the user's job to clear it. After a cooling-off period
+     * ([OFFLINE_RETRY_DELAYS_MS], lengthening while the server stays away) the
+     * next request through goes out as a probe. Success clears everything. The
+     * drawer's "Verbinden" button still works and skips the wait; so does a
+     * fresh process, since this is plain in-memory state, and so does the
+     * device gaining a network, which makes the latch's knowledge stale.
      */
     @Volatile
     private var offlineLatched = false
+
+    /** Earliest moment a request may go out again to test the latch. */
+    @Volatile
+    private var latchedUntilMs = 0L
+
+    /** Counted failures since the last success; see OFFLINE_FAILURE_THRESHOLD. */
+    @Volatile
+    private var countedFailures = 0
+
+    /** Position in [OFFLINE_RETRY_DELAYS_MS] -- grows while the server stays away. */
+    @Volatile
+    private var backoffStep = 0
+
+    /** Everything is fine again: forget the failures and the waiting. */
+    private fun clearOfflineState() {
+        offlineLatched = false
+        latchedUntilMs = 0L
+        countedFailures = 0
+        backoffStep = 0
+        _serverOnline.value = true
+    }
+
+    /**
+     * Notes a failure, if it is the kind that gets a vote. Background traffic
+     * that nobody is waiting for fails quietly -- see [failureCountsAsOffline].
+     */
+    private fun noteFailure(method: String, path: String): Boolean {
+        if (!failureCountsAsOffline(method, path)) return false
+        noteCountedFailure()
+        return true
+    }
+
+    /**
+     * Records a failure that gets a say. Declares the app offline once enough
+     * of them have come in a row, and each time it does, waits longer before
+     * letting the next one through.
+     */
+    private fun noteCountedFailure() {
+        countedFailures += 1
+        if (countedFailures < OFFLINE_FAILURE_THRESHOLD) return
+        val wait = offlineRetryDelayMs(backoffStep)
+        offlineLatched = true
+        latchedUntilMs = System.currentTimeMillis() + wait
+        backoffStep += 1
+        _serverOnline.value = false
+        logStore.i("Http", "Offline – nächster Versuch in ${wait / 1000} s.")
+    }
 
     /** Set around the explicit probe so it is allowed past the latch. */
     @Volatile
@@ -125,9 +174,19 @@ class FabulaRepository(
         probeInFlight = true
         return try {
             val reachable = checkNeedsSetup() != null
-            _serverOnline.value = reachable
-            offlineLatched = !reachable
-            if (reachable) _reconnects.value = _reconnects.value + 1
+            if (reachable) {
+                clearOfflineState()
+                _reconnects.value = _reconnects.value + 1
+            } else {
+                // Asked for explicitly, so the answer is trusted at once
+                // rather than needing a second opinion -- but the waiting
+                // starts over from the top instead of continuing to grow.
+                _serverOnline.value = false
+                offlineLatched = true
+                countedFailures = OFFLINE_FAILURE_THRESHOLD
+                backoffStep = 0
+                latchedUntilMs = System.currentTimeMillis() + offlineRetryDelayMs(0)
+            }
             reachable
         } finally {
             probeInFlight = false
@@ -175,7 +234,14 @@ class FabulaRepository(
             cm.registerDefaultNetworkCallback(object : ConnectivityManager.NetworkCallback() {
                 override fun onAvailable(network: Network) {
                     if (!offlineLatched) return
+                    // Drop the waiting time and the failure count with it: the
+                    // failures were measured over a connection that is gone, so
+                    // the next request should not have to serve out its
+                    // sentence. Still contacts nothing by itself.
                     offlineLatched = false
+                    latchedUntilMs = 0L
+                    countedFailures = 0
+                    backoffStep = 0
                     _serverOnline.value = null
                     logStore.i(
                         "Http",
@@ -204,10 +270,13 @@ class FabulaRepository(
             } else {
                 chain.request()
             }
-            // Refuse before touching the network once we know we're offline.
-            // Only the explicit probe gets through, so nothing reconnects on
-            // its own.
-            if (offlineLatched && !probeInFlight) {
+            // Refuse before touching the network while we believe the server
+            // is unreachable -- but only until the cooling-off period is up.
+            // After that the next request goes out as a probe: if it works,
+            // everything below clears the state, and the user never had to ask.
+            if (offlineLatched && !probeInFlight &&
+                System.currentTimeMillis() < latchedUntilMs
+            ) {
                 throw OfflineException()
             }
             val started = System.currentTimeMillis()
@@ -217,15 +286,14 @@ class FabulaRepository(
                 val elapsed = System.currentTimeMillis() - started
                 if (!shouldRetryBeforeLatching(first, elapsed, hasUsableNetwork())) {
                     // Network-level failure (DNS, timeout, TLS, server down).
-                    // Surface to LogStore so a user-shared log makes the cause
-                    // diagnosable; the original throwable propagates as before.
-                    logStore.e(
-                        "Http",
-                        "${request.method} ${request.url} -> network error after $elapsed ms",
-                        first
-                    )
-                    _serverOnline.value = false
-                    offlineLatched = true
+                    // Whether it counts towards declaring the app offline is a
+                    // separate question from whether it failed.
+                    val counted = noteFailure(request.method, request.url.encodedPath)
+                    val note = "${request.method} ${request.url} -> network error after $elapsed ms"
+                    // Background traffic hiccups are expected on a weak link
+                    // and would drown the log; only a counted failure is news.
+                    if (counted) logStore.e("Http", note, first)
+                    else logStore.w("Http", "$note (Hintergrund, ohne Folgen)")
                     throw first
                 }
 
@@ -242,19 +310,17 @@ class FabulaRepository(
                 try {
                     chain.proceed(request)
                 } catch (second: Throwable) {
-                    logStore.e(
-                        "Http",
-                        "${request.method} ${request.url} -> auch der zweite Versuch scheiterte",
-                        second
-                    )
-                    _serverOnline.value = false
-                    offlineLatched = true
+                    val counted = noteFailure(request.method, request.url.encodedPath)
+                    val note = "${request.method} ${request.url} -> auch der zweite Versuch scheiterte"
+                    if (counted) logStore.e("Http", note, second)
+                    else logStore.w("Http", "$note (Hintergrund, ohne Folgen)")
                     throw second
                 }
             }
-            // Any reply means the server is reachable, even an error one.
-            _serverOnline.value = true
-            offlineLatched = false
+            // Any reply means the server is reachable, even an error one --
+            // and it counts wherever it came from, background traffic included.
+            // Proof is proof.
+            clearOfflineState()
             if (response.code == 401 && !token.isNullOrBlank()) {
                 _unauthorizedEvents.tryEmit(Unit)
             }
