@@ -88,7 +88,7 @@ public static class AuthEndpoints
             }
 
             var name = req.Username.Trim();
-            var user = await db.Users.FirstOrDefaultAsync(u => u.Username == name, ct);
+            var user = await db.Users.WhereUsernameMatches(name).FirstOrDefaultAsync(ct);
             if (user is null)
             {
                 log.LogWarning("Anmeldung abgewiesen für \"{User}\": kein Konto mit diesem Namen.", name);
@@ -197,7 +197,9 @@ public static class AuthEndpoints
             if (error is not null) return Results.BadRequest(new { error });
 
             var name = req.Username.Trim();
-            if (await db.Users.AnyAsync(u => u.Username == name, ct))
+            // Case-insensitively, matching how login looks names up: two
+            // accounts differing only in case would make a login ambiguous.
+            if (await db.Users.WhereUsernameMatches(name).AnyAsync(ct))
                 return Results.Conflict(new { error = $"User \"{name}\" already exists." });
 
             var user = new User

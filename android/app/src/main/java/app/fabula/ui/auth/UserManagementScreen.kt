@@ -44,6 +44,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import app.fabula.data.AuthUserDto
 import app.fabula.data.FabulaRepository
 import app.fabula.data.UserDetailDto
@@ -98,6 +99,12 @@ fun UserManagementScreen(
                 onValueChange = { newName = it },
                 label = { Text("Benutzername") },
                 singleLine = true,
+                // Creating the account is where the capitalisation gets baked
+                // in, so it matters here most of all.
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Text,
+                    capitalization = KeyboardCapitalization.None
+                ),
                 modifier = Modifier.fillMaxWidth()
             )
             OutlinedTextField(
