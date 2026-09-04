@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -59,7 +60,14 @@ fun LoginScreen(
                 onValueChange = { username = it },
                 label = { Text("Benutzername") },
                 singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+                // No auto-capitalisation: the keyboard capitalises the first
+                // letter of a fresh field by default, which silently turns
+                // "rolf" into "Rolf". The server now compares case-insensitively
+                // too, but the name should be what the user typed.
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Text,
+                    capitalization = KeyboardCapitalization.None
+                ),
                 modifier = Modifier.fillMaxWidth()
             )
             OutlinedTextField(

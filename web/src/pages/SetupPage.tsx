@@ -42,6 +42,9 @@ export function SetupPage() {
         <input
           autoFocus
           autoComplete="username"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
           placeholder="Benutzername"
           value={username}
           onChange={(e) => setUsername(e.target.value)}

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -68,6 +69,12 @@ fun SetupScreen(
                 onValueChange = { username = it },
                 label = { Text("Benutzername") },
                 singleLine = true,
+                // See LoginScreen: the name has to be stored as typed, not as
+                // the keyboard would like to capitalise it.
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Text,
+                    capitalization = KeyboardCapitalization.None
+                ),
                 modifier = Modifier.fillMaxWidth()
             )
             OutlinedTextField(
