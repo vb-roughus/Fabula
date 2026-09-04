@@ -124,6 +124,18 @@ class ServerPreferences(private val context: Context) {
         context.dataStore.edit { it[IS_ADMIN_KEY] = value }
     }
 
+    /**
+     * Highest app build whose update notice the user has put away. The notice
+     * returns by itself for anything newer, so dismissing means "not this one"
+     * rather than "never again".
+     */
+    val dismissedUpdateCode: Flow<Int> = context.dataStore.data
+        .map { it[UPDATE_DISMISSED_KEY] ?: 0 }
+
+    suspend fun setDismissedUpdateCode(code: Int) {
+        context.dataStore.edit { it[UPDATE_DISMISSED_KEY] = code }
+    }
+
     /** Stable id for this device, used when reporting progress back to the server. */
     fun deviceId(): String {
         val androidId = runCatching {
@@ -145,5 +157,6 @@ class ServerPreferences(private val context: Context) {
         private val DOWNLOAD_WIFI_ONLY_KEY = booleanPreferencesKey("download_wifi_only")
         private val IS_ADMIN_KEY = booleanPreferencesKey("is_admin")
         private val SERIES_MODE_KEY = booleanPreferencesKey("series_mode_enabled")
+        private val UPDATE_DISMISSED_KEY = intPreferencesKey("update_notice_dismissed_code")
     }
 }

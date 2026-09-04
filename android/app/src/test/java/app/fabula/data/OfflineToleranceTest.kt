@@ -131,6 +131,15 @@ class OfflineToleranceTest {
         assertTrue(failureCountsAsOffline("GET", "/api/highlights"))
     }
 
+    /**
+     * The startup update check runs unasked, and an older server answers 404
+     * for it. Neither is a reason to tell anyone the app is offline.
+     */
+    @Test
+    fun `a failed update check does not count`() {
+        assertFalse(failureCountsAsOffline("GET", "/api/app/version"))
+    }
+
     /** Offline downloads report their own state per book already. */
     @Test
     fun `failed download traffic does not count`() {

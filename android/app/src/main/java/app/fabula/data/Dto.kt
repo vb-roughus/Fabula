@@ -239,7 +239,12 @@ data class UserDetailDto(
 // --- in-app update ---------------------------------------------------------
 
 @Serializable
-data class AppVersionDto(val versionCode: Int, val versionName: String)
+data class AppVersionDto(
+    val versionCode: Int,
+    val versionName: String,
+    /** Release description as written on GitHub. Absent on older servers. */
+    val notes: String? = null
+)
 
 @Serializable
 data class AppUpdateConfigDto(

@@ -112,6 +112,9 @@ internal fun failureCountsAsOffline(method: String, path: String): Boolean {
         // reports its state per book already.
         path.startsWith("/api/stream/") -> false
         path.startsWith("/api/books/") && path.endsWith("/cover") -> false
+        // The update check runs on its own at startup. Nobody is waiting for
+        // it, and a server too old to know the endpoint answers 404 anyway.
+        path == "/api/app/version" -> false
         else -> true
     }
 }

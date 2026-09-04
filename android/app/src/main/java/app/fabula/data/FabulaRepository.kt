@@ -3,6 +3,7 @@ package app.fabula.data
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -196,6 +197,43 @@ class FabulaRepository(
 
     /** True when requests are being refused locally. */
     fun isOfflineLatched(): Boolean = offlineLatched
+
+    // --- app update notice --------------------------------------------------
+
+    private val _latestAppVersion = MutableStateFlow<AppVersionDto?>(null)
+
+    /**
+     * The newer build waiting on the server, or null when there is none, the
+     * check has not run, or the user has put this one away.
+     *
+     * Combining the two here keeps the decision in one place: the flow the
+     * banner reads is already the answer to "should I be shown", so no screen
+     * has to remember the rule.
+     */
+    val appUpdateBanner: Flow<AppVersionDto?> =
+        combine(_latestAppVersion, preferences.dismissedUpdateCode) { latest, dismissed ->
+            latest?.takeIf { it.versionCode > dismissed }
+        }
+
+    /**
+     * Asks the server what the newest build is and remembers it if it is newer
+     * than the one running.
+     *
+     * Failure is silent by design: this runs unasked at startup, and a server
+     * too old to know the endpoint answers 404. Neither is worth a word to the
+     * user, and neither counts towards going offline -- see
+     * [failureCountsAsOffline].
+     */
+    suspend fun refreshAppUpdate() {
+        val latest = runCatching { apiOrNull()?.getAppVersion() }.getOrNull() ?: return
+        val (installedCode, _) = runCatching { installedVersion(context) }.getOrNull() ?: return
+        _latestAppVersion.value = latest.takeIf { it.versionCode > installedCode }
+    }
+
+    /** Puts the notice away for this build; anything newer brings it back. */
+    suspend fun dismissAppUpdate(versionCode: Int) {
+        preferences.setDismissedUpdateCode(versionCode)
+    }
 
     /**
      * Whether the device has a network at all right now.

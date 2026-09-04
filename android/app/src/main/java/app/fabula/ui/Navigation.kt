@@ -76,6 +76,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.navArgument
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
@@ -216,6 +217,13 @@ fun Navigation(
     // Cached, so admin entries survive being offline. The server enforces the
     // real restriction; this only decides what is offered.
     val isAdmin by repository.isAdmin.collectAsState(initial = false)
+
+    // Update notice, checked once per app start. Null once dismissed for that
+    // version, so it informs rather than nags.
+    val pendingUpdate by repository.appUpdateBanner.collectAsState(initial = null)
+    val topEntry by navController.currentBackStackEntryAsState()
+    val currentTopRoute = topEntry?.destination?.route
+    val mainTabRoutes = remember { Tab.entries.map { it.route } }
     val serverOnline by repository.serverOnline.collectAsState()
     val probing by repository.probing.collectAsState()
 
@@ -338,9 +346,24 @@ fun Navigation(
                 .fillMaxSize()
                 .background(brush = appBackground)
         ) {
-            // Content fills the entire screen including under the bottom overlay.
-            // Each screen's scrollable content adds LocalContentBottomInset to its
-            // contentPadding so the last item can scroll above the nav bar.
+            // A message at the top edge rather than an overlay: it takes its
+            // own space, so nothing covers the screen's app bar or its menu.
+            // Only on the tabs -- not while logging in or setting up.
+            Column(modifier = Modifier.fillMaxSize()) {
+                if (pendingUpdate != null && currentTopRoute in mainTabRoutes) {
+                    UpdateAvailableBanner(
+                        versionName = pendingUpdate!!.versionName,
+                        onOpen = { navController.navigate("settings?section=update") },
+                        onDismiss = {
+                            scope.launch { repository.dismissAppUpdate(pendingUpdate!!.versionCode) }
+                        }
+                    )
+                }
+                // Content fills the rest of the screen including under the
+                // bottom overlay. Each screen's scrollable content adds
+                // LocalContentBottomInset to its contentPadding so the last
+                // item can scroll above the nav bar.
+                Box(modifier = Modifier.weight(1f)) {
             CompositionLocalProvider(
                 LocalContentBottomInset provides PaddingValues(bottom = bottomOverlayInset)
             ) {
@@ -434,7 +457,19 @@ fun Navigation(
                             onBookClick = { bookId -> navController.navigate("book/$bookId") }
                         )
                     }
-                    composable("settings") {
+                    // The optional section opens a sub-page straight away, so
+                    // the update banner can land where it promised instead of
+                    // dropping the user in the menu to find it themselves.
+                    composable(
+                        route = "settings?section={section}",
+                        arguments = listOf(
+                            navArgument("section") {
+                                type = NavType.StringType
+                                nullable = true
+                                defaultValue = null
+                            }
+                        )
+                    ) { entry ->
                         SettingsScreen(
                             repository = repository,
                             onDone = { navController.popBackStack() },
@@ -442,7 +477,8 @@ fun Navigation(
                             // Entry point that works with no server: Home and
                             // Library are network-driven and empty offline.
                             onOpenBook = { id -> navController.navigate("book/$id") },
-                            onManageUsers = { navController.navigate("users") }
+                            onManageUsers = { navController.navigate("users") },
+                            initialSection = entry.arguments?.getString("section")
                         )
                     }
                     composable("series-manage") {
@@ -505,6 +541,8 @@ fun Navigation(
                         )
                     }
                 }
+            }
+            }
             }
 
             // Bottom overlay: optional mini player + transparent nav bar. A
