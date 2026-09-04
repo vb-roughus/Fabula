@@ -94,6 +94,11 @@ jobs:
           # publishes with make_latest: false, and this reclaims the pointer for
           # every APK build in case it ever drifts.
           make_latest: "true"
+          # GitHub appends its own "What's Changed" list from the pull requests
+          # merged since the previous release. The app shows this text as the
+          # release notes, so without it the panel would only ever say which
+          # commit it was built from.
+          generate_release_notes: true
           body: |
             Automatischer Build von `main` (`${{ github.sha }}`).
             versionCode: ${{ env.VERSION_CODE }}

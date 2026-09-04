@@ -23,6 +23,8 @@ import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.DownloadForOffline
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -68,6 +70,7 @@ import app.fabula.data.AppUpdateCheckDto
 import app.fabula.data.AppUpdateConfigDto
 import app.fabula.data.FabulaRepository
 import app.fabula.data.formatFileSize
+import app.fabula.data.installedVersion
 import app.fabula.data.ServerUpdateCheckDto
 import app.fabula.data.ServerUpdateInfoDto
 import app.fabula.data.ServerUpdateState
@@ -95,13 +98,22 @@ fun SettingsScreen(
     onDone: () -> Unit,
     onManageSeries: () -> Unit,
     onOpenBook: (Int) -> Unit,
-    onManageUsers: () -> Unit
+    onManageUsers: () -> Unit,
+    /** Opens a sub-page straight away; used by the update banner. */
+    initialSection: String? = null
 ) {
     // Cached flag, so the admin entries don't vanish while offline. The server
     // enforces the restriction; this only decides what is offered.
     val isAdmin by repository.isAdmin.collectAsState(initial = false)
     // Which sub-page is open; null shows the category menu. Survives rotation.
-    var section by rememberSaveable { mutableStateOf<SettingsSection?>(null) }
+    var section by rememberSaveable {
+        mutableStateOf(
+            when (initialSection) {
+                "update" -> SettingsSection.AppUpdate
+                else -> null
+            }
+        )
+    }
 
     // Hardware back inside a sub-page returns to the menu instead of leaving.
     BackHandler(enabled = section != null) { section = null }
@@ -578,6 +590,58 @@ private sealed interface UpdateUiState {
     data class Error(val message: String) : UpdateUiState
 }
 
+/**
+ * The release description, collapsed until asked for.
+ *
+ * Collapsed by default because the interesting part of an update screen is the
+ * button, not the changelog -- but the changelog is what answers "should I?",
+ * so it belongs one tap away rather than on another screen.
+ *
+ * Rendered as plain text: the text arrives as Markdown from GitHub, and a
+ * renderer for it would be a dependency and a whole class of layout bugs for
+ * something read once per release. Draws nothing at all when the server sent no
+ * notes -- an older server, or a release without a description.
+ */
+@Composable
+private fun ReleaseNotes(notes: String?) {
+    val text = notes?.trim().orEmpty()
+    if (text.isEmpty()) return
+
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+                .clickable { expanded = !expanded }
+                .padding(vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "Änderungen",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f)
+            )
+            Icon(
+                imageVector = if (expanded) Icons.Filled.KeyboardArrowUp
+                else Icons.Filled.KeyboardArrowDown,
+                contentDescription = if (expanded) "Änderungen einklappen"
+                else "Änderungen anzeigen",
+                tint = MaterialTheme.colorScheme.outline
+            )
+        }
+        if (expanded) {
+            Text(
+                text,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.outline,
+                modifier = Modifier.padding(bottom = 4.dp)
+            )
+        }
+    }
+}
+
 @Composable
 private fun AppUpdateSection(repository: FabulaRepository) {
     val context = LocalContext.current
@@ -585,6 +649,17 @@ private fun AppUpdateSection(repository: FabulaRepository) {
     var state by remember { mutableStateOf<UpdateUiState>(UpdateUiState.Idle) }
 
     val (ownCode, ownName) = remember(context) { installedVersion(context) }
+
+    // The app already checked at startup, and the banner that brought the user
+    // here was built from it. Adopting that result means the page opens with
+    // the update and its notes in front of them rather than a button to press.
+    val alreadyKnown by repository.appUpdateBanner.collectAsState(initial = null)
+    LaunchedEffect(alreadyKnown) {
+        val known = alreadyKnown
+        if (known != null && state is UpdateUiState.Idle) {
+            state = UpdateUiState.Available(known)
+        }
+    }
 
     // Admin-only server-side update configuration (repo + token) and tester.
     var isAdmin by remember { mutableStateOf(false) }
@@ -620,6 +695,7 @@ private fun AppUpdateSection(repository: FabulaRepository) {
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.primary
             )
+            ReleaseNotes(s.version.notes)
             Button(
                 onClick = {
                     state = UpdateUiState.Downloading(0L, 0L)
@@ -831,13 +907,6 @@ private fun AppUpdateSection(repository: FabulaRepository) {
 }
 
 /** Installed versionCode/versionName, robust across API levels (minSdk 26). */
-private fun installedVersion(context: Context): Pair<Long, String> {
-    val info = context.packageManager.getPackageInfo(context.packageName, 0)
-    val code = if (android.os.Build.VERSION.SDK_INT >= 28) info.longVersionCode
-    else @Suppress("DEPRECATION") info.versionCode.toLong()
-    return code to (info.versionName ?: "?")
-}
-
 /**
  * Streams the APK from the server into cacheDir/updates/fabula.apk, reporting
  * (bytesWritten, totalBytes) as it goes. `total` is 0 when the server didn't

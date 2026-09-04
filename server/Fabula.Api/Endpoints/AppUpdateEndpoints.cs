@@ -15,7 +15,7 @@ public static class AppUpdateEndpoints
             var latest = await updates.GetLatestAsync(ct);
             return latest is null
                 ? Results.NotFound()
-                : Results.Ok(new AppVersionDto(latest.VersionCode, latest.VersionName));
+                : Results.Ok(new AppVersionDto(latest.VersionCode, latest.VersionName, latest.Notes));
         });
 
         group.MapGet("/apk", async (AppUpdateService updates, CancellationToken ct) =>
@@ -60,5 +60,5 @@ public static class AppUpdateEndpoints
     }
 }
 
-public record AppVersionDto(int VersionCode, string VersionName);
+public record AppVersionDto(int VersionCode, string VersionName, string? Notes = null);
 public record UpdateAppConfigRequest(string? Repo, string? Token);

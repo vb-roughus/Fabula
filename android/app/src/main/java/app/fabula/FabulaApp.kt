@@ -94,6 +94,9 @@ class FabulaApp : Application() {
         appScope.launch {
             playerController.syncPendingProgress()
             uploadSyncer.requestSync()
+            // Once per cold start. Nobody is waiting for it, so it neither
+            // reports failure nor counts towards going offline.
+            repository.refreshAppUpdate()
         }
         appScope.launch {
             repository.reconnects.collect {

@@ -5,7 +5,12 @@ using Microsoft.Extensions.Options;
 
 namespace Fabula.Api.Infrastructure;
 
-public record AppUpdateInfo(int VersionCode, string VersionName, string ApkPath);
+/// <summary>
+/// The newest app build the server has mirrored. <paramref name="Notes"/> is
+/// the release description from GitHub, passed through as written so the app can
+/// show what changed.
+/// </summary>
+public record AppUpdateInfo(int VersionCode, string VersionName, string ApkPath, string? Notes = null);
 
 /// <summary>Current update configuration for the settings UI (token never exposed).</summary>
 public record AppUpdateSettings(
@@ -225,7 +230,10 @@ public class AppUpdateService
             using var doc = JsonDocument.Parse(File.ReadAllText(VersionFile));
             var code = doc.RootElement.GetProperty("versionCode").GetInt32();
             var name = doc.RootElement.GetProperty("versionName").GetString() ?? code.ToString();
-            return new AppUpdateInfo(code, name, ApkFile);
+            // Absent in files written before notes were mirrored.
+            var notes = doc.RootElement.TryGetProperty("notes", out var n) &&
+                n.ValueKind == JsonValueKind.String ? n.GetString() : null;
+            return new AppUpdateInfo(code, name, ApkFile, notes);
         }
         catch (Exception ex)
         {
@@ -260,8 +268,30 @@ public class AppUpdateService
         var code = versionDoc.RootElement.GetProperty("versionCode").GetInt32();
         var name2 = versionDoc.RootElement.GetProperty("versionName").GetString() ?? code.ToString();
 
+        // The release description, mirrored alongside the APK so the app can
+        // show what changed without reaching GitHub itself -- the phone only
+        // ever talks to this server.
+        var notes = releaseDoc.RootElement.TryGetProperty("body", out var bodyProp) &&
+            bodyProp.ValueKind == JsonValueKind.String
+                ? bodyProp.GetString()
+                : null;
+
         if (_cached is not null && code <= _cached.VersionCode)
-            return; // already have this (or a newer) build on disk
+        {
+            // Already have this build. One exception: a mirror written before
+            // notes were carried has none, and waiting for the next release to
+            // fill them in would leave the app showing an empty panel for no
+            // reason. Update just the text, without fetching the APK again.
+            if (_cached.Notes is null && notes is not null)
+            {
+                _cached = _cached with { Notes = notes };
+                await File.WriteAllTextAsync(
+                    VersionFile,
+                    JsonSerializer.Serialize(new { versionCode = code, versionName = name2, notes }),
+                    ct);
+            }
+            return;
+        }
 
         Directory.CreateDirectory(UpdatesDirectory);
 
@@ -279,10 +309,10 @@ public class AppUpdateService
         File.Move(tmp, ApkFile, overwrite: true);
         await File.WriteAllTextAsync(
             VersionFile,
-            JsonSerializer.Serialize(new { versionCode = code, versionName = name2 }),
+            JsonSerializer.Serialize(new { versionCode = code, versionName = name2, notes }),
             ct);
 
-        _cached = new AppUpdateInfo(code, name2, ApkFile);
+        _cached = new AppUpdateInfo(code, name2, ApkFile, notes);
         _logger.LogInformation("Mirrored app update {VersionName} (versionCode {Code}) from {Repo}.", name2, code, repo);
     }
 
