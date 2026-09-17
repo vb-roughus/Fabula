@@ -195,7 +195,15 @@ class PlayerController(
         }
     }
 
-    suspend fun loadBook(book: BookDetailDto) {
+    /**
+     * Opens [book] in the player, resuming where it was left off.
+     *
+     * [startOverIfAtEnd] is set by the series continuation, which hands on to
+     * books that may well have been heard already: those would otherwise resume
+     * on their final seconds and end again immediately. See
+     * [startsFromBeginning].
+     */
+    suspend fun loadBook(book: BookDetailDto, startOverIfAtEnd: Boolean = false) {
         val c = controller ?: return
         val api = repository.apiOrNull()
 
@@ -213,10 +221,15 @@ class PlayerController(
         // rewind the listener by exactly the stretch that failed to save. Once
         // synced, the two agree and the server value is used as before.
         val useLocal = localProgress != null && (!localProgress.synced || savedProgress == null)
-        val startSec = if (useLocal) localProgress!!.positionSec
+        val resumeSec = if (useLocal) localProgress!!.positionSec
             else parseTimeSpan(savedProgress?.position)
-        val savedFinished = if (useLocal) localProgress!!.finished
+        val resumeFinished = if (useLocal) localProgress!!.finished
             else savedProgress?.finished == true
+
+        val restart = startOverIfAtEnd &&
+            startsFromBeginning(resumeSec, resumeFinished, parseTimeSpan(book.duration))
+        val startSec = if (restart) 0.0 else resumeSec
+        val savedFinished = !restart && resumeFinished
         val (startIndex, startOffsetMs) = mapBookToMedia(startSec)
 
         c.setMediaItems(items, startIndex, startOffsetMs)
@@ -415,8 +428,9 @@ class PlayerController(
     private var advancingSeries = false
 
     /**
-     * Continues with the next unheard book of the series the finished book
-     * belongs to. Called from STATE_ENDED, so it must not block.
+     * Continues with the next book of the series the finished book belongs to,
+     * whether or not it has been heard before. Called from STATE_ENDED, so it
+     * must not block.
      */
     private fun continueWithSeries() {
         if (advancingSeries) return
@@ -428,8 +442,8 @@ class PlayerController(
                 // Persist the book we are leaving before its state is replaced:
                 // the 4-second recorder would never see this final position.
                 recordProgress()
-                val next = nextUnheardInSeries(finishedBook) ?: return@launch
-                loadBook(next)
+                val next = nextInSeries(finishedBook) ?: return@launch
+                loadBook(next, startOverIfAtEnd = true)
                 play()
             } catch (c: kotlinx.coroutines.CancellationException) {
                 throw c
@@ -442,15 +456,16 @@ class PlayerController(
     }
 
     /**
-     * The next book of the series that hasn't been heard yet, or null at the
-     * end of the series. The skipping rule itself lives in SeriesContinuation.kt
-     * so it can be tested.
+     * The next book of the series, or null at the end of it. Books already
+     * heard are played again rather than skipped -- the series is followed
+     * volume by volume, whatever each one's state. The only book passed over is
+     * one whose details can't be fetched at all.
      */
-    private suspend fun nextUnheardInSeries(current: BookDetailDto): BookDetailDto? {
+    private suspend fun nextInSeries(current: BookDetailDto): BookDetailDto? {
         val seriesId = current.seriesId ?: return null
         for (id in idsAfter(seriesOrder(seriesId), current.id)) {
-            val candidate = bookDetail(id) ?: continue
-            if (!alreadyHeard(candidate, progressStore.local(id))) return candidate
+            val candidate = bookDetail(id)
+            if (candidate != null) return candidate
         }
         return null
     }
