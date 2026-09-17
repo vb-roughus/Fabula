@@ -1,16 +1,13 @@
 package app.fabula.player
 
 import app.fabula.data.BookDetailDto
-import app.fabula.data.LocalProgress
-import app.fabula.data.parseTimeSpan
 
 /**
- * Seconds of slack at the end of a book that still count as heard.
+ * Seconds of slack at the end of a book that still count as "played to the end".
  *
  * A book that ran to its end but whose `finished` flag never reached the server
- * looks exactly like one resting on its last second. Without this, continuing a
- * series would restart such a book, end it again at once, and move on -- racing
- * through the remainder in seconds.
+ * looks exactly like one resting on its last second, so both are judged the
+ * same way.
  */
 internal const val SERIES_END_SLACK_SEC = 5.0
 
@@ -36,23 +33,17 @@ internal fun idsAfter(order: List<Int>, currentId: Int): List<Int> {
 }
 
 /**
- * Whether a book has been heard already, and should therefore be skipped when
- * continuing a series.
+ * Whether a book the series continuation is about to open should start at its
+ * beginning instead of at the position it was left at.
  *
- * Prefers an unsynced local record over the server's -- the same rule
- * `loadBook` follows, so the decision matches the position playback would
- * actually resume at.
+ * Series playback takes the next volume whatever its state, so it regularly
+ * opens books that were heard before. Resuming those at their stored position
+ * would land on the final seconds, end the book at once and hand on to the next
+ * -- tearing through the rest of the series in seconds. Anything already at the
+ * end therefore starts over; a book stopped in the middle keeps its bookmark.
+ *
+ * [startSec] and [finished] are the values playback would otherwise use, after
+ * the local record and the server's have been reconciled.
  */
-internal fun alreadyHeard(book: BookDetailDto, local: LocalProgress?): Boolean {
-    if (local != null && !local.synced) {
-        return local.finished || restsAtEnd(local.positionSec, book)
-    }
-    if (book.progress?.finished == true || local?.finished == true) return true
-    val stored = book.progress?.let { parseTimeSpan(it.position) } ?: local?.positionSec ?: 0.0
-    return restsAtEnd(stored, book)
-}
-
-private fun restsAtEnd(positionSec: Double, book: BookDetailDto): Boolean {
-    val duration = parseTimeSpan(book.duration)
-    return duration > 0.0 && positionSec >= duration - SERIES_END_SLACK_SEC
-}
+internal fun startsFromBeginning(startSec: Double, finished: Boolean, durationSec: Double): Boolean =
+    finished || (durationSec > 0.0 && startSec >= durationSec - SERIES_END_SLACK_SEC)
