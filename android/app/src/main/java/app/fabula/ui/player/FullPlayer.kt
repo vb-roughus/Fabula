@@ -404,6 +404,18 @@ fun FullPlayer(
                 utilityRow()
             }
         }
+
+        // Floats over whichever layout is in use, at the bottom edge where the
+        // thumb already is. Only visible during the closing seconds, and only
+        // when the next volume is ready to start.
+        SeriesNextUpCard(
+            player = player,
+            repository = repository,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .widthIn(max = 560.dp)
+                .padding(horizontal = 24.dp, vertical = 12.dp)
+        )
     }
 
     if (bookmarkManagerOpen) {

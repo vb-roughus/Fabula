@@ -138,4 +138,61 @@ class SeriesContinuationTest {
     fun `a book with no duration keeps its position`() {
         assertFalse(startsFromBeginning(startSec = 120.0, finished = false, durationSec = 0.0))
     }
+
+    // --- when the next volume is fetched -------------------------------------
+
+    @Test
+    fun `preparation waits until the end is in sight`() {
+        val tenHours = 10 * 3600.0
+        assertFalse(preparationDue(positionSec = 0.0, durationSec = tenHours))
+        assertFalse(preparationDue(positionSec = tenHours - 301.0, durationSec = tenHours))
+        assertTrue(preparationDue(positionSec = tenHours - 300.0, durationSec = tenHours))
+        assertTrue(preparationDue(positionSec = tenHours, durationSec = tenHours))
+    }
+
+    /**
+     * Without a duration there is no "near the end" -- and treating it as due
+     * would mean fetching the next volume on every tick for the whole book.
+     */
+    @Test
+    fun `a book of unknown length never becomes due`() {
+        assertFalse(preparationDue(positionSec = 500.0, durationSec = 0.0))
+    }
+
+    // --- when the skip card is offered ---------------------------------------
+
+    private fun cardAt(
+        positionSec: Double,
+        durationSec: Double = 10 * 3600.0,
+        seriesMode: Boolean = true,
+        hasPreparedNext: Boolean = true
+    ) = skipCardDue(positionSec, durationSec, seriesMode, hasPreparedNext)
+
+    @Test
+    fun `the card appears in the last thirty seconds`() {
+        val tenHours = 10 * 3600.0
+        assertFalse(cardAt(tenHours - 31.0))
+        assertTrue(cardAt(tenHours - 30.0))
+        assertTrue(cardAt(tenHours))
+    }
+
+    /**
+     * The card is the only sign the listener gets that the handover is ready,
+     * so offering it without a prepared volume would be a lie -- and tapping it
+     * would do nothing.
+     */
+    @Test
+    fun `no card while nothing is prepared`() {
+        assertFalse(cardAt(10 * 3600.0 - 10.0, hasPreparedNext = false))
+    }
+
+    @Test
+    fun `no card when series mode is off`() {
+        assertFalse(cardAt(10 * 3600.0 - 10.0, seriesMode = false))
+    }
+
+    @Test
+    fun `no card for a book of unknown length`() {
+        assertFalse(cardAt(10.0, durationSec = 0.0))
+    }
 }

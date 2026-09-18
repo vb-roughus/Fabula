@@ -91,6 +91,7 @@ import app.fabula.ui.home.HomeScreen
 import app.fabula.ui.library.LibraryScreen
 import app.fabula.ui.player.FullPlayer
 import app.fabula.ui.player.MiniPlayer
+import app.fabula.ui.player.SeriesNextUpCard
 import app.fabula.ui.series.SeriesDetailScreen
 import app.fabula.ui.series.SeriesManagementScreen
 import app.fabula.ui.series.SeriesScreen
@@ -567,6 +568,14 @@ fun Navigation(
                     .background(overlayBrush)
             ) {
                 if (hasBook) {
+                    // Above the mini player rather than over it: the card is
+                    // there to be tapped, and it must not bury the controls of
+                    // the book it is announcing the end of.
+                    SeriesNextUpCard(
+                        player = player,
+                        repository = repository,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                    )
                     MiniPlayer(
                         player = player,
                         repository = repository,

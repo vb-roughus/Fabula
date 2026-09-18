@@ -67,8 +67,12 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        // Only while nothing is playing. Backing out of the app is the normal
+        // way to listen to an audiobook, and disconnecting then took down the
+        // listener that continues a series at the end of a book -- which is why
+        // continuing worked when the app happened to be open and not otherwise.
         if (isFinishing) {
-            (application as FabulaApp).playerController.release()
+            (application as FabulaApp).playerController.releaseIfIdle()
         }
     }
 }

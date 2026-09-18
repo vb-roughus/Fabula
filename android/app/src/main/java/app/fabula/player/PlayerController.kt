@@ -29,7 +29,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -53,6 +52,11 @@ data class PlayerUiState(
     /** When on, the end of a book automatically continues with the next one in
      *  its series. Shown in the UI as a toggle, so it is never hidden state. */
     val seriesMode: Boolean = false,
+    /** The next volume of the series -- set only once it has been fetched and
+     *  its queue built, so a UI that offers to skip ahead can rely on the skip
+     *  actually working. Null whenever series mode is off, the current book is
+     *  the last one, or the preparation has not succeeded (yet). */
+    val seriesNext: BookDetailDto? = null,
     /** Remaining sleep timer in milliseconds. Null when the timer is off. */
     val sleepTimerRemainingMs: Long? = null,
     /** Configured shower boost in dB (0 = off). Persisted in DataStore. */
@@ -80,10 +84,12 @@ class PlayerController(
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var controller: MediaController? = null
+    private var connecting = false
     private var pollJob: Job? = null
     private var progressJob: Job? = null
     private var syncJob: Job? = null
     private var sleepJob: Job? = null
+    private var prepareJob: Job? = null
 
     /** Conflated: only the newest request matters, since the worker always
      *  reads the current pending set when it runs. */
@@ -153,26 +159,59 @@ class PlayerController(
     private var fileStarts: DoubleArray = DoubleArray(0)
 
     fun connect() {
-        if (controller != null) return
+        // `controller` stays null while the session is being built, so without
+        // the second guard a second call during that window would build a
+        // second controller and leak the first.
+        if (controller != null || connecting) return
+        connecting = true
         val token = SessionToken(context, ComponentName(context, PlaybackService::class.java))
         val future = MediaController.Builder(context, token).buildAsync()
         future.addListener({
-            controller = future.get()
-            controller?.addListener(playerListener)
+            connecting = false
+            val c = runCatching { future.get() }.getOrNull() ?: return@addListener
+            controller = c
+            c.addListener(playerListener)
             startPolling()
             startProgressSync()
+            startSeriesPreparation()
         }, MoreExecutors.directExecutor())
     }
 
+    /**
+     * Lets go of the session, but only while nothing is playing.
+     *
+     * The Activity is routinely finished while playback carries on in the
+     * foreground service -- backing out of the app is the normal way to listen.
+     * Releasing then took down the listener that continues a series at the end
+     * of a book, which is why continuing worked only when the app happened to
+     * still be open. Staying connected costs one binder connection to a service
+     * that is running anyway.
+     *
+     * Returns whether the session was actually let go of.
+     */
+    fun releaseIfIdle(): Boolean {
+        if (controller?.isPlaying == true) return false
+        release()
+        return true
+    }
+
+    /**
+     * Disconnects from the session and stops the background jobs.
+     *
+     * Deliberately survivable: the scope stays alive and the audio-device
+     * callback stays registered, so a later [connect] brings a fully working
+     * controller back. Cancelling the scope here used to leave a reconnected
+     * controller with no polling and no progress sync at all.
+     */
     fun release() {
-        audioManager.unregisterAudioDeviceCallback(audioDeviceCallback)
         pollJob?.cancel()
         progressJob?.cancel()
         syncJob?.cancel()
         sleepJob?.cancel()
+        prepareJob?.cancel()
         controller?.release()
         controller = null
-        scope.cancel()
+        connecting = false
     }
 
     fun setShowerBoostDb(db: Float) {
@@ -204,22 +243,31 @@ class PlayerController(
      * [startsFromBeginning].
      */
     suspend fun loadBook(book: BookDetailDto, startOverIfAtEnd: Boolean = false) {
-        val c = controller ?: return
-        val api = repository.apiOrNull()
-
-        fileStarts = fileStartsOf(book)
-
+        if (controller == null) return
         val items = buildPlaybackItems(book, repository, offlineStore)
-
         if (items.isEmpty()) return
+        val start = resumePositionOf(book, startOverIfAtEnd)
+        install(book, items, start)
+    }
 
-        val savedProgress = runCatching { api?.getProgress(book.id) }.getOrNull()
+    /** Where playback should pick a book up, and whether it counts as finished. */
+    private data class ResumePoint(val positionSec: Double, val finished: Boolean)
+
+    /**
+     * Reconciles the local progress record with the server's.
+     *
+     * An unsynced local entry was produced here and never reached the server, so
+     * it is by definition newer -- taking the server value would rewind the
+     * listener by exactly the stretch that failed to save. Once synced, the two
+     * agree and the server value is used as before.
+     */
+    private suspend fun resumePositionOf(
+        book: BookDetailDto,
+        startOverIfAtEnd: Boolean
+    ): ResumePoint {
+        val savedProgress = runCatching { repository.apiOrNull()?.getProgress(book.id) }.getOrNull()
         val localProgress = progressStore.local(book.id)
 
-        // An unsynced local entry was produced here and never reached the
-        // server, so it is by definition newer -- taking the server value would
-        // rewind the listener by exactly the stretch that failed to save. Once
-        // synced, the two agree and the server value is used as before.
         val useLocal = localProgress != null && (!localProgress.synced || savedProgress == null)
         val resumeSec = if (useLocal) localProgress!!.positionSec
             else parseTimeSpan(savedProgress?.position)
@@ -228,9 +276,22 @@ class PlayerController(
 
         val restart = startOverIfAtEnd &&
             startsFromBeginning(resumeSec, resumeFinished, parseTimeSpan(book.duration))
-        val startSec = if (restart) 0.0 else resumeSec
-        val savedFinished = !restart && resumeFinished
-        val (startIndex, startOffsetMs) = mapBookToMedia(startSec)
+        return if (restart) ResumePoint(0.0, finished = false)
+        else ResumePoint(resumeSec, resumeFinished)
+    }
+
+    /**
+     * Hands a prepared queue to the player. Purely local -- no network, no
+     * suspension -- which is what lets the series handover happen at the instant
+     * a book ends rather than whenever the connection gets round to answering.
+     */
+    private fun install(book: BookDetailDto, items: List<MediaItem>, start: ResumePoint) {
+        val c = controller ?: return
+        // Whatever was prepared was prepared to follow the book being left.
+        preparedNext = null
+        prepareRetryAtMs = 0L
+        fileStarts = fileStartsOf(book)
+        val (startIndex, startOffsetMs) = mapBookToMedia(start.positionSec)
 
         c.setMediaItems(items, startIndex, startOffsetMs)
         c.prepare()
@@ -239,15 +300,17 @@ class PlayerController(
         // series mode would forget itself the moment it did its job -- and a
         // running sleep timer would lose its countdown while its job kept
         // ticking. Only `highlightStartSec` is deliberately dropped: a capture
-        // in progress belongs to the book being left behind.
+        // in progress belongs to the book being left behind. `seriesNext` goes
+        // too: it described the book just installed, and the volume after it
+        // has yet to be prepared.
         val carried = _state.value
         _state.value = PlayerUiState(
             book = book,
             isPlaying = false,
-            positionInBook = startSec,
+            positionInBook = start.positionSec,
             durationInBook = parseTimeSpan(book.duration),
-            currentChapter = chapterAt(book, startSec),
-            finished = savedFinished,
+            currentChapter = chapterAt(book, start.positionSec),
+            finished = start.finished,
             seriesMode = carried.seriesMode,
             sleepTimerRemainingMs = carried.sleepTimerRemainingMs,
             showerBoostDb = carried.showerBoostDb,
@@ -407,6 +470,16 @@ class PlayerController(
                 if (_state.value.seriesMode) continueWithSeries()
             }
         }
+
+        // A book that stops on an error looks exactly like one that ended, from
+        // the outside: the sound stops and nothing follows. The difference is
+        // only visible here, so it goes into the log the user can send.
+        override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+            repository.logFailure(
+                "Player.error(${_state.value.book?.id ?: "-"} @ ${_state.value.positionInBook.toInt()}s)",
+                error
+            )
+        }
     }
 
     // --- series playback ---------------------------------------------------
@@ -428,9 +501,115 @@ class PlayerController(
     private var advancingSeries = false
 
     /**
-     * Continues with the next book of the series the finished book belongs to,
-     * whether or not it has been heard before. Called from STATE_ENDED, so it
-     * must not block.
+     * The next volume, fetched and turned into a playable queue while the
+     * current book is still running. See [SERIES_PREPARE_LEAD_SEC].
+     */
+    private data class PreparedNext(
+        /** The book this was prepared to follow -- a seek into another book
+         *  makes it stale, so it is checked rather than assumed. */
+        val afterBookId: Int,
+        val book: BookDetailDto,
+        val items: List<MediaItem>,
+        val start: ResumePoint
+    )
+
+    private var preparedNext: PreparedNext? = null
+
+    /** Wall clock before which no further preparation attempt is made. */
+    private var prepareRetryAtMs = 0L
+
+    /**
+     * Keeps [preparedNext] in step with what is playing.
+     *
+     * Runs for as long as the controller is connected rather than being tied to
+     * an end-of-book event, so a failed attempt is simply retried while there is
+     * still time -- which is the whole point of starting minutes early.
+     */
+    private fun startSeriesPreparation() {
+        prepareJob?.cancel()
+        prepareJob = scope.launch {
+            while (true) {
+                runCatching { prepareSeriesNextIfDue() }
+                    .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
+                delay(SERIES_PREPARE_POLL_MS)
+            }
+        }
+    }
+
+    private suspend fun prepareSeriesNextIfDue() {
+        val s = _state.value
+        val book = s.book
+
+        // Anything that makes a prepared volume meaningless drops it, so the
+        // skip card never offers a book that no longer follows this one.
+        if (!s.seriesMode || book?.seriesId == null) {
+            forgetPreparedNext()
+            return
+        }
+        preparedNext?.let { if (it.afterBookId != book.id) forgetPreparedNext() }
+        if (preparedNext != null) return
+
+        if (!preparationDue(s.positionInBook, s.durationInBook)) return
+        if (System.currentTimeMillis() < prepareRetryAtMs) return
+
+        val prepared = try {
+            prepareNextAfter(book)
+        } catch (c: kotlinx.coroutines.CancellationException) {
+            throw c
+        } catch (t: Throwable) {
+            repository.logFailure("Series.prepare", t)
+            null
+        }
+
+        // A book can have moved on while the fetch was in flight.
+        if (_state.value.book?.id != book.id) return
+
+        if (prepared == null) {
+            // Either there is nothing after this book, or it could not be
+            // reached. Both are retried: the series may simply have been
+            // extended, and a connection may come back.
+            prepareRetryAtMs = System.currentTimeMillis() + SERIES_PREPARE_RETRY_MS
+            return
+        }
+        preparedNext = prepared
+        _state.value = _state.value.copy(seriesNext = prepared.book)
+    }
+
+    private fun forgetPreparedNext() {
+        if (preparedNext == null && _state.value.seriesNext == null) return
+        preparedNext = null
+        prepareRetryAtMs = 0L
+        _state.value = _state.value.copy(seriesNext = null)
+    }
+
+    /**
+     * The next book of the series, ready to play. Books already heard are
+     * played again rather than skipped -- the series is followed volume by
+     * volume, whatever each one's state.
+     *
+     * A volume that cannot be fetched or has nothing playable is passed over in
+     * favour of the one after it: a single unreachable book must not end the
+     * series where the listener expects it to carry on.
+     */
+    private suspend fun prepareNextAfter(current: BookDetailDto): PreparedNext? {
+        val seriesId = current.seriesId ?: return null
+        for (id in idsAfter(seriesOrder(seriesId), current.id)) {
+            val candidate = bookDetail(id) ?: continue
+            val items = buildPlaybackItems(candidate, repository, offlineStore)
+            if (items.isEmpty()) continue
+            return PreparedNext(
+                afterBookId = current.id,
+                book = candidate,
+                items = items,
+                start = resumePositionOf(candidate, startOverIfAtEnd = true)
+            )
+        }
+        return null
+    }
+
+    /**
+     * Continues with the next book of the series the finished book belongs to.
+     * Called from STATE_ENDED, so it must not block.
      */
     private fun continueWithSeries() {
         if (advancingSeries) return
@@ -442,9 +621,7 @@ class PlayerController(
                 // Persist the book we are leaving before its state is replaced:
                 // the 4-second recorder would never see this final position.
                 recordProgress()
-                val next = nextInSeries(finishedBook) ?: return@launch
-                loadBook(next, startOverIfAtEnd = true)
-                play()
+                handOverTo(finishedBook)
             } catch (c: kotlinx.coroutines.CancellationException) {
                 throw c
             } catch (t: Throwable) {
@@ -456,18 +633,47 @@ class PlayerController(
     }
 
     /**
-     * The next book of the series, or null at the end of it. Books already
-     * heard are played again rather than skipped -- the series is followed
-     * volume by volume, whatever each one's state. The only book passed over is
-     * one whose details can't be fetched at all.
+     * Starts the next volume at once, without waiting out the rest of the
+     * current one. Offered by the skip card, which appears only while there is
+     * something prepared to skip to.
      */
-    private suspend fun nextInSeries(current: BookDetailDto): BookDetailDto? {
-        val seriesId = current.seriesId ?: return null
-        for (id in idsAfter(seriesOrder(seriesId), current.id)) {
-            val candidate = bookDetail(id)
-            if (candidate != null) return candidate
+    fun skipToSeriesNext() {
+        if (advancingSeries) return
+        val current = _state.value.book ?: return
+        val prepared = preparedNext?.takeIf { it.afterBookId == current.id } ?: return
+        advancingSeries = true
+        scope.launch {
+            try {
+                // Skipping the closing minute is not abandoning the book, it is
+                // being done with it -- so it counts as heard and leaves
+                // "Weiter hören" instead of lingering there with a rest nobody
+                // will play.
+                _state.value = _state.value.copy(finished = true)
+                recordProgress()
+                install(prepared.book, prepared.items, prepared.start)
+                play()
+            } catch (c: kotlinx.coroutines.CancellationException) {
+                throw c
+            } catch (t: Throwable) {
+                repository.logFailure("Series.skip", t)
+            } finally {
+                advancingSeries = false
+            }
         }
-        return null
+    }
+
+    /**
+     * Installs whatever follows [current]. Uses the volume prepared minutes ago
+     * where there is one; otherwise it falls back to fetching now, which is
+     * what happens when the preparation window was skipped over -- a seek
+     * straight to the end, or series mode switched on during the last minute.
+     */
+    private suspend fun handOverTo(current: BookDetailDto) {
+        val prepared = preparedNext?.takeIf { it.afterBookId == current.id }
+            ?: prepareNextAfter(current)
+            ?: return
+        install(prepared.book, prepared.items, prepared.start)
+        play()
     }
 
     /**
@@ -512,6 +718,7 @@ class PlayerController(
      * position would win.
      */
     private fun startProgressSync() {
+        syncJob?.cancel()
         syncJob = scope.launch {
             for (unused in syncRequests) {
                 val api = repository.apiOrNull() ?: continue
@@ -552,6 +759,8 @@ class PlayerController(
     }
 
     private fun startPolling() {
+        pollJob?.cancel()
+        progressJob?.cancel()
         pollJob = scope.launch {
             while (true) {
                 updateStateFromController()
