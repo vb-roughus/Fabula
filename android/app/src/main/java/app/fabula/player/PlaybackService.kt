@@ -130,9 +130,23 @@ class PlaybackService : MediaSessionService() {
 
         val player = ExoPlayer.Builder(this)
             .setMediaSourceFactory(DefaultMediaSourceFactory(this).setDataSourceFactory(dataSourceFactory))
+            // MUSIC rather than SPEECH, and that is not cosmetic: it decides
+            // what happens when a notification chimes.
+            //
+            // A notification sound asks for transient focus that the current
+            // player may merely duck under. ExoPlayer's own focus handling
+            // treats SPEECH as "cannot be ducked usefully" and pauses instead
+            // (AudioFocusManager.willPauseWhenDucked() tests for exactly this
+            // content type), which is why a two-second chime stopped an
+            // audiobook while Spotify only dips. Declaring MUSIC lets the
+            // volume drop for the length of the chime and the sentence carry
+            // on.
+            //
+            // A real interruption is unaffected: a phone call takes
+            // non-duckable transient focus and still pauses playback.
             .setAudioAttributes(
                 AudioAttributes.Builder()
-                    .setContentType(C.AUDIO_CONTENT_TYPE_SPEECH)
+                    .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
                     .setUsage(C.USAGE_MEDIA)
                     .build(),
                 /* handleAudioFocus = */ true
