@@ -1,6 +1,7 @@
 package app.fabula.ui.library
 
 import app.fabula.data.BookSummaryDto
+import app.fabula.data.LibraryType
 
 /**
  * What the library lists, and what a search finds.
@@ -58,3 +59,55 @@ internal fun seriesLabel(book: BookSummaryDto): String? {
         else position.toString().replace('.', ',')
     return "$name · Band $shown"
 }
+
+// --- paging ---------------------------------------------------------------
+
+/** Books per request. The server caps a page at 200; this is what a screenful or two needs. */
+internal const val LIBRARY_PAGE_SIZE = 60
+
+/**
+ * How many books before the end of what is loaded the next page is requested.
+ * A few rows' worth, so it is usually in by the time the scrolling gets there.
+ */
+internal const val LOAD_MORE_PREFETCH = 12
+
+/**
+ * Whether the server has more pages than have been fetched. Worked out from the
+ * server's own total -- not from how many books survived the client-side
+ * filters, which can be fewer than a page and would make the end look near.
+ */
+internal fun hasMorePages(loadedPages: Int, pageSize: Int, total: Int): Boolean =
+    loadedPages * pageSize < total
+
+/**
+ * Adds a page to what is already listed, skipping books that are there.
+ *
+ * Pages are separate requests. A book added or renamed in between shifts the
+ * boundary, so the same book can turn up at the end of one page and the start
+ * of the next -- and a grid keyed by id throws on a duplicate key.
+ */
+internal fun appendPage(
+    existing: List<BookSummaryDto>,
+    incoming: List<BookSummaryDto>
+): List<BookSummaryDto> {
+    val seen = existing.mapTo(HashSet()) { it.id }
+    return existing + incoming.filter { seen.add(it.id) }
+}
+
+/**
+ * Whether scrolling has got close enough to the end to ask for the next page.
+ *
+ * [busy] covers both a request in flight and one that just failed: without the
+ * second, a failing request would be repeated as fast as it can fail.
+ */
+internal fun shouldLoadMore(
+    lastVisibleIndex: Int,
+    itemCount: Int,
+    hasMore: Boolean,
+    busy: Boolean
+): Boolean =
+    hasMore && !busy && itemCount > 0 && lastVisibleIndex >= itemCount - 1 - LOAD_MORE_PREFETCH
+
+/** The books of one kind of library, or all of them for null. */
+internal fun List<BookSummaryDto>.ofType(type: LibraryType?): List<BookSummaryDto> =
+    if (type == null) this else this.filter { it.type == type }

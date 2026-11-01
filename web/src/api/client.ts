@@ -149,12 +149,15 @@ export const api = {
     search?: string;
     /** Only books that belong to no series. */
     standalone?: boolean;
+    /** One kind of library only. */
+    type?: LibraryType;
     page: number;
     pageSize: number;
   }) => {
     const qs = new URLSearchParams();
     if (params.search) qs.set('search', params.search);
     if (params.standalone) qs.set('standalone', 'true');
+    if (params.type) qs.set('type', params.type);
     qs.set('page', String(params.page));
     qs.set('pageSize', String(params.pageSize));
     return request<PagedResult<BookSummary>>(`/api/books?${qs.toString()}`);
