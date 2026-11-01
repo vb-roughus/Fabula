@@ -16,6 +16,9 @@ interface FabulaApi {
     @GET("api/books")
     suspend fun listBooks(
         @Query("search") search: String? = null,
+        /** Only books that belong to no series. Older servers ignore it and
+         *  send everything, which is why callers filter again themselves. */
+        @Query("standalone") standalone: Boolean? = null,
         @Query("page") page: Int = 1,
         @Query("pageSize") pageSize: Int = 100
     ): PagedResultDto<BookSummaryDto>

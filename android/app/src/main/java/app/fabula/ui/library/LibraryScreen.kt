@@ -1,5 +1,6 @@
 package app.fabula.ui.library
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -12,12 +13,17 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -27,6 +33,8 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
@@ -36,13 +44,19 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import app.fabula.FabulaApp
 import app.fabula.data.BookSummaryDto
@@ -59,12 +73,27 @@ import app.fabula.ui.OfflineBanner
 import app.fabula.ui.OfflineEmptyMessage
 import androidx.compose.runtime.CompositionLocalProvider
 import coil3.compose.AsyncImage
+import kotlinx.coroutines.delay
 
 private sealed interface LibraryState {
     data object Loading : LibraryState
     data class Loaded(val books: List<BookSummaryDto>) : LibraryState
     data class Error(val message: String) : LibraryState
 }
+
+private sealed interface SearchState {
+    /** Nothing typed yet. */
+    data object Idle : SearchState
+    data object Loading : SearchState
+    data class Results(val books: List<BookSummaryDto>) : SearchState
+    data class Error(val message: String) : SearchState
+}
+
+/** How long typing has to pause before the server is asked. */
+private const val SEARCH_DEBOUNCE_MS = 300L
+
+private fun List<BookSummaryDto>.ofType(type: LibraryType?): List<BookSummaryDto> =
+    if (type == null) this else this.filter { it.type == type }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -75,6 +104,13 @@ fun LibraryScreen(
 ) {
     var state by remember { mutableStateOf<LibraryState>(LibraryState.Loading) }
     var filter by remember { mutableStateOf<LibraryType?>(null) }
+
+    // Saveable, so turning the phone does not throw away what was being typed.
+    var searching by rememberSaveable { mutableStateOf(false) }
+    var query by rememberSaveable { mutableStateOf("") }
+    var searchState by remember { mutableStateOf<SearchState>(SearchState.Idle) }
+    val trimmedQuery = query.trim()
+    val searchActive = searching && trimmedQuery.isNotEmpty()
 
     // Fallback for when the server is unreachable: the books already on disk.
     val offlineStore = (LocalContext.current.applicationContext as FabulaApp).offlineStore
@@ -98,7 +134,13 @@ fun LibraryScreen(
             state = if (api == null) {
                 LibraryState.Error("Kein Server konfiguriert.")
             } else {
-                LibraryState.Loaded(api.listBooks(page = 1, pageSize = 200).items)
+                // Books in a series are not listed here -- the Series tab is
+                // the way to them, and the search finds them by name.
+                LibraryState.Loaded(
+                    standaloneBooks(
+                        api.listBooks(standalone = true, page = 1, pageSize = 200).items
+                    )
+                )
             }
         } catch (c: kotlinx.coroutines.CancellationException) {
             throw c  // effect cancelled (navigation/refresh) -- not an error
@@ -109,13 +151,83 @@ fun LibraryScreen(
         }
     }
 
+    // The search asks the server rather than filtering what is loaded: the list
+    // above holds one page, and a search that can only find what happens to be
+    // on screen is not much of a search. Keyed on the text, so typing on
+    // cancels the request still waiting out its pause.
+    LaunchedEffect(trimmedQuery, refreshTrigger, reconnects) {
+        if (trimmedQuery.isEmpty()) {
+            searchState = SearchState.Idle
+            return@LaunchedEffect
+        }
+        delay(SEARCH_DEBOUNCE_MS)
+        // Keep the previous results on screen while the next ones load; a
+        // spinner between every keystroke would make the grid flicker.
+        if (searchState !is SearchState.Results) searchState = SearchState.Loading
+        searchState = try {
+            val api = repository.apiOrNull()
+            if (api == null) {
+                SearchState.Error("Kein Server konfiguriert.")
+            } else {
+                // Not narrowed to standalone books: a search finds everything.
+                SearchState.Results(api.listBooks(search = trimmedQuery, page = 1, pageSize = 200).items)
+            }
+        } catch (c: kotlinx.coroutines.CancellationException) {
+            throw c
+        } catch (t: Throwable) {
+            SearchState.Error(t.message ?: "Unbekannter Fehler")
+        }
+    }
+
+    // Dropping focus is what closes the keyboard; it is also the stable way to.
+    val focusManager = LocalFocusManager.current
+    val searchFocus = remember { FocusRequester() }
+    LaunchedEffect(searching) {
+        if (searching) searchFocus.requestFocus()
+    }
+    val closeSearch = {
+        searching = false
+        query = ""
+        focusManager.clearFocus()
+    }
+    // Back leaves the search first, rather than the screen.
+    BackHandler(enabled = searching) { closeSearch() }
+
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Bibliothek") },
+                title = {
+                    if (searching) {
+                        SearchField(
+                            query = query,
+                            onQueryChange = { query = it },
+                            onSearch = { focusManager.clearFocus() },
+                            focusRequester = searchFocus
+                        )
+                    } else {
+                        Text("Bibliothek")
+                    }
+                },
                 navigationIcon = {
-                    IconButton(onClick = onMenuClick) {
-                        Icon(Icons.Filled.Menu, contentDescription = "Menü")
+                    if (searching) {
+                        IconButton(onClick = closeSearch) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Suche schliessen")
+                        }
+                    } else {
+                        IconButton(onClick = onMenuClick) {
+                            Icon(Icons.Filled.Menu, contentDescription = "Menü")
+                        }
+                    }
+                },
+                actions = {
+                    if (!searching) {
+                        IconButton(onClick = { searching = true }) {
+                            Icon(Icons.Filled.Search, contentDescription = "Suchen")
+                        }
+                    } else if (query.isNotEmpty()) {
+                        IconButton(onClick = { query = "" }) {
+                            Icon(Icons.Filled.Close, contentDescription = "Eingabe löschen")
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
@@ -142,12 +254,24 @@ fun LibraryScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    when (val s = state) {
+                    if (searchActive) {
+                        SearchResults(
+                            state = searchState,
+                            query = trimmedQuery,
+                            filter = filter,
+                            offlineBooks = offlineBooks,
+                            repository = repository,
+                            badgeFor = badgeFor,
+                            onBookClick = onBookClick
+                        )
+                    } else when (val s = state) {
                         LibraryState.Loading -> CircularProgressIndicator()
                         is LibraryState.Error -> {
-                            val offlineVisible =
-                                if (filter == null) offlineBooks
-                                else offlineBooks.filter { it.type == filter }
+                            // Offline, every downloaded book is listed -- series
+                            // volumes included. Hiding them here would strand
+                            // them: the Series tab has to ask the server, so it
+                            // is no way to a downloaded book without a connection.
+                            val offlineVisible = offlineBooks.ofType(filter)
                             if (offlineBooks.isEmpty()) {
                                 OfflineEmptyMessage(s.message)
                             } else {
@@ -171,10 +295,12 @@ fun LibraryScreen(
                             }
                         }
                         is LibraryState.Loaded -> {
-                            val visible = if (filter == null) s.books else s.books.filter { it.type == filter }
+                            val visible = s.books.ofType(filter)
                             when {
-                                s.books.isEmpty() -> Text(
-                                    "Noch nichts in der Bibliothek. Lege eine Bibliothek auf dem Server an und starte einen Scan."
+                                s.books.isEmpty() -> CenteredHint(
+                                    "Keine Titel ohne Serie. Titel einer Serie findest du unter " +
+                                        "\u201eSerien\u201c oder über die Suche. Neue Titel erscheinen " +
+                                        "nach einem Scan auf dem Server."
                                 )
                                 visible.isEmpty() -> Text(
                                     "In dieser Kategorie ist noch nichts vorhanden.",
@@ -193,6 +319,95 @@ fun LibraryScreen(
             }
         }
     }
+}
+
+/** What the library shows while a search is running. */
+@Composable
+private fun SearchResults(
+    state: SearchState,
+    query: String,
+    filter: LibraryType?,
+    offlineBooks: List<BookSummaryDto>,
+    repository: FabulaRepository,
+    badgeFor: (Int) -> DownloadBadgeState?,
+    onBookClick: (Int) -> Unit
+) {
+    when (state) {
+        SearchState.Idle, SearchState.Loading -> CircularProgressIndicator()
+        is SearchState.Results -> {
+            val visible = state.books.ofType(filter)
+            if (visible.isEmpty()) {
+                CenteredHint("Nichts gefunden für \u201e$query\u201c.")
+            } else {
+                BookGrid(
+                    books = visible,
+                    repository = repository,
+                    badgeFor = badgeFor,
+                    onClick = onBookClick,
+                    showSeries = true
+                )
+            }
+        }
+        is SearchState.Error -> {
+            // No server: search what is on the device, so the field still does
+            // something useful in a tunnel.
+            val local = offlineBooks.filter { matchesSearch(it, query) }.ofType(filter)
+            Column(modifier = Modifier.fillMaxSize()) {
+                OfflineBanner(state.message)
+                if (local.isEmpty()) {
+                    CenteredHint("Offline nichts gefunden für \u201e$query\u201c.")
+                } else {
+                    BookGrid(
+                        books = local,
+                        repository = repository,
+                        badgeFor = badgeFor,
+                        onClick = onBookClick,
+                        showSeries = true
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CenteredHint(text: String) {
+    Text(
+        text,
+        color = MaterialTheme.colorScheme.outline,
+        textAlign = TextAlign.Center,
+        modifier = Modifier.padding(horizontal = 24.dp)
+    )
+}
+
+@Composable
+private fun SearchField(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onSearch: () -> Unit,
+    focusRequester: FocusRequester
+) {
+    TextField(
+        value = query,
+        onValueChange = onQueryChange,
+        placeholder = { Text("Titel, Autor, Sprecher, Serie") },
+        singleLine = true,
+        // Sits in the app bar, so it takes the bar's background and drops the
+        // underline a form field would draw.
+        colors = TextFieldDefaults.colors(
+            focusedContainerColor = Color.Transparent,
+            unfocusedContainerColor = Color.Transparent,
+            disabledContainerColor = Color.Transparent,
+            focusedIndicatorColor = Color.Transparent,
+            unfocusedIndicatorColor = Color.Transparent,
+            disabledIndicatorColor = Color.Transparent
+        ),
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        keyboardActions = KeyboardActions(onSearch = { onSearch() }),
+        modifier = Modifier
+            .fillMaxWidth()
+            .focusRequester(focusRequester)
+    )
 }
 
 @Composable
@@ -236,7 +451,8 @@ private fun BookGrid(
     books: List<BookSummaryDto>,
     repository: FabulaRepository,
     badgeFor: (Int) -> DownloadBadgeState?,
-    onClick: (Int) -> Unit
+    onClick: (Int) -> Unit,
+    showSeries: Boolean = false
 ) {
     val bottomInset = LocalContentBottomInset.current.calculateBottomPadding()
     LazyVerticalGrid(
@@ -251,6 +467,7 @@ private fun BookGrid(
                 book = book,
                 repository = repository,
                 badge = badgeFor(book.id),
+                showSeries = showSeries,
                 onClick = { onClick(book.id) }
             )
         }
@@ -262,6 +479,7 @@ private fun BookCard(
     book: BookSummaryDto,
     repository: FabulaRepository,
     badge: DownloadBadgeState?,
+    showSeries: Boolean,
     onClick: () -> Unit
 ) {
     val durationSec = parseTimeSpan(book.duration)
@@ -346,6 +564,18 @@ private fun BookCard(
                 fontWeight = FontWeight.Medium,
                 maxLines = 2
             )
+            // In search results only: a book that the library itself hides is
+            // otherwise a result with no hint of where it belongs.
+            if (showSeries) {
+                seriesLabel(book)?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1
+                    )
+                }
+            }
             if (book.authors.isNotEmpty()) {
                 Text(
                     book.authors.joinToString(", "),

@@ -145,9 +145,16 @@ export const api = {
     request<void>(`/api/libraries/${id}`, { method: 'DELETE' }),
 
   // --- catalog ------------------------------------------------------------
-  listBooks: (params: { search?: string; page: number; pageSize: number }) => {
+  listBooks: (params: {
+    search?: string;
+    /** Only books that belong to no series. */
+    standalone?: boolean;
+    page: number;
+    pageSize: number;
+  }) => {
     const qs = new URLSearchParams();
     if (params.search) qs.set('search', params.search);
+    if (params.standalone) qs.set('standalone', 'true');
     qs.set('page', String(params.page));
     qs.set('pageSize', String(params.pageSize));
     return request<PagedResult<BookSummary>>(`/api/books?${qs.toString()}`);
