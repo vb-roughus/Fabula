@@ -4,7 +4,8 @@ import { api } from '../api/client';
 import type { BookSummary, LibraryType } from '../api/types';
 import { BookCard } from '../components/BookCard';
 
-type Filter = 'all' | LibraryType;
+/** The tabs along the top. 'standalone' is the list of books without a series. */
+type Filter = 'all' | LibraryType | 'standalone';
 
 const PAGE_SIZE = 60;
 
@@ -36,10 +37,11 @@ export function LibraryPage() {
     return () => clearTimeout(timer);
   }, [search]);
 
-  // Books in a series are left out of the plain listing -- they are reached
-  // through the series -- but a search finds everything, so it is not narrowed.
+  // The tabs are the server's to apply: with a list that arrives page by page,
+  // the page can only filter what it has loaded. A search stays inside its tab.
   const searching = asked.length > 0;
-  const type = filter === 'all' ? undefined : filter;
+  const standalone = filter === 'standalone';
+  const type = filter === 'Audiobook' || filter === 'RadioPlay' ? filter : undefined;
 
   const {
     data,
@@ -55,7 +57,7 @@ export function LibraryPage() {
     queryFn: ({ pageParam }) =>
       api.listBooks({
         search: asked,
-        standalone: !searching,
+        standalone,
         type,
         page: pageParam,
         pageSize: PAGE_SIZE
@@ -111,6 +113,9 @@ export function LibraryPage() {
         <FilterChip active={filter === 'RadioPlay'} onClick={() => setFilter('RadioPlay')}>
           Hörspiele
         </FilterChip>
+        <FilterChip active={filter === 'standalone'} onClick={() => setFilter('standalone')}>
+          Ohne Serie
+        </FilterChip>
       </div>
 
       {isLoading && <div className="text-ink-400">Lade Bibliothek...</div>}
@@ -122,16 +127,18 @@ export function LibraryPage() {
         <div className="text-ink-400">Nichts gefunden für „{asked}“.</div>
       )}
 
-      {data && books.length === 0 && !searching && filter !== 'all' && (
-        <div className="text-ink-400">In dieser Kategorie gibt es keine Titel ohne Serie.</div>
+      {data && books.length === 0 && !searching && filter === 'standalone' && (
+        <div className="text-ink-400">Alle Titel gehören zu einer Serie.</div>
+      )}
+
+      {data && books.length === 0 && !searching && (filter === 'Audiobook' || filter === 'RadioPlay') && (
+        <div className="text-ink-400">In dieser Kategorie ist noch nichts vorhanden.</div>
       )}
 
       {data && books.length === 0 && !searching && filter === 'all' && (
         <div className="text-ink-400">
-          Keine Titel ohne Serie. Titel einer Serie findest du unter{' '}
-          <a href="/series" className="text-accent-400 hover:underline">Serien</a> oder über die Suche.
-          Neue Titel erscheinen nach einem Scan, den du unter{' '}
-          <a href="/settings" className="text-accent-400 hover:underline">Einstellungen</a> startest.
+          Noch nichts in der Bibliothek. Lege eine Bibliothek unter{' '}
+          <a href="/settings" className="text-accent-400 hover:underline">Einstellungen</a> an und starte einen Scan.
         </div>
       )}
 

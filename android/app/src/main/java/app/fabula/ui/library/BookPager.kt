@@ -121,10 +121,6 @@ internal class BookPager(
         }
     }
 
-    /**
-     * The second pass over a page: the server filters, and this is for one that
-     * predates the filters and sent everything.
-     */
     private fun filterPage(items: List<BookSummaryDto>, query: PageQuery): List<BookSummaryDto> =
-        (if (query.standalone) standaloneBooks(items) else items).ofType(query.type)
+        items.matching(query)
 }

@@ -2,6 +2,7 @@ package app.fabula.ui.library
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,6 +22,7 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -68,7 +70,6 @@ import androidx.compose.ui.unit.dp
 import app.fabula.FabulaApp
 import app.fabula.data.BookSummaryDto
 import app.fabula.data.FabulaRepository
-import app.fabula.data.LibraryType
 import app.fabula.data.PagedResultDto
 import app.fabula.data.formatDurationHuman
 import app.fabula.data.parseTimeSpan
@@ -108,7 +109,7 @@ fun LibraryScreen(
     onMenuClick: () -> Unit,
     onBookClick: (Int) -> Unit
 ) {
-    var filter by remember { mutableStateOf<LibraryType?>(null) }
+    var filter by remember { mutableStateOf(LibraryFilter.All) }
 
     // Saveable, so turning the phone does not throw away what was being typed.
     var searching by rememberSaveable { mutableStateOf(false) }
@@ -136,14 +137,13 @@ fun LibraryScreen(
     // Refetch after a successful manual reconnect from the drawer.
     val reconnects by repository.reconnects.collectAsState()
 
-    // Books in a series are not listed here -- the Series tab is the way to
-    // them, and the search finds them by name. The category chips ask the
-    // server too, since a client can only filter the pages it has loaded.
+    // The tabs ask the server rather than filter what is loaded: with a list
+    // that arrives page by page, a client can only filter the pages it has.
     LaunchedEffect(filter, refreshTrigger, reconnects) {
         // The list on screen stays up while this runs, so a pull-to-refresh
         // doesn't fall back to the spinner.
         try {
-            browse.reload(PageQuery(search = null, standalone = true, type = filter))
+            browse.reload(filter.toQuery())
         } finally {
             isRefreshing = false
         }
@@ -159,8 +159,8 @@ fun LibraryScreen(
             return@LaunchedEffect
         }
         delay(SEARCH_DEBOUNCE_MS)
-        // Not narrowed to standalone books: a search finds everything.
-        results.reload(PageQuery(search = trimmedQuery, standalone = false, type = filter))
+        // Stays inside the tab it was typed in.
+        results.reload(filter.toQuery(search = trimmedQuery))
     }
 
     KeepLoadingWhileEmpty(browse)
@@ -291,7 +291,7 @@ private fun KeepLoadingWhileEmpty(pager: BookPager) {
 @Composable
 private fun BrowseContent(
     pager: BookPager,
-    filter: LibraryType?,
+    filter: LibraryFilter,
     offlineBooks: List<BookSummaryDto>,
     repository: FabulaRepository,
     badgeFor: (Int) -> DownloadBadgeState?,
@@ -307,15 +307,17 @@ private fun BrowseContent(
             listing.books.isEmpty() && listing.moreFailed -> CenteredHint(
                 "Laden fehlgeschlagen. Zum Wiederholen nach unten ziehen."
             )
-            listing.books.isEmpty() && filter == null -> CenteredHint(
-                "Keine Titel ohne Serie. Titel einer Serie findest du unter " +
-                    "\u201eSerien\u201c oder über die Suche. Neue Titel erscheinen " +
-                    "nach einem Scan auf dem Server."
+            listing.books.isEmpty() && filter == LibraryFilter.All -> CenteredHint(
+                "Noch nichts in der Bibliothek. Lege eine Bibliothek auf dem Server an " +
+                    "und starte einen Scan."
+            )
+            listing.books.isEmpty() && filter == LibraryFilter.Standalone -> CenteredHint(
+                "Alle Titel gehören zu einer Serie."
             )
             listing.books.isEmpty() -> CenteredHint(
-                "In dieser Kategorie gibt es keine Titel ohne Serie."
+                "In dieser Kategorie ist noch nichts vorhanden."
             )
-            // Keyed on the query, so a new category starts at the top while a
+            // Keyed on the query, so a new tab starts at the top while a
             // refresh keeps its place.
             else -> key(listing.query) {
                 BookGrid(
@@ -328,11 +330,8 @@ private fun BrowseContent(
             }
         }
         error != null -> {
-            // Offline, every downloaded book is listed -- series volumes
-            // included. Hiding them here would strand them: the Series tab has
-            // to ask the server, so it is no way to a downloaded book without a
-            // connection.
-            val offlineVisible = offlineBooks.ofType(filter)
+            // The downloaded books, narrowed by the tab like the server would.
+            val offlineVisible = offlineBooks.matching(filter.toQuery())
             if (offlineBooks.isEmpty()) {
                 OfflineEmptyMessage(error)
             } else {
@@ -364,7 +363,7 @@ private fun BrowseContent(
 private fun SearchResults(
     pager: BookPager,
     query: String,
-    filter: LibraryType?,
+    filter: LibraryFilter,
     offlineBooks: List<BookSummaryDto>,
     repository: FabulaRepository,
     badgeFor: (Int) -> DownloadBadgeState?,
@@ -392,7 +391,7 @@ private fun SearchResults(
         error != null -> {
             // No server: search what is on the device, so the field still does
             // something useful in a tunnel.
-            val local = offlineBooks.filter { matchesSearch(it, query) }.ofType(filter)
+            val local = offlineBooks.filter { matchesSearch(it, query) }.matching(filter.toQuery())
             Column(modifier = Modifier.fillMaxSize()) {
                 OfflineBanner(error)
                 if (local.isEmpty()) {
@@ -454,21 +453,19 @@ private fun SearchField(
 
 @Composable
 private fun FilterChipsRow(
-    filter: LibraryType?,
-    onFilterChange: (LibraryType?) -> Unit
+    filter: LibraryFilter,
+    onFilterChange: (LibraryFilter) -> Unit
 ) {
     Row(
+        // Scrolls sideways where the four tabs do not fit a narrow screen.
         modifier = Modifier
             .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
             .padding(horizontal = 12.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        FilterChipPill(label = "Alle", active = filter == null) { onFilterChange(null) }
-        FilterChipPill(label = "Hörbücher", active = filter == LibraryType.Audiobook) {
-            onFilterChange(LibraryType.Audiobook)
-        }
-        FilterChipPill(label = "Hörspiele", active = filter == LibraryType.RadioPlay) {
-            onFilterChange(LibraryType.RadioPlay)
+        LibraryFilter.entries.forEach { tab ->
+            FilterChipPill(label = tab.label, active = filter == tab) { onFilterChange(tab) }
         }
     }
 }

@@ -25,10 +25,9 @@ public static class BookEndpoints
                 .Include(b => b.Series)
                 .AsNoTracking();
 
-            // Only books that belong to no series. The libraries list these on
-            // their own and reach the rest through the series they belong to.
-            // The caller decides when to ask: a search is meant to find
-            // everything, so the clients leave this off while one is running.
+            // The library's tabs: books without a series, or one kind of
+            // library. Applied before the search and before paging, so a page
+            // is never thinned out afterwards.
             query = query.WhereStandalone(standalone == true).WhereType(type);
 
             if (!string.IsNullOrWhiteSpace(search))
