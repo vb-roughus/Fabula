@@ -21,7 +21,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.BugReport
-import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -35,6 +34,7 @@ import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -87,7 +87,6 @@ private enum class SettingsSection(val title: String) {
     Playback("Wiedergabe"),
     Downloads("Downloads"),
     AppUpdate("App-Update"),
-    ServerUpdate("Server-Update"),
     Diagnostics("Diagnose")
 }
 
@@ -149,7 +148,12 @@ fun SettingsScreen(
                     SettingsMenuItem(Icons.Filled.Palette, "Darstellung", "Hell, Dunkel, System") {
                         section = SettingsSection.Appearance
                     }
-                    SettingsMenuItem(Icons.Filled.Dns, "Server", "Server-URL") {
+                    SettingsMenuItem(
+                        Icons.Filled.Dns,
+                        "Server",
+                        // The update lives on that page, for admins.
+                        if (isAdmin) "Adresse & Server-Update" else "Server-URL"
+                    ) {
                         section = SettingsSection.Server
                     }
                     SettingsMenuItem(Icons.Filled.Bedtime, "Wiedergabe", "Schlaf-Timer") {
@@ -172,11 +176,6 @@ fun SettingsScreen(
                             "Konten, Rechte, Passwörter",
                             onManageUsers
                         )
-                        SettingsMenuItem(
-                            Icons.Filled.CloudSync,
-                            "Server-Update",
-                            "Serverversion prüfen & installieren"
-                        ) { section = SettingsSection.ServerUpdate }
                     }
                     SettingsMenuItem(Icons.Filled.SystemUpdate, "App-Update", "Version & Aktualisierung") {
                         section = SettingsSection.AppUpdate
@@ -186,11 +185,10 @@ fun SettingsScreen(
                     }
                 }
                 SettingsSection.Appearance -> AppearanceSection(repository)
-                SettingsSection.Server -> ServerSection(repository)
+                SettingsSection.Server -> ServerSection(repository, isAdmin)
                 SettingsSection.Playback -> PlaybackSection(repository)
                 SettingsSection.Downloads -> DownloadsSection(repository, onOpenBook)
                 SettingsSection.AppUpdate -> AppUpdateSection(repository)
-                SettingsSection.ServerUpdate -> ServerUpdateSection(repository)
                 SettingsSection.Diagnostics -> DiagnoseSection(repository)
             }
         }
@@ -231,7 +229,7 @@ private fun SettingsMenuItem(
 }
 
 @Composable
-private fun ServerSection(repository: FabulaRepository) {
+private fun ServerSection(repository: FabulaRepository, isAdmin: Boolean) {
     val storedUrl by repository.baseUrlFlow.collectAsState(initial = "")
     var url by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
@@ -262,6 +260,14 @@ private fun ServerSection(repository: FabulaRepository) {
             }
         }
     ) { Text("Server speichern") }
+
+    // Admin-only: installing a new server version affects everyone. The server
+    // enforces that; this only decides what is offered.
+    if (isAdmin) {
+        HorizontalDivider()
+        Text("Server-Update", style = MaterialTheme.typography.titleMedium)
+        ServerUpdateSection(repository)
+    }
 }
 
 @Composable
