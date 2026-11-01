@@ -11,9 +11,14 @@ export function LibraryPage() {
   const [filter, setFilter] = useState<Filter>('all');
   const [page] = useState(1);
 
+  // Books in a series are left out of the plain listing -- they are reached
+  // through the series -- but a search finds everything, so it is not narrowed.
+  const searching = search.trim().length > 0;
+
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['books', search, page],
-    queryFn: () => api.listBooks({ search, page, pageSize: 60 }),
+    queryFn: () =>
+      api.listBooks({ search, standalone: !searching, page, pageSize: 60 }),
     staleTime: 0
   });
 
@@ -53,10 +58,16 @@ export function LibraryPage() {
         <div className="text-red-400">Fehler: {(error as Error).message}</div>
       )}
 
-      {data && data.items.length === 0 && (
+      {data && data.items.length === 0 && searching && (
+        <div className="text-ink-400">Nichts gefunden für „{search.trim()}“.</div>
+      )}
+
+      {data && data.items.length === 0 && !searching && (
         <div className="text-ink-400">
-          Noch nichts in der Bibliothek. Lege eine Bibliothek unter{' '}
-          <a href="/settings" className="text-accent-400 hover:underline">Einstellungen</a> an und starte einen Scan.
+          Keine Titel ohne Serie. Titel einer Serie findest du unter{' '}
+          <a href="/series" className="text-accent-400 hover:underline">Serien</a> oder über die Suche.
+          Neue Titel erscheinen nach einem Scan, den du unter{' '}
+          <a href="/settings" className="text-accent-400 hover:underline">Einstellungen</a> startest.
         </div>
       )}
 

@@ -12,7 +12,7 @@ public static class BookEndpoints
     {
         var group = app.MapGroup("/api/books").WithTags("Books").RequireAuthorization();
 
-        group.MapGet("/", async (HttpContext http, FabulaDbContext db, string? search, int page, int pageSize, CancellationToken ct) =>
+        group.MapGet("/", async (HttpContext http, FabulaDbContext db, string? search, bool? standalone, int page, int pageSize, CancellationToken ct) =>
         {
             var uid = http.UserId();
             page = page <= 0 ? 1 : page;
@@ -25,12 +25,17 @@ public static class BookEndpoints
                 .Include(b => b.Series)
                 .AsNoTracking();
 
+            // Only books that belong to no series. The libraries list these on
+            // their own and reach the rest through the series they belong to.
+            // The caller decides when to ask: a search is meant to find
+            // everything, so the clients leave this off while one is running.
+            if (standalone == true)
+                query = query.Where(b => b.SeriesId == null);
+
             if (!string.IsNullOrWhiteSpace(search))
             {
-                var s = search.Trim();
-                query = query.Where(b =>
-                    EF.Functions.Like(b.Title, $"%{s}%") ||
-                    b.Authors.Any(a => EF.Functions.Like(a.Name, $"%{s}%")));
+                var ids = await BookSearch.MatchingIdsAsync(db, search, ct);
+                query = query.Where(b => ids.Contains(b.Id));
             }
 
             var total = await query.CountAsync(ct);
