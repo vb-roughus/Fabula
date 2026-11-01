@@ -9,8 +9,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * The library hides books that belong to a series, and a search finds them
- * anyway. Both rules live in plain functions so they can be pinned down here.
+ * The tabs along the top of the library, and the search. The rules live in
+ * plain functions so they can be pinned down here.
  */
 class LibraryListingTest {
 
@@ -35,10 +35,10 @@ class LibraryListingTest {
         duration = "10:00:00"
     )
 
-    // --- hiding series books ------------------------------------------------
+    // --- the "Ohne Serie" list ----------------------------------------------
 
     @Test
-    fun `books in a series are left out of the library`() {
+    fun `the standalone list leaves out books in a series`() {
         val books = listOf(
             book(1),
             book(2, seriesId = 7, series = "Harry Potter"),
@@ -49,17 +49,77 @@ class LibraryListingTest {
     }
 
     @Test
-    fun `a library without any series stays whole`() {
+    fun `a library without any series is listed whole`() {
         val books = listOf(book(1), book(2), book(3))
 
         assertEquals(listOf(1, 2, 3), standaloneBooks(books).map { it.id })
     }
 
     @Test
-    fun `a library made only of series books shows nothing`() {
+    fun `a library made only of series books has no standalone list`() {
         val books = listOf(book(1, seriesId = 7), book(2, seriesId = 7))
 
         assertTrue(standaloneBooks(books).isEmpty())
+    }
+
+    // --- the tabs -----------------------------------------------------------
+
+    /** The new tab goes last, after the three that were there. */
+    @Test
+    fun `the tabs come in order`() {
+        assertEquals(
+            listOf("Alle", "Hörbücher", "Hörspiele", "Ohne Serie"),
+            LibraryFilter.entries.map { it.label }
+        )
+    }
+
+    /** "Alle" lists everything, series volumes included. */
+    @Test
+    fun `the first tab asks for everything`() {
+        assertEquals(
+            PageQuery(search = null, standalone = false, type = null),
+            LibraryFilter.All.toQuery()
+        )
+    }
+
+    @Test
+    fun `the series-free tab asks for books without a series`() {
+        assertEquals(
+            PageQuery(search = null, standalone = true, type = null),
+            LibraryFilter.Standalone.toQuery()
+        )
+    }
+
+    @Test
+    fun `the category tabs ask for their kind of library`() {
+        assertEquals(LibraryType.Audiobook, LibraryFilter.Audiobooks.toQuery().type)
+        assertEquals(LibraryType.RadioPlay, LibraryFilter.RadioPlays.toQuery().type)
+        assertFalse(LibraryFilter.Audiobooks.toQuery().standalone)
+        assertFalse(LibraryFilter.RadioPlays.toQuery().standalone)
+    }
+
+    /** Under "Ohne Serie", a search looks through the books without a series. */
+    @Test
+    fun `a search stays inside its tab`() {
+        val query = LibraryFilter.Standalone.toQuery(search = "hobbit")
+
+        assertEquals("hobbit", query.search)
+        assertTrue(query.standalone)
+    }
+
+    @Test
+    fun `a query keeps only the books it asks for`() {
+        val books = listOf(
+            book(1),
+            book(2, seriesId = 7),
+            book(3).copy(type = LibraryType.RadioPlay),
+            book(4, seriesId = 7).copy(type = LibraryType.RadioPlay)
+        )
+
+        assertEquals(listOf(1, 2, 3, 4), books.matching(LibraryFilter.All.toQuery()).map { it.id })
+        assertEquals(listOf(1, 3), books.matching(LibraryFilter.Standalone.toQuery()).map { it.id })
+        assertEquals(listOf(1, 2), books.matching(LibraryFilter.Audiobooks.toQuery()).map { it.id })
+        assertEquals(listOf(3, 4), books.matching(LibraryFilter.RadioPlays.toQuery()).map { it.id })
     }
 
     // --- searching ----------------------------------------------------------

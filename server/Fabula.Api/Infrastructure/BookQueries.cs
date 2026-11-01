@@ -11,8 +11,9 @@ namespace Fabula.Api.Infrastructure;
 public static class BookQueries
 {
     /// <summary>
-    /// Keeps only books that belong to no series, when asked to. The libraries
-    /// list these on their own and reach the rest through the series.
+    /// Keeps only books that belong to no series, when asked to. This is the
+    /// library's "Ohne Serie" tab: the loose books, found without wading through
+    /// every volume of every series.
     /// </summary>
     public static IQueryable<Book> WhereStandalone(this IQueryable<Book> books, bool standalone) =>
         standalone ? books.Where(b => b.SeriesId == null) : books;

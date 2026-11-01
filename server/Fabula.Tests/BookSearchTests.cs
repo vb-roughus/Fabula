@@ -162,8 +162,8 @@ public class BookSearchTests : IDisposable
     }
 
     /// <summary>
-    /// The reason series books can leave the library list at all: they stay
-    /// reachable by the name of their series.
+    /// Searching for a series finds its volumes, though none of them has the
+    /// series name in its title.
     /// </summary>
     [Fact]
     public async Task Finds_a_book_by_the_name_of_its_series()

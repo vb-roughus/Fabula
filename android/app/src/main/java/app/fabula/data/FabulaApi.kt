@@ -16,8 +16,9 @@ interface FabulaApi {
     @GET("api/books")
     suspend fun listBooks(
         @Query("search") search: String? = null,
-        /** Only books that belong to no series. Older servers ignore it and
-         *  send everything, which is why callers filter again themselves. */
+        /** Only books that belong to no series -- the "Ohne Serie" tab. Older
+         *  servers ignore it and send everything, which is why callers filter
+         *  again themselves. */
         @Query("standalone") standalone: Boolean? = null,
         /** One kind of library only. Done by the server because the list
          *  arrives page by page; older servers ignore it, hence the second

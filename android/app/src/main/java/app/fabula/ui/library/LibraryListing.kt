@@ -11,16 +11,50 @@ import app.fabula.data.LibraryType
  */
 
 /**
- * The books that belong to no series. The library shows only these -- a series
- * is reached through the Series tab, and a book in one is found there or by
- * searching.
+ * The tabs along the top of the library. One is active at a time.
  *
- * The server filters too, which is what keeps a full page of results from being
- * thinned out afterwards. This second pass is for a server that predates the
- * filter and sends everything.
+ * "Alle" lists everything, series volumes included; "Ohne Serie" is the list of
+ * books that belong to none, for finding the loose ones among a library that is
+ * mostly series.
+ */
+internal enum class LibraryFilter(val label: String) {
+    All("Alle"),
+    Audiobooks("Hörbücher"),
+    RadioPlays("Hörspiele"),
+    Standalone("Ohne Serie")
+}
+
+/**
+ * What to ask the server for under this tab, optionally narrowed by a search.
+ * A search stays inside the tab it was typed in: under "Ohne Serie" it looks
+ * through the books without a series.
+ */
+internal fun LibraryFilter.toQuery(search: String? = null) = PageQuery(
+    search = search,
+    standalone = this == LibraryFilter.Standalone,
+    type = when (this) {
+        LibraryFilter.Audiobooks -> LibraryType.Audiobook
+        LibraryFilter.RadioPlays -> LibraryType.RadioPlay
+        LibraryFilter.All, LibraryFilter.Standalone -> null
+    }
+)
+
+/**
+ * The books that belong to no series.
  */
 internal fun standaloneBooks(books: List<BookSummaryDto>): List<BookSummaryDto> =
     books.filter { it.seriesId == null }
+
+/**
+ * The books a query asks for, whatever was sent.
+ *
+ * The server filters, which is what keeps a page from being thinned out after
+ * the fact. This is the second pass: for a server that predates the filters and
+ * sends everything, and for the downloaded books shown offline, which no server
+ * has filtered at all.
+ */
+internal fun List<BookSummaryDto>.matching(query: PageQuery): List<BookSummaryDto> =
+    (if (query.standalone) standaloneBooks(this) else this).ofType(query.type)
 
 /** The words of a search: split on whitespace, blanks dropped. */
 internal fun searchWords(query: String): List<String> =
