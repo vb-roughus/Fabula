@@ -1,0 +1,131 @@
+using System.Globalization;
+using Fabula.Core.Domain;
+using Fabula.Core.Services;
+
+namespace Fabula.Api.Infrastructure.Metadata;
+
+/// <summary>One field as it is and as the catalogue would have it.</summary>
+public sealed record MetadataField(string Key, string Label, string? Current, string? Proposed, bool Preselected);
+
+/// <summary>
+/// Comparing a book with a catalogue record: which edition fits, and what
+/// taking it over would change.
+/// </summary>
+public static class MetadataPreview
+{
+    /// <summary>
+    /// Whether a catalogue runtime matches the book's own length.
+    ///
+    /// The strongest sign of the right edition: a title search returns the
+    /// abridged and the unabridged reading, older and newer recordings, and
+    /// their runtimes differ by hours while the same recording differs by
+    /// seconds of intro. Tolerance is 2 %, at least three minutes.
+    /// </summary>
+    public static bool RuntimeMatches(int? runtimeMinutes, TimeSpan duration)
+    {
+        if (runtimeMinutes is not > 0 || duration <= TimeSpan.Zero) return false;
+        var ours = duration.TotalMinutes;
+        var tolerance = Math.Max(3.0, ours * 0.02);
+        return Math.Abs(runtimeMinutes.Value - ours) <= tolerance;
+    }
+
+    /// <summary>
+    /// Candidates whose runtime matches first, closest first; the rest after
+    /// them in the catalogue's own order.
+    /// </summary>
+    public static IReadOnlyList<CatalogBook> Rank(IReadOnlyList<CatalogBook> candidates, TimeSpan duration) =>
+        candidates
+            .Select((book, index) => (book, index, matches: RuntimeMatches(book.RuntimeMinutes, duration)))
+            .OrderBy(x => x.matches ? 0 : 1)
+            .ThenBy(x => x.matches ? Math.Abs(x.book.RuntimeMinutes!.Value - duration.TotalMinutes) : 0)
+            .ThenBy(x => x.index)
+            .Select(x => x.book)
+            .ToList();
+
+    /// <summary>
+    /// The fields a catalogue record would change, in display order.
+    ///
+    /// A field the record has nothing for is left out -- there is nothing to
+    /// take -- and so is one that already says the same. What remains is
+    /// preselected only where the book has nothing yet: filling gaps is safe,
+    /// replacing what is there is the admin's call.
+    /// </summary>
+    public static IReadOnlyList<MetadataField> Fields(Book book, CatalogBook proposal)
+    {
+        var fields = new List<MetadataField>();
+
+        void Add(string key, string label, string? current, string? proposed)
+        {
+            if (string.IsNullOrWhiteSpace(proposed)) return;
+            if (key != MetadataLocks.Cover &&
+                string.Equals(current?.Trim(), proposed.Trim(), StringComparison.Ordinal))
+                return;
+            fields.Add(new MetadataField(key, label, current, proposed, string.IsNullOrWhiteSpace(current)));
+        }
+
+        foreach (var key in MetadataLocks.All)
+        {
+            switch (key)
+            {
+                case MetadataLocks.Title:
+                    Add(key, "Titel", book.Title, proposal.Title);
+                    break;
+                case MetadataLocks.Subtitle:
+                    Add(key, "Untertitel", book.Subtitle, proposal.Subtitle);
+                    break;
+                case MetadataLocks.Authors:
+                    Add(key, "Autor", Join(book.Authors.Select(a => a.Name)), Join(proposal.Authors));
+                    break;
+                case MetadataLocks.Narrators:
+                    Add(key, "Sprecher", Join(book.Narrators.Select(n => n.Name)), Join(proposal.Narrators));
+                    break;
+                case MetadataLocks.Series:
+                    Add(key, "Serie",
+                        SeriesLabel(book.Series?.Name, book.SeriesPosition),
+                        SeriesLabel(proposal.SeriesName, proposal.SeriesPosition));
+                    break;
+                case MetadataLocks.Description:
+                    Add(key, "Beschreibung", book.Description, proposal.Description);
+                    break;
+                case MetadataLocks.Publisher:
+                    Add(key, "Verlag", book.Publisher, proposal.Publisher);
+                    break;
+                case MetadataLocks.Year:
+                    Add(key, "Jahr", book.PublishYear?.ToString(CultureInfo.InvariantCulture),
+                        proposal.Year?.ToString(CultureInfo.InvariantCulture));
+                    break;
+                case MetadataLocks.Language:
+                    Add(key, "Sprache", book.Language, proposal.Language);
+                    break;
+                case MetadataLocks.Isbn:
+                    Add(key, "ISBN", book.Isbn, proposal.Isbn);
+                    break;
+                case MetadataLocks.Asin:
+                    Add(key, "ASIN", book.Asin, proposal.Asin);
+                    break;
+                case MetadataLocks.Cover:
+                    // Current and proposed are image URLs here; the clients show them as pictures.
+                    Add(key, "Cover", CoverUrls.Book(book.Id, book.CoverPath), proposal.CoverUrl);
+                    break;
+            }
+        }
+        return fields;
+    }
+
+    private static string? Join(IEnumerable<string> names)
+    {
+        var joined = string.Join(", ", names.Where(n => !string.IsNullOrWhiteSpace(n)));
+        return joined.Length == 0 ? null : joined;
+    }
+
+    /// <summary>"Harry Potter · Band 3", "Reihe · Band 2,5", or just the name.</summary>
+    public static string? SeriesLabel(string? name, decimal? position)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return null;
+        if (position is not decimal p) return name;
+        var shown = p % 1 == 0
+            ? decimal.Truncate(p).ToString(CultureInfo.InvariantCulture)
+            : p.ToString("0.##", CultureInfo.InvariantCulture).Replace('.', ',');
+        return $"{name} · Band {shown}";
+    }
+}

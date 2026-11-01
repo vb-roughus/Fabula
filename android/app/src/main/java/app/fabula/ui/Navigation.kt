@@ -87,6 +87,7 @@ import app.fabula.ui.auth.LoginScreen
 import app.fabula.ui.auth.SetupScreen
 import app.fabula.ui.auth.UserManagementScreen
 import app.fabula.ui.book.BookScreen
+import app.fabula.ui.book.MetadataSearchScreen
 import app.fabula.ui.home.HomeScreen
 import app.fabula.ui.library.LibraryScreen
 import app.fabula.ui.player.FullPlayer
@@ -498,7 +499,19 @@ fun Navigation(
                             repository = repository,
                             player = player,
                             onBack = { navController.popBackStack() },
-                            onPlaybackStarted = { fullPlayerOpen = true }
+                            onPlaybackStarted = { fullPlayerOpen = true },
+                            onSearchMetadata = { navController.navigate("book/$bookId/metadata") }
+                        )
+                    }
+                    composable(
+                        route = "book/{bookId}/metadata",
+                        arguments = listOf(navArgument("bookId") { type = NavType.IntType })
+                    ) { entry ->
+                        val bookId = entry.arguments?.getInt("bookId") ?: return@composable
+                        MetadataSearchScreen(
+                            bookId = bookId,
+                            repository = repository,
+                            onBack = { navController.popBackStack() }
                         )
                     }
                     composable("setup") {

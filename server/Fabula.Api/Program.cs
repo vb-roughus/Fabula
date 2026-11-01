@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
 using Fabula.Api.Endpoints;
 using Fabula.Api.Infrastructure;
+using Fabula.Api.Infrastructure.Metadata;
 using Fabula.Core.Domain;
 using Fabula.Core.Services;
 using Fabula.Data;
@@ -57,6 +58,7 @@ builder.Services.Configure<FabulaOptions>(o =>
     o.UpdateRepo = rawOptions.UpdateRepo;
     o.UpdateGithubToken = rawOptions.UpdateGithubToken;
     o.UpdateCheckMinutes = rawOptions.UpdateCheckMinutes;
+    o.MetadataRegion = rawOptions.MetadataRegion;
     o.SettingsFilePath = operatorSettingsFile;
 });
 
@@ -79,6 +81,14 @@ builder.Services.AddSingleton<ICoverStore, FileSystemCoverStore>();
 builder.Services.AddSingleton<ScanCoordinator>();
 builder.Services.AddSingleton<AppUpdateService>();
 builder.Services.AddSingleton<ServerUpdateService>();
+
+// Metadata lookups. A short timeout: an admin is waiting on the answer, and a
+// catalogue that has not replied in 20 seconds is better reported as down.
+builder.Services.AddHttpClient<AudibleCatalogClient>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(20);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("Fabula-Server");
+});
 
 // Serialise enums as their string names so the web client can compare
 // against e.g. "Running" instead of the underlying numeric value.
@@ -219,6 +229,7 @@ app.MapBookmarkEndpoints();
 app.MapHighlightEndpoints();
 app.MapAppUpdateEndpoints();
 app.MapServerUpdateEndpoints();
+app.MapMetadataEndpoints();
 
 app.MapFallbackToFile("index.html");
 

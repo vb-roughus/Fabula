@@ -25,4 +25,14 @@ public interface ILibraryRepository
     /// cover image, which the audio-only content check can't detect.
     /// </summary>
     Task SetBookCoverAsync(int bookId, string? coverPath, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Writes metadata an admin took over from an online catalogue, and locks
+    /// the fields that were written so a rescan leaves them alone.
+    /// </summary>
+    /// <returns>The fields actually taken; null when there is no such book.</returns>
+    Task<IReadOnlyList<string>?> ApplyMetadataAsync(
+        int bookId,
+        BookMetadataUpdate update,
+        CancellationToken cancellationToken);
 }

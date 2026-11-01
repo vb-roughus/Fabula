@@ -5,6 +5,7 @@ import { api } from '../api/client';
 import { usePlayerContext } from '../hooks/playerContext';
 import { formatDurationHours, formatTimeSpan, parseTimeSpan } from '../lib/time';
 import { useAuth } from '../auth/AuthContext';
+import { MetadataSearchDialog } from '../components/MetadataSearchDialog';
 
 export function BookPage() {
   // Assigning a book to a series edits the shared catalogue -- admin-only.
@@ -44,6 +45,7 @@ export function BookPage() {
   }, [book, state.book, loadBook]);
 
   const [editingSeries, setEditingSeries] = useState(false);
+  const [metadataOpen, setMetadataOpen] = useState(false);
   const [selectedSeriesId, setSelectedSeriesId] = useState<string>('');
   const [positionInput, setPositionInput] = useState<string>('');
 
@@ -139,12 +141,32 @@ export function BookPage() {
               </div>
             )}
             {isAdmin && !editingSeries && (
-              <button
-                onClick={startEditSeries}
-                className="text-ink-400 hover:text-ink-100 text-sm underline underline-offset-2"
-              >
-                {book.series ? 'Serie ändern' : 'Serie zuweisen'}
-              </button>
+              <div className="flex gap-4">
+                <button
+                  onClick={startEditSeries}
+                  className="text-ink-400 hover:text-ink-100 text-sm underline underline-offset-2"
+                >
+                  {book.series ? 'Serie ändern' : 'Serie zuweisen'}
+                </button>
+                <button
+                  onClick={() => setMetadataOpen(true)}
+                  className="text-ink-400 hover:text-ink-100 text-sm underline underline-offset-2"
+                >
+                  Metadaten suchen
+                </button>
+              </div>
+            )}
+            {metadataOpen && (
+              <MetadataSearchDialog
+                book={book}
+                onClose={() => setMetadataOpen(false)}
+                onApplied={() => {
+                  // Title, cover and series may all have changed.
+                  qc.invalidateQueries({ queryKey: ['book', bookId] });
+                  qc.invalidateQueries({ queryKey: ['books'] });
+                  qc.invalidateQueries({ queryKey: ['series'] });
+                }}
+              />
             )}
             {editingSeries && (
               <div className="flex flex-col gap-2 mt-1 max-w-md">

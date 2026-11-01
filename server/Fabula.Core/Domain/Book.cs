@@ -22,6 +22,11 @@ public class Book
     // for these books on rescan -- folder/metadata still own series membership.
     public bool SeriesPositionManuallySet { get; set; }
 
+    // Fields an admin took over from an online catalogue, as a comma-separated
+    // list of MetadataLocks keys. A rescan leaves these alone: the tags were
+    // what the admin chose to replace. Null when nothing is locked.
+    public string? MetadataLocks { get; set; }
+
     public TimeSpan Duration { get; set; }
     public string? CoverPath { get; set; }
 

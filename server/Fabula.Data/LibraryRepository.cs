@@ -161,6 +161,53 @@ public class LibraryRepository(FabulaDbContext db) : ILibraryRepository
         await db.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<string>?> ApplyMetadataAsync(
+        int bookId,
+        BookMetadataUpdate update,
+        CancellationToken cancellationToken)
+    {
+        var book = await db.Books
+            .AsSplitQuery()
+            .Include(b => b.Authors)
+            .Include(b => b.Narrators)
+            .Include(b => b.Series)
+            .FirstOrDefaultAsync(b => b.Id == bookId, cancellationToken);
+        if (book is null) return null;
+
+        // Plain fields and the lock list.
+        var taken = update.ApplyTo(book);
+
+        // Relations go through the same resolution as a scan, so a catalogue
+        // author who is already in the library is reused rather than doubled.
+        if (taken.Contains(MetadataLocks.Authors))
+            book.Authors = await ResolveAuthorsAsync(update.Authors, cancellationToken);
+        if (taken.Contains(MetadataLocks.Narrators))
+            book.Narrators = await ResolveNarratorsAsync(update.Narrators, cancellationToken);
+
+        if (taken.Contains(MetadataLocks.Series))
+        {
+            var series = await ResolveSeriesAsync(update.SeriesName!.Trim(), cancellationToken);
+            var changed = !string.Equals(book.Series?.Name, series.Name, StringComparison.Ordinal);
+            book.Series = series;
+
+            if (update.SeriesPosition is decimal position)
+            {
+                // The catalogue's volume number is a deliberate choice, like
+                // one typed in by hand -- and kept like one.
+                book.SeriesPosition = position;
+                book.SeriesPositionManuallySet = true;
+            }
+            else if (changed || book.SeriesPosition is null)
+            {
+                book.SeriesPosition = await NextSeriesPositionAsync(series, book.Id, cancellationToken);
+                book.SeriesPositionManuallySet = false;
+            }
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+        return taken;
+    }
+
     private async Task<List<Author>> ResolveAuthorsAsync(IReadOnlyList<string> names, CancellationToken ct)
     {
         if (names.Count == 0) return [];

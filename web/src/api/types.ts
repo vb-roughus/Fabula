@@ -203,3 +203,45 @@ export interface ServerUpdateCheck {
   message: string;
   latestVersion: string | null;
 }
+
+// --- metadata from Audible ----------------------------------------------------
+
+/** One search hit from Audible's catalogue, best fit first. */
+export interface MetadataCandidate {
+  asin: string;
+  title: string | null;
+  subtitle: string | null;
+  authors: string[];
+  narrators: string[];
+  /** Display text, e.g. "Harry Potter · Band 3". */
+  series: string | null;
+  runtimeMinutes: number | null;
+  year: number | null;
+  coverUrl: string | null;
+  /** The runtime fits the book's own length -- the strongest sign of the right edition. */
+  runtimeMatches: boolean;
+}
+
+/** One field as it is and as the catalogue would have it. For "cover" both are image URLs. */
+export interface MetadataField {
+  key: string;
+  label: string;
+  current: string | null;
+  proposed: string | null;
+  preselected: boolean;
+}
+
+export interface MetadataPreview {
+  asin: string;
+  title: string | null;
+  coverUrl: string | null;
+  runtimeMinutes: number | null;
+  runtimeMatches: boolean;
+  fields: MetadataField[];
+}
+
+export interface ApplyMetadataResult {
+  taken: string[];
+  /** Ticked but not taken: nothing in the catalogue, or the cover would not download. */
+  skipped: string[];
+}

@@ -306,3 +306,52 @@ data class ServerUpdateCheckDto(
     val message: String,
     val latestVersion: String? = null
 )
+
+// --- metadata from Audible ----------------------------------------------------
+
+/** One search hit from Audible's catalogue, best fit first. */
+@Serializable
+data class MetadataCandidateDto(
+    val asin: String,
+    val title: String? = null,
+    val subtitle: String? = null,
+    val authors: List<String> = emptyList(),
+    val narrators: List<String> = emptyList(),
+    /** Display text, e.g. "Harry Potter · Band 3". */
+    val series: String? = null,
+    val runtimeMinutes: Int? = null,
+    val year: Int? = null,
+    val coverUrl: String? = null,
+    /** The runtime fits the book's own length -- the strongest sign of the right edition. */
+    val runtimeMatches: Boolean = false
+)
+
+/** One field as it is and as the catalogue would have it. For "cover" both values are image URLs. */
+@Serializable
+data class MetadataFieldDto(
+    val key: String,
+    val label: String,
+    val current: String? = null,
+    val proposed: String? = null,
+    val preselected: Boolean = false
+)
+
+@Serializable
+data class MetadataPreviewDto(
+    val asin: String,
+    val title: String? = null,
+    val coverUrl: String? = null,
+    val runtimeMinutes: Int? = null,
+    val runtimeMatches: Boolean = false,
+    val fields: List<MetadataFieldDto> = emptyList()
+)
+
+@Serializable
+data class ApplyMetadataRequest(val fields: List<String>)
+
+@Serializable
+data class ApplyMetadataResultDto(
+    val taken: List<String> = emptyList(),
+    /** Ticked but not taken: the catalogue had nothing, or the cover would not download. */
+    val skipped: List<String> = emptyList()
+)
