@@ -12,7 +12,7 @@ public static class BookEndpoints
     {
         var group = app.MapGroup("/api/books").WithTags("Books").RequireAuthorization();
 
-        group.MapGet("/", async (HttpContext http, FabulaDbContext db, string? search, bool? standalone, int page, int pageSize, CancellationToken ct) =>
+        group.MapGet("/", async (HttpContext http, FabulaDbContext db, string? search, bool? standalone, LibraryType? type, int page, int pageSize, CancellationToken ct) =>
         {
             var uid = http.UserId();
             page = page <= 0 ? 1 : page;
@@ -29,8 +29,7 @@ public static class BookEndpoints
             // their own and reach the rest through the series they belong to.
             // The caller decides when to ask: a search is meant to find
             // everything, so the clients leave this off while one is running.
-            if (standalone == true)
-                query = query.Where(b => b.SeriesId == null);
+            query = query.WhereStandalone(standalone == true).WhereType(type);
 
             if (!string.IsNullOrWhiteSpace(search))
             {
@@ -41,7 +40,7 @@ public static class BookEndpoints
             var total = await query.CountAsync(ct);
 
             var books = await query
-                .OrderBy(b => b.SortTitle ?? b.Title)
+                .OrderForListing()
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
                 .SelectSummary(db, uid)

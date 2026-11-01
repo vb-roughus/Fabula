@@ -13,11 +13,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -34,16 +37,20 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.key
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -62,6 +69,7 @@ import app.fabula.FabulaApp
 import app.fabula.data.BookSummaryDto
 import app.fabula.data.FabulaRepository
 import app.fabula.data.LibraryType
+import app.fabula.data.PagedResultDto
 import app.fabula.data.formatDurationHuman
 import app.fabula.data.parseTimeSpan
 import app.fabula.data.toSummary
@@ -75,25 +83,23 @@ import androidx.compose.runtime.CompositionLocalProvider
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.delay
 
-private sealed interface LibraryState {
-    data object Loading : LibraryState
-    data class Loaded(val books: List<BookSummaryDto>) : LibraryState
-    data class Error(val message: String) : LibraryState
-}
-
-private sealed interface SearchState {
-    /** Nothing typed yet. */
-    data object Idle : SearchState
-    data object Loading : SearchState
-    data class Results(val books: List<BookSummaryDto>) : SearchState
-    data class Error(val message: String) : SearchState
-}
-
 /** How long typing has to pause before the server is asked. */
 private const val SEARCH_DEBOUNCE_MS = 300L
 
-private fun List<BookSummaryDto>.ofType(type: LibraryType?): List<BookSummaryDto> =
-    if (type == null) this else this.filter { it.type == type }
+/** One request for a page of the listing. */
+private suspend fun FabulaRepository.fetchBooksPage(
+    query: PageQuery,
+    page: Int
+): PagedResultDto<BookSummaryDto> {
+    val api = apiOrNull() ?: throw IllegalStateException("Kein Server konfiguriert.")
+    return api.listBooks(
+        search = query.search,
+        standalone = if (query.standalone) true else null,
+        type = query.type,
+        page = page,
+        pageSize = LIBRARY_PAGE_SIZE
+    )
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -102,15 +108,19 @@ fun LibraryScreen(
     onMenuClick: () -> Unit,
     onBookClick: (Int) -> Unit
 ) {
-    var state by remember { mutableStateOf<LibraryState>(LibraryState.Loading) }
     var filter by remember { mutableStateOf<LibraryType?>(null) }
 
     // Saveable, so turning the phone does not throw away what was being typed.
     var searching by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
-    var searchState by remember { mutableStateOf<SearchState>(SearchState.Idle) }
     val trimmedQuery = query.trim()
     val searchActive = searching && trimmedQuery.isNotEmpty()
+
+    val scope = rememberCoroutineScope()
+    // Two listings that arrive a page at a time: the plain library, and the
+    // search. Both are asked for the next page as the scrolling nears the end.
+    val browse = remember(repository) { BookPager { q, page -> repository.fetchBooksPage(q, page) } }
+    val results = remember(repository) { BookPager { q, page -> repository.fetchBooksPage(q, page) } }
 
     // Fallback for when the server is unreachable: the books already on disk.
     val offlineStore = (LocalContext.current.applicationContext as FabulaApp).offlineStore
@@ -126,58 +136,35 @@ fun LibraryScreen(
     // Refetch after a successful manual reconnect from the drawer.
     val reconnects by repository.reconnects.collectAsState()
 
-    LaunchedEffect(refreshTrigger, reconnects) {
-        // On a pull-to-refresh we keep the current list visible (don't fall
-        // back to the Loading spinner) and only swap it once the reload lands.
+    // Books in a series are not listed here -- the Series tab is the way to
+    // them, and the search finds them by name. The category chips ask the
+    // server too, since a client can only filter the pages it has loaded.
+    LaunchedEffect(filter, refreshTrigger, reconnects) {
+        // The list on screen stays up while this runs, so a pull-to-refresh
+        // doesn't fall back to the spinner.
         try {
-            val api = repository.apiOrNull()
-            state = if (api == null) {
-                LibraryState.Error("Kein Server konfiguriert.")
-            } else {
-                // Books in a series are not listed here -- the Series tab is
-                // the way to them, and the search finds them by name.
-                LibraryState.Loaded(
-                    standaloneBooks(
-                        api.listBooks(standalone = true, page = 1, pageSize = 200).items
-                    )
-                )
-            }
-        } catch (c: kotlinx.coroutines.CancellationException) {
-            throw c  // effect cancelled (navigation/refresh) -- not an error
-        } catch (t: Throwable) {
-            state = LibraryState.Error(t.message ?: "Unbekannter Fehler")
+            browse.reload(PageQuery(search = null, standalone = true, type = filter))
         } finally {
             isRefreshing = false
         }
     }
 
     // The search asks the server rather than filtering what is loaded: the list
-    // above holds one page, and a search that can only find what happens to be
-    // on screen is not much of a search. Keyed on the text, so typing on
-    // cancels the request still waiting out its pause.
-    LaunchedEffect(trimmedQuery, refreshTrigger, reconnects) {
+    // above holds a few pages at most, and a search that can only find what
+    // happens to be on screen is not much of a search. Keyed on the text, so
+    // typing on cancels the request still waiting out its pause.
+    LaunchedEffect(trimmedQuery, filter, refreshTrigger, reconnects) {
         if (trimmedQuery.isEmpty()) {
-            searchState = SearchState.Idle
+            results.clear()
             return@LaunchedEffect
         }
         delay(SEARCH_DEBOUNCE_MS)
-        // Keep the previous results on screen while the next ones load; a
-        // spinner between every keystroke would make the grid flicker.
-        if (searchState !is SearchState.Results) searchState = SearchState.Loading
-        searchState = try {
-            val api = repository.apiOrNull()
-            if (api == null) {
-                SearchState.Error("Kein Server konfiguriert.")
-            } else {
-                // Not narrowed to standalone books: a search finds everything.
-                SearchState.Results(api.listBooks(search = trimmedQuery, page = 1, pageSize = 200).items)
-            }
-        } catch (c: kotlinx.coroutines.CancellationException) {
-            throw c
-        } catch (t: Throwable) {
-            SearchState.Error(t.message ?: "Unbekannter Fehler")
-        }
+        // Not narrowed to standalone books: a search finds everything.
+        results.reload(PageQuery(search = trimmedQuery, standalone = false, type = filter))
     }
+
+    KeepLoadingWhileEmpty(browse)
+    KeepLoadingWhileEmpty(results)
 
     // Dropping focus is what closes the keyboard; it is also the stable way to.
     val focusManager = LocalFocusManager.current
@@ -256,64 +243,25 @@ fun LibraryScreen(
                 ) {
                     if (searchActive) {
                         SearchResults(
-                            state = searchState,
+                            pager = results,
                             query = trimmedQuery,
                             filter = filter,
                             offlineBooks = offlineBooks,
                             repository = repository,
                             badgeFor = badgeFor,
-                            onBookClick = onBookClick
+                            onBookClick = onBookClick,
+                            onLoadMore = { results.loadMore(scope) }
                         )
-                    } else when (val s = state) {
-                        LibraryState.Loading -> CircularProgressIndicator()
-                        is LibraryState.Error -> {
-                            // Offline, every downloaded book is listed -- series
-                            // volumes included. Hiding them here would strand
-                            // them: the Series tab has to ask the server, so it
-                            // is no way to a downloaded book without a connection.
-                            val offlineVisible = offlineBooks.ofType(filter)
-                            if (offlineBooks.isEmpty()) {
-                                OfflineEmptyMessage(s.message)
-                            } else {
-                                Column(modifier = Modifier.fillMaxSize()) {
-                                    OfflineBanner(s.message)
-                                    if (offlineVisible.isEmpty()) {
-                                        Text(
-                                            "In dieser Kategorie ist nichts offline gespeichert.",
-                                            color = MaterialTheme.colorScheme.outline,
-                                            modifier = Modifier.padding(horizontal = 16.dp)
-                                        )
-                                    } else {
-                                        BookGrid(
-                                            books = offlineVisible,
-                                            repository = repository,
-                                            badgeFor = badgeFor,
-                                            onClick = onBookClick
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                        is LibraryState.Loaded -> {
-                            val visible = s.books.ofType(filter)
-                            when {
-                                s.books.isEmpty() -> CenteredHint(
-                                    "Keine Titel ohne Serie. Titel einer Serie findest du unter " +
-                                        "\u201eSerien\u201c oder über die Suche. Neue Titel erscheinen " +
-                                        "nach einem Scan auf dem Server."
-                                )
-                                visible.isEmpty() -> Text(
-                                    "In dieser Kategorie ist noch nichts vorhanden.",
-                                    color = MaterialTheme.colorScheme.outline
-                                )
-                                else -> BookGrid(
-                                    books = visible,
-                                    repository = repository,
-                                    badgeFor = badgeFor,
-                                    onClick = onBookClick
-                                )
-                            }
-                        }
+                    } else {
+                        BrowseContent(
+                            pager = browse,
+                            filter = filter,
+                            offlineBooks = offlineBooks,
+                            repository = repository,
+                            badgeFor = badgeFor,
+                            onBookClick = onBookClick,
+                            onLoadMore = { browse.loadMore(scope) }
+                        )
                     }
                 }
             }
@@ -321,39 +269,132 @@ fun LibraryScreen(
     }
 }
 
+/**
+ * Keeps fetching while a listing shows nothing yet has pages left.
+ *
+ * Only happens against a server that predates the filters: a whole page can be
+ * made of books this client then hides, and an empty grid has nothing to scroll
+ * and so nothing to ask for the next page.
+ */
+@Composable
+private fun KeepLoadingWhileEmpty(pager: BookPager) {
+    val scope = rememberCoroutineScope()
+    val listing = pager.listing
+    LaunchedEffect(listing?.query, listing?.loadedPages, listing?.moreFailed) {
+        if (listing != null && listing.books.isEmpty() && listing.hasMore && !listing.moreFailed) {
+            pager.loadMore(scope)
+        }
+    }
+}
+
+/** The plain library: books without a series, or the downloaded books when offline. */
+@Composable
+private fun BrowseContent(
+    pager: BookPager,
+    filter: LibraryType?,
+    offlineBooks: List<BookSummaryDto>,
+    repository: FabulaRepository,
+    badgeFor: (Int) -> DownloadBadgeState?,
+    onBookClick: (Int) -> Unit,
+    onLoadMore: () -> Unit
+) {
+    val listing = pager.listing
+    val error = pager.error
+    when {
+        listing != null -> when {
+            listing.books.isEmpty() && listing.hasMore && !listing.moreFailed ->
+                CircularProgressIndicator()
+            listing.books.isEmpty() && listing.moreFailed -> CenteredHint(
+                "Laden fehlgeschlagen. Zum Wiederholen nach unten ziehen."
+            )
+            listing.books.isEmpty() && filter == null -> CenteredHint(
+                "Keine Titel ohne Serie. Titel einer Serie findest du unter " +
+                    "\u201eSerien\u201c oder über die Suche. Neue Titel erscheinen " +
+                    "nach einem Scan auf dem Server."
+            )
+            listing.books.isEmpty() -> CenteredHint(
+                "In dieser Kategorie gibt es keine Titel ohne Serie."
+            )
+            // Keyed on the query, so a new category starts at the top while a
+            // refresh keeps its place.
+            else -> key(listing.query) {
+                BookGrid(
+                    books = listing.books,
+                    repository = repository,
+                    badgeFor = badgeFor,
+                    onClick = onBookClick,
+                    more = listing.moreInfo(onLoadMore)
+                )
+            }
+        }
+        error != null -> {
+            // Offline, every downloaded book is listed -- series volumes
+            // included. Hiding them here would strand them: the Series tab has
+            // to ask the server, so it is no way to a downloaded book without a
+            // connection.
+            val offlineVisible = offlineBooks.ofType(filter)
+            if (offlineBooks.isEmpty()) {
+                OfflineEmptyMessage(error)
+            } else {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    OfflineBanner(error)
+                    if (offlineVisible.isEmpty()) {
+                        Text(
+                            "In dieser Kategorie ist nichts offline gespeichert.",
+                            color = MaterialTheme.colorScheme.outline,
+                            modifier = Modifier.padding(horizontal = 16.dp)
+                        )
+                    } else {
+                        BookGrid(
+                            books = offlineVisible,
+                            repository = repository,
+                            badgeFor = badgeFor,
+                            onClick = onBookClick
+                        )
+                    }
+                }
+            }
+        }
+        else -> CircularProgressIndicator()
+    }
+}
+
 /** What the library shows while a search is running. */
 @Composable
 private fun SearchResults(
-    state: SearchState,
+    pager: BookPager,
     query: String,
     filter: LibraryType?,
     offlineBooks: List<BookSummaryDto>,
     repository: FabulaRepository,
     badgeFor: (Int) -> DownloadBadgeState?,
-    onBookClick: (Int) -> Unit
+    onBookClick: (Int) -> Unit,
+    onLoadMore: () -> Unit
 ) {
-    when (state) {
-        SearchState.Idle, SearchState.Loading -> CircularProgressIndicator()
-        is SearchState.Results -> {
-            val visible = state.books.ofType(filter)
-            if (visible.isEmpty()) {
-                CenteredHint("Nichts gefunden für \u201e$query\u201c.")
-            } else {
+    val listing = pager.listing
+    val error = pager.error
+    when {
+        listing != null -> when {
+            listing.books.isEmpty() && listing.hasMore && !listing.moreFailed ->
+                CircularProgressIndicator()
+            listing.books.isEmpty() -> CenteredHint("Nichts gefunden für \u201e$query\u201c.")
+            else -> key(listing.query) {
                 BookGrid(
-                    books = visible,
+                    books = listing.books,
                     repository = repository,
                     badgeFor = badgeFor,
                     onClick = onBookClick,
-                    showSeries = true
+                    showSeries = true,
+                    more = listing.moreInfo(onLoadMore)
                 )
             }
         }
-        is SearchState.Error -> {
+        error != null -> {
             // No server: search what is on the device, so the field still does
             // something useful in a tunnel.
             val local = offlineBooks.filter { matchesSearch(it, query) }.ofType(filter)
             Column(modifier = Modifier.fillMaxSize()) {
-                OfflineBanner(state.message)
+                OfflineBanner(error)
                 if (local.isEmpty()) {
                     CenteredHint("Offline nichts gefunden für \u201e$query\u201c.")
                 } else {
@@ -367,6 +408,7 @@ private fun SearchResults(
                 }
             }
         }
+        else -> CircularProgressIndicator()
     }
 }
 
@@ -446,16 +488,46 @@ private fun FilterChipPill(label: String, active: Boolean, onClick: () -> Unit) 
     }
 }
 
+/** How far through a paged listing the grid is, and how to ask for more. */
+private class MoreInfo(
+    val hasMore: Boolean,
+    val loading: Boolean,
+    val failed: Boolean,
+    val onLoadMore: () -> Unit
+)
+
+private fun Listing.moreInfo(onLoadMore: () -> Unit) =
+    MoreInfo(hasMore = hasMore, loading = loadingMore, failed = moreFailed, onLoadMore = onLoadMore)
+
 @Composable
 private fun BookGrid(
     books: List<BookSummaryDto>,
     repository: FabulaRepository,
     badgeFor: (Int) -> DownloadBadgeState?,
     onClick: (Int) -> Unit,
-    showSeries: Boolean = false
+    showSeries: Boolean = false,
+    more: MoreInfo? = null
 ) {
     val bottomInset = LocalContentBottomInset.current.calculateBottomPadding()
+    val gridState = rememberLazyGridState()
+
+    if (more != null) {
+        // Asks for the next page once the last visible book is within reach of
+        // the end. Re-evaluated as the page lands, so a page too short to push
+        // the end out of reach is followed by the next straight away.
+        val nearEnd by remember(gridState, books.size, more.hasMore, more.loading, more.failed) {
+            derivedStateOf {
+                val last = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+                shouldLoadMore(last, books.size, more.hasMore, more.loading || more.failed)
+            }
+        }
+        LaunchedEffect(nearEnd) {
+            if (nearEnd) more.onLoadMore()
+        }
+    }
+
     LazyVerticalGrid(
+        state = gridState,
         columns = GridCells.Adaptive(minSize = 140.dp),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 12.dp + bottomInset),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -470,6 +542,31 @@ private fun BookGrid(
                 showSeries = showSeries,
                 onClick = { onClick(book.id) }
             )
+        }
+        if (more != null && (more.loading || more.failed)) {
+            item(key = "load-more-footer", span = { GridItemSpan(maxLineSpan) }) {
+                LoadMoreFooter(more)
+            }
+        }
+    }
+}
+
+@Composable
+private fun LoadMoreFooter(more: MoreInfo) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 12.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        if (more.failed) {
+            // A failed page is not retried on its own -- that would repeat as
+            // fast as it can fail -- so the retry is the listener's to ask for.
+            TextButton(onClick = more.onLoadMore) {
+                Text("Laden fehlgeschlagen \u2013 erneut versuchen")
+            }
+        } else {
+            CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 3.dp)
         }
     }
 }

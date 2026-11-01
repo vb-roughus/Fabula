@@ -1,6 +1,7 @@
 package app.fabula.ui.library
 
 import app.fabula.data.BookSummaryDto
+import app.fabula.data.LibraryType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -155,5 +156,94 @@ class LibraryListingTest {
     @Test
     fun `a book outside any series has no label`() {
         assertNull(seriesLabel(book(1)))
+    }
+
+    // --- paging -------------------------------------------------------------
+
+    @Test
+    fun `there are more pages while the server has more than was fetched`() {
+        assertTrue(hasMorePages(loadedPages = 1, pageSize = 60, total = 61))
+        assertTrue(hasMorePages(loadedPages = 2, pageSize = 60, total = 130))
+    }
+
+    @Test
+    fun `there are no more pages once everything was fetched`() {
+        assertFalse(hasMorePages(loadedPages = 1, pageSize = 60, total = 60))
+        assertFalse(hasMorePages(loadedPages = 3, pageSize = 60, total = 130))
+        assertFalse(hasMorePages(loadedPages = 1, pageSize = 60, total = 0))
+    }
+
+    @Test
+    fun `an appended page follows what is there`() {
+        val merged = appendPage(listOf(book(1), book(2)), listOf(book(3), book(4)))
+
+        assertEquals(listOf(1, 2, 3, 4), merged.map { it.id })
+    }
+
+    /** A grid keyed by id throws on a duplicate. */
+    @Test
+    fun `a book that is there already is not appended again`() {
+        val merged = appendPage(listOf(book(1), book(2)), listOf(book(2), book(3)))
+
+        assertEquals(listOf(1, 2, 3), merged.map { it.id })
+    }
+
+    @Test
+    fun `a book repeated within the new page is appended once`() {
+        val merged = appendPage(listOf(book(1)), listOf(book(2), book(2)))
+
+        assertEquals(listOf(1, 2), merged.map { it.id })
+    }
+
+    @Test
+    fun `the next page is asked for when the end is near`() {
+        // 60 loaded; the last visible is the 55th.
+        assertTrue(shouldLoadMore(lastVisibleIndex = 54, itemCount = 60, hasMore = true, busy = false))
+    }
+
+    @Test
+    fun `the next page waits while the end is far`() {
+        assertFalse(shouldLoadMore(lastVisibleIndex = 10, itemCount = 60, hasMore = true, busy = false))
+    }
+
+    @Test
+    fun `nothing is asked for when there is nothing more`() {
+        assertFalse(shouldLoadMore(lastVisibleIndex = 59, itemCount = 60, hasMore = false, busy = false))
+    }
+
+    /** Covers a request in flight and one that just failed -- else a failing page repeats as fast as it fails. */
+    @Test
+    fun `nothing is asked for while busy`() {
+        assertFalse(shouldLoadMore(lastVisibleIndex = 59, itemCount = 60, hasMore = true, busy = true))
+    }
+
+    @Test
+    fun `an empty grid asks for nothing`() {
+        assertFalse(shouldLoadMore(lastVisibleIndex = -1, itemCount = 0, hasMore = true, busy = false))
+    }
+
+    @Test
+    fun `a list shorter than the lead asks at once`() {
+        assertTrue(shouldLoadMore(lastVisibleIndex = 4, itemCount = 5, hasMore = true, busy = false))
+    }
+
+    // --- category -----------------------------------------------------------
+
+    @Test
+    fun `a category keeps only its own books`() {
+        val books = listOf(
+            book(1),
+            book(2).copy(type = LibraryType.RadioPlay)
+        )
+
+        assertEquals(listOf(2), books.ofType(LibraryType.RadioPlay).map { it.id })
+        assertEquals(listOf(1), books.ofType(LibraryType.Audiobook).map { it.id })
+    }
+
+    @Test
+    fun `no category keeps everything`() {
+        val books = listOf(book(1), book(2))
+
+        assertEquals(listOf(1, 2), books.ofType(null).map { it.id })
     }
 }
