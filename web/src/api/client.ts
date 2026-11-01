@@ -17,7 +17,10 @@ import type {
   ServerUpdateInfo,
   ServerUpdateStatus,
   SetupStatus,
-  UserDetail
+  UserDetail,
+  ApplyMetadataResult,
+  MetadataCandidate,
+  MetadataPreview
 } from './types';
 
 const TOKEN_KEY = 'fabula.token';
@@ -164,6 +167,24 @@ export const api = {
   },
 
   getBook: (id: number) => request<BookDetail>(`/api/books/${id}`),
+
+  // --- metadata from Audible (admin) ---------------------------------------
+  searchMetadata: (bookId: number, query: { title?: string; author?: string; asin?: string }) => {
+    const qs = new URLSearchParams();
+    if (query.title?.trim()) qs.set('title', query.title.trim());
+    if (query.author?.trim()) qs.set('author', query.author.trim());
+    if (query.asin?.trim()) qs.set('asin', query.asin.trim());
+    return request<MetadataCandidate[]>(`/api/books/${bookId}/metadata/search?${qs.toString()}`);
+  },
+
+  previewMetadata: (bookId: number, asin: string) =>
+    request<MetadataPreview>(`/api/books/${bookId}/metadata/${encodeURIComponent(asin)}`),
+
+  applyMetadata: (bookId: number, asin: string, fields: string[]) =>
+    request<ApplyMetadataResult>(`/api/books/${bookId}/metadata/${encodeURIComponent(asin)}`, {
+      method: 'POST',
+      body: JSON.stringify({ fields })
+    }),
 
   assignBookSeries: (bookId: number, seriesId: number | null, seriesPosition: number | null) =>
     request<void>(`/api/books/${bookId}/series`, {

@@ -116,7 +116,7 @@ public static class BookEndpoints
                 book.Isbn,
                 book.Asin,
                 book.Duration,
-                book.CoverPath != null ? $"/api/books/{book.Id}/cover" : null,
+                CoverUrls.Book(book.Id, book.CoverPath),
                 book.LibraryFolder.Type,
                 book.LibraryFolderId,
                 book.LibraryFolder.Name,
@@ -206,7 +206,8 @@ public static class BookEndpoints
             b.Series != null ? b.Series.Name : null,
             b.SeriesPosition,
             b.Duration,
-            b.CoverPath != null ? $"/api/books/{b.Id}/cover" : null,
+            // Same format as CoverUrls.Book, written out so it translates to SQL.
+            b.CoverPath != null ? $"/api/books/{b.Id}/cover?v={b.CoverPath}" : null,
             b.LibraryFolder.Type,
             b.LibraryFolderId,
             b.LibraryFolder.Name,

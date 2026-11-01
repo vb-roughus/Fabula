@@ -126,9 +126,18 @@ public class LibraryScanner(
 
         var title = firstMeta.Album ?? firstMeta.Title ?? Path.GetFileName(bookDir);
 
+        // Fields an admin took over from an online catalogue keep their value:
+        // the tags are what was replaced. Only an existing book can carry locks.
+        var locks = MetadataLocks.Parse(existing?.MetadataLocks);
+        bool Keeps(string field) => existing is not null && locks.Contains(field);
+
         string? coverPath = null;
         var folderCover = FindFolderCover(bookDir);
-        if (folderCover is not null)
+        if (Keeps(MetadataLocks.Cover))
+        {
+            coverPath = existing!.CoverPath;
+        }
+        else if (folderCover is not null)
         {
             var bytes = await File.ReadAllBytesAsync(folderCover, cancellationToken);
             coverPath = await coverStore.SaveCoverAsync(bookDir, bytes, GetImageMimeType(folderCover), cancellationToken);
@@ -144,14 +153,14 @@ public class LibraryScanner(
             AddedAt = DateTime.UtcNow
         };
 
-        book.Title = title;
-        book.Subtitle = firstMeta.Subtitle;
-        book.Description = firstMeta.Description;
-        book.Language = firstMeta.Language;
-        book.Publisher = firstMeta.Publisher;
-        book.PublishYear = firstMeta.Year;
-        book.Isbn = firstMeta.Isbn;
-        book.Asin = firstMeta.Asin;
+        if (!Keeps(MetadataLocks.Title)) book.Title = title;
+        if (!Keeps(MetadataLocks.Subtitle)) book.Subtitle = firstMeta.Subtitle;
+        if (!Keeps(MetadataLocks.Description)) book.Description = firstMeta.Description;
+        if (!Keeps(MetadataLocks.Language)) book.Language = firstMeta.Language;
+        if (!Keeps(MetadataLocks.Publisher)) book.Publisher = firstMeta.Publisher;
+        if (!Keeps(MetadataLocks.Year)) book.PublishYear = firstMeta.Year;
+        if (!Keeps(MetadataLocks.Isbn)) book.Isbn = firstMeta.Isbn;
+        if (!Keeps(MetadataLocks.Asin)) book.Asin = firstMeta.Asin;
         book.Duration = totalDuration;
         book.CoverPath = coverPath;
         book.UpdatedAt = DateTime.UtcNow;
@@ -159,17 +168,27 @@ public class LibraryScanner(
         var audioFiles = BuildAudioFiles(allMetadata, usableStats);
         var chapters = BuildChapters(allMetadata, audioFiles);
 
-        var seriesAssignment = ResolveSeries(
-            folder.Path,
-            bookDir,
-            firstMeta.SeriesName,
-            firstMeta.SeriesPosition);
+        // Locked relations are handed back as they are, so the repository's
+        // usual resolution simply finds the same authors, narrators and series.
+        var seriesAssignment = Keeps(MetadataLocks.Series)
+            ? (Name: existing!.Series?.Name, Position: existing!.SeriesPosition)
+            : ResolveSeries(
+                folder.Path,
+                bookDir,
+                firstMeta.SeriesName,
+                firstMeta.SeriesPosition);
+        var authors = Keeps(MetadataLocks.Authors)
+            ? existing!.Authors.Select(a => a.Name).ToList()
+            : firstMeta.Authors;
+        var narrators = Keeps(MetadataLocks.Narrators)
+            ? existing!.Narrators.Select(n => n.Name).ToList()
+            : firstMeta.Narrators;
 
         await repository.UpsertBookAsync(
             book,
             bookDir,
-            firstMeta.Authors,
-            firstMeta.Narrators,
+            authors,
+            narrators,
             seriesAssignment.Name,
             seriesAssignment.Position,
             audioFiles,
@@ -206,6 +225,9 @@ public class LibraryScanner(
     /// </summary>
     private async Task<bool> TryRefreshFolderCoverAsync(Book book, string bookDir, CancellationToken cancellationToken)
     {
+        // A cover taken over from an online catalogue stays, folder image or not.
+        if (MetadataLocks.Parse(book.MetadataLocks).Contains(MetadataLocks.Cover)) return false;
+
         var folderCover = FindFolderCover(bookDir);
         if (folderCover is null) return false;
 

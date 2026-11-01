@@ -31,7 +31,7 @@ public static class SeriesEndpoints
                     BookCount = s.Books.Count,
                     Covers = db.Books
                         .Where(b => b.SeriesId == s.Id && b.CoverPath != null)
-                        .Select(b => new { b.Id, b.SeriesPosition })
+                        .Select(b => new { b.Id, b.SeriesPosition, b.CoverPath })
                         .ToList()
                 })
                 .ToListAsync(ct);
@@ -44,7 +44,7 @@ public static class SeriesEndpoints
                     s.BookCount,
                     s.Covers
                         .OrderBy(c => c.SeriesPosition ?? decimal.MaxValue)
-                        .Select(c => (string?)$"/api/books/{c.Id}/cover")
+                        .Select(c => CoverUrls.Book(c.Id, c.CoverPath))
                         .FirstOrDefault()))
                 .ToList();
         });
@@ -71,7 +71,7 @@ public static class SeriesEndpoints
                     b.Title,
                     Authors = b.Authors.Select(a => a.Name).ToList(),
                     b.SeriesPosition,
-                    HasCover = b.CoverPath != null,
+                    b.CoverPath,
                     b.Duration,
                     Progress = db.PlaybackProgress
                         .Where(p => p.UserId == uid && p.BookId == b.Id)
@@ -89,7 +89,7 @@ public static class SeriesEndpoints
                     b.Title,
                     b.Authors,
                     b.SeriesPosition,
-                    b.HasCover ? $"/api/books/{b.Id}/cover" : null,
+                    CoverUrls.Book(b.Id, b.CoverPath),
                     b.Duration,
                     b.Progress))
                 .ToList();
@@ -133,11 +133,11 @@ public static class SeriesEndpoints
             // Decimal-as-TEXT sort would be lexicographic; pick lowest position client-side.
             var covers = await db.Books
                 .Where(b => b.SeriesId == id && b.CoverPath != null)
-                .Select(b => new { b.Id, b.SeriesPosition })
+                .Select(b => new { b.Id, b.SeriesPosition, b.CoverPath })
                 .ToListAsync(ct);
             var coverUrl = covers
                 .OrderBy(c => c.SeriesPosition ?? decimal.MaxValue)
-                .Select(c => (string?)$"/api/books/{c.Id}/cover")
+                .Select(c => CoverUrls.Book(c.Id, c.CoverPath))
                 .FirstOrDefault();
             return Results.Ok(new SeriesSummaryDto(series.Id, series.Name, series.Description, count, coverUrl));
         }).RequireAuthorization("Admin");

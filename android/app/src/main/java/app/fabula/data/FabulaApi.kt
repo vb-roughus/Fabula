@@ -31,6 +31,26 @@ interface FabulaApi {
     @GET("api/books/{id}")
     suspend fun getBook(@Path("id") id: Int): BookDetailDto
 
+    // --- metadata from Audible (admin) ---------------------------------------
+
+    @GET("api/books/{id}/metadata/search")
+    suspend fun searchMetadata(
+        @Path("id") id: Int,
+        @Query("title") title: String? = null,
+        @Query("author") author: String? = null,
+        @Query("asin") asin: String? = null
+    ): List<MetadataCandidateDto>
+
+    @GET("api/books/{id}/metadata/{asin}")
+    suspend fun previewMetadata(@Path("id") id: Int, @Path("asin") asin: String): MetadataPreviewDto
+
+    @POST("api/books/{id}/metadata/{asin}")
+    suspend fun applyMetadata(
+        @Path("id") id: Int,
+        @Path("asin") asin: String,
+        @Body body: ApplyMetadataRequest
+    ): ApplyMetadataResultDto
+
     /** Newest additions per library folder, ordered by AddedAt descending.
      *  Backs the home screen's "Zuletzt hinzugefügt" sections so freshly
      *  scanned books surface regardless of where their title sorts. */

@@ -152,6 +152,9 @@ namespace Fabula.Data.Migrations
                     b.Property<int>("LibraryFolderId")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("MetadataLocks")
+                        .HasColumnType("TEXT");
+
                     b.Property<int?>("PublishYear")
                         .HasColumnType("INTEGER");
 

@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.TravelExplore
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -110,7 +111,9 @@ fun BookScreen(
     repository: FabulaRepository,
     player: PlayerController,
     onBack: () -> Unit,
-    onPlaybackStarted: () -> Unit
+    onPlaybackStarted: () -> Unit,
+    /** Opens the Audible lookup for this book. Offered to admins only. */
+    onSearchMetadata: () -> Unit = {}
 ) {
     var book by remember { mutableStateOf<BookDetailDto?>(null) }
     var bookmarks by remember { mutableStateOf<List<BookmarkDto>>(emptyList()) }
@@ -462,6 +465,17 @@ fun BookScreen(
                                 onClick = {
                                     moreMenuOpen = false
                                     assignSeriesOpen = true
+                                }
+                            )
+                            // Admin-only: what is taken over changes the book for everyone.
+                            if (isAdmin) DropdownMenuItem(
+                                text = { Text("Metadaten suchen") },
+                                leadingIcon = {
+                                    Icon(Icons.Filled.TravelExplore, contentDescription = null)
+                                },
+                                onClick = {
+                                    moreMenuOpen = false
+                                    onSearchMetadata()
                                 }
                             )
                             if (downloadState != null) {

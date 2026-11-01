@@ -25,6 +25,13 @@ public class FabulaOptions
     public int UpdateCheckMinutes { get; set; } = 15;
 
     /// <summary>
+    /// Audible marketplace to look metadata up in ("de", "us", "uk", ...).
+    /// Decides which edition is described -- the German reading or the
+    /// English one. Unknown values fall back to "de".
+    /// </summary>
+    public string MetadataRegion { get; set; } = "de";
+
+    /// <summary>
     /// Absolute path of the operator settings file (fabula.settings.json).
     /// Set at startup so runtime edits from the app can be persisted back to
     /// the same file the config was loaded from. Not read from config itself.
