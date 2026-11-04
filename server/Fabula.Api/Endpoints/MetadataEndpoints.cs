@@ -87,6 +87,7 @@ public static class MetadataEndpoints
                 .Include(b => b.Authors)
                 .Include(b => b.Narrators)
                 .Include(b => b.Series)
+                .Include(b => b.Chapters)
                 .FirstOrDefaultAsync(b => b.Id == id, ct);
             if (book is null) return Results.NotFound();
 
@@ -102,15 +103,30 @@ public static class MetadataEndpoints
             if (record is null)
                 return Results.NotFound(new { error = "Zu dieser ASIN gibt es keinen Eintrag." });
 
+            // Chapters are a request of their own; when they fail, the rest of
+            // the comparison is still worth showing.
+            CatalogChapters? chapterSource = null;
+            var chaptersUnavailable = false;
+            try
+            {
+                chapterSource = await catalog.GetChaptersAsync(record.Asin, ct);
+            }
+            catch (CatalogUnavailableException)
+            {
+                chaptersUnavailable = true;
+            }
+            var fit = chapterSource is null ? null : ChapterFit.Fit(chapterSource, book.Duration);
+
             return Results.Ok(new MetadataPreviewDto(
                 record.Asin,
                 record.Title,
                 record.CoverUrl,
                 record.RuntimeMinutes,
                 MetadataPreview.RuntimeMatches(record.RuntimeMinutes, book.Duration),
-                MetadataPreview.Fields(book, record)
+                MetadataPreview.Fields(book, record, fit)
                     .Select(f => new MetadataFieldDto(f.Key, f.Label, f.Current, f.Proposed, f.Preselected))
-                    .ToList()));
+                    .ToList(),
+                MetadataPreview.ChapterNotes(chapterSource, fit, chaptersUnavailable).ToList()));
         });
 
         // Takes the chosen fields. The record is fetched again rather than
@@ -131,7 +147,11 @@ public static class MetadataEndpoints
             if (fields.Count == 0)
                 return Results.BadRequest(new { error = "Keine Felder ausgewählt." });
 
-            if (!await db.Books.AnyAsync(b => b.Id == id, ct)) return Results.NotFound();
+            var duration = await db.Books
+                .Where(b => b.Id == id)
+                .Select(b => (TimeSpan?)b.Duration)
+                .FirstOrDefaultAsync(ct);
+            if (duration is null) return Results.NotFound();
 
             CatalogBook? record;
             try
@@ -155,6 +175,23 @@ public static class MetadataEndpoints
                     coverPath = await covers.SaveCoverAsync($"catalog:{id}:{record.Asin}", picture.Data, picture.MimeType, ct);
             }
 
+            // Fitted again here rather than trusted from the comparison: only
+            // marks that fit the audio as it is now are written.
+            IReadOnlyList<ChapterInfo> chapters = [];
+            if (fields.Contains(MetadataLocks.Chapters))
+            {
+                try
+                {
+                    var source = await catalog.GetChaptersAsync(record.Asin, ct);
+                    if (source is not null && ChapterFit.Fit(source, duration.Value)?.Chapters is { } fitted)
+                        chapters = fitted;
+                }
+                catch (CatalogUnavailableException)
+                {
+                    // Reported as not taken, like any other field without a value.
+                }
+            }
+
             var update = new BookMetadataUpdate
             {
                 Fields = fields,
@@ -170,7 +207,8 @@ public static class MetadataEndpoints
                 Language = record.Language,
                 Isbn = record.Isbn,
                 Asin = record.Asin,
-                CoverPath = coverPath
+                CoverPath = coverPath,
+                Chapters = chapters
             };
 
             var taken = await repository.ApplyMetadataAsync(id, update, ct);
@@ -207,7 +245,8 @@ public record MetadataPreviewDto(
     string? CoverUrl,
     int? RuntimeMinutes,
     bool RuntimeMatches,
-    List<MetadataFieldDto> Fields);
+    List<MetadataFieldDto> Fields,
+    List<string> Notes);
 
 public record MetadataFieldDto(string Key, string Label, string? Current, string? Proposed, bool Preselected);
 

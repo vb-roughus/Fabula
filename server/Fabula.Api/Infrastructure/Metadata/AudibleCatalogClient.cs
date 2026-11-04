@@ -66,6 +66,14 @@ public sealed class AudibleCatalogClient(
         return document is null ? null : CatalogParsing.ParseAudnexusBook(document.RootElement);
     }
 
+    /// <summary>The chapter list for an ASIN, or null when Audnexus has none.</summary>
+    public async Task<CatalogChapters?> GetChaptersAsync(string asin, CancellationToken ct)
+    {
+        var url = $"https://api.audnex.us/books/{Uri.EscapeDataString(asin)}/chapters?region={Region}";
+        using var document = await GetJsonAsync(url, "Audnexus", notFoundIsEmpty: true, ct);
+        return document is null ? null : CatalogParsing.ParseAudnexusChapters(document.RootElement);
+    }
+
     /// <summary>
     /// The cover image behind a catalogue URL; null when it is not an image or
     /// too large to be a sensible cover.

@@ -343,7 +343,9 @@ data class MetadataPreviewDto(
     val coverUrl: String? = null,
     val runtimeMinutes: Int? = null,
     val runtimeMatches: Boolean = false,
-    val fields: List<MetadataFieldDto> = emptyList()
+    val fields: List<MetadataFieldDto> = emptyList(),
+    /** What the server has to say beside the fields -- why no chapters are offered, say. */
+    val notes: List<String> = emptyList()
 )
 
 @Serializable

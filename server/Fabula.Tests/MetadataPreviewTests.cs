@@ -194,6 +194,112 @@ public class MetadataPreviewTests
         Assert.Null(Field(fields, MetadataLocks.Volume).Current);
     }
 
+    // --- chapters ---------------------------------------------------------------
+
+    private static ChapterFitResult Fitted(params string[] titles) => new(
+        titles.Select((t, i) => new ChapterInfo(t, TimeSpan.FromMinutes(i * 10), TimeSpan.FromMinutes(i * 10 + 10))).ToList(),
+        TimeSpan.Zero,
+        TimeSpan.Zero);
+
+    /// <summary>The case asked for: a single file, no chapters -- and marks that fit.</summary>
+    [Fact]
+    public void Fitting_chapters_are_offered_and_ticked_for_a_book_without_any()
+    {
+        var chapters = Field(
+            MetadataPreview.Fields(Book(), Record(), Fitted("Prolog", "Eins", "Zwei", "Drei")),
+            MetadataLocks.Chapters);
+
+        Assert.True(chapters.Preselected);
+        Assert.Null(chapters.Current);
+        Assert.Equal("4 Kapitel: Prolog, Eins, Zwei, \u2026", chapters.Proposed);
+    }
+
+    [Fact]
+    public void A_single_chapter_counts_as_none()
+    {
+        var book = Book();
+        book.Chapters = [new Chapter { Index = 0, Title = "Momo" }];
+
+        var chapters = Field(MetadataPreview.Fields(book, Record(), Fitted("Eins", "Zwei")), MetadataLocks.Chapters);
+
+        Assert.True(chapters.Preselected);
+    }
+
+    /// <summary>Chapters the book has already are replaced only if the admin says so.</summary>
+    [Fact]
+    public void Chapters_a_book_has_are_offered_but_not_ticked()
+    {
+        var book = Book();
+        book.Chapters =
+        [
+            new Chapter { Index = 0, Title = "CD 1" },
+            new Chapter { Index = 1, Title = "CD 2" }
+        ];
+
+        var chapters = Field(MetadataPreview.Fields(book, Record(), Fitted("Eins", "Zwei", "Drei")), MetadataLocks.Chapters);
+
+        Assert.False(chapters.Preselected);
+        Assert.Equal("2 Kapitel: CD 1, CD 2", chapters.Current);
+    }
+
+    [Fact]
+    public void Chapters_that_do_not_fit_are_not_offered()
+    {
+        var notFitting = new ChapterFitResult(null, TimeSpan.FromMinutes(4), TimeSpan.Zero);
+
+        var keys = MetadataPreview.Fields(Book(), Record(), notFitting).Select(f => f.Key);
+
+        Assert.DoesNotContain(MetadataLocks.Chapters, keys);
+    }
+
+    [Fact]
+    public void A_deviation_is_explained()
+    {
+        var source = new CatalogChapters([], null, TimeSpan.Zero, TimeSpan.Zero);
+        var notFitting = new ChapterFitResult(null, TimeSpan.FromSeconds(252), TimeSpan.Zero);
+
+        var note = Assert.Single(MetadataPreview.ChapterNotes(source, notFitting, unavailable: false));
+
+        Assert.Contains("4 min 12 s", note);
+    }
+
+    [Fact]
+    public void A_shift_is_explained()
+    {
+        var source = new CatalogChapters([], null, TimeSpan.FromSeconds(3), TimeSpan.Zero);
+        var shifted = new ChapterFitResult([], TimeSpan.Zero, TimeSpan.FromSeconds(-3));
+
+        var note = Assert.Single(MetadataPreview.ChapterNotes(source, shifted, unavailable: false));
+
+        Assert.Contains("3 s", note);
+        Assert.Contains("Intro", note);
+    }
+
+    [Fact]
+    public void Missing_or_unreachable_chapters_are_explained()
+    {
+        Assert.Single(MetadataPreview.ChapterNotes(null, null, unavailable: false));
+        Assert.Single(MetadataPreview.ChapterNotes(null, null, unavailable: true));
+    }
+
+    [Fact]
+    public void Fitting_chapters_without_a_shift_need_no_note()
+    {
+        var source = new CatalogChapters([], null, TimeSpan.Zero, TimeSpan.Zero);
+
+        Assert.Empty(MetadataPreview.ChapterNotes(source, Fitted("A", "B"), unavailable: false));
+    }
+
+    [Theory]
+    [InlineData(3, "3 s")]
+    [InlineData(252, "4 min 12 s")]
+    [InlineData(120, "2 min")]
+    [InlineData(3720, "1 h 2 min")]
+    public void Writes_a_span_of_time(int seconds, string expected)
+    {
+        Assert.Equal(expected, MetadataPreview.Span(TimeSpan.FromSeconds(seconds)));
+    }
+
     [Theory]
     [InlineData(3.0, "3")]
     [InlineData(2.5, "2,5")]

@@ -272,6 +272,19 @@ fun MetadataSearchScreen(
                         color = MaterialTheme.colorScheme.outline
                     )
                 }
+                if (current.notes.isNotEmpty()) {
+                    item("notes") {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            current.notes.forEach { note ->
+                                Text(
+                                    note,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.tertiary
+                                )
+                            }
+                        }
+                    }
+                }
                 if (current.fields.isEmpty()) {
                     item("nothing") {
                         Text("Dieser Eintrag bringt nichts Neues.", color = MaterialTheme.colorScheme.outline)

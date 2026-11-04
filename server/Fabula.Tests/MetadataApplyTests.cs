@@ -66,6 +66,7 @@ public class MetadataApplyTests : IDisposable
         public string Publisher { get; set; } = "Tag-Verlag";
         public string Narrator { get; set; } = "Tag Sprecher";
         public string Description { get; set; } = "Aus den Tags";
+        public TimeSpan Duration { get; set; } = TimeSpan.FromMinutes(420);
 
         public AudioMetadata Read(string filePath) => new(
             Title: "Track 1",
@@ -81,7 +82,7 @@ public class MetadataApplyTests : IDisposable
             Year: 1999,
             Isbn: null,
             Asin: null,
-            Duration: TimeSpan.FromMinutes(420),
+            Duration: Duration,
             Codec: "mp3",
             BitrateKbps: 64,
             SampleRate: 44100,
@@ -117,8 +118,16 @@ public class MetadataApplyTests : IDisposable
             .Include(b => b.Authors)
             .Include(b => b.Narrators)
             .Include(b => b.Series)
+            .Include(b => b.Chapters)
             .Single();
     }
+
+    private static readonly IReadOnlyList<ChapterInfo> ChapterMarks =
+    [
+        new("Prolog", TimeSpan.Zero, TimeSpan.FromMinutes(20)),
+        new("Erstes Kapitel", TimeSpan.FromMinutes(20), TimeSpan.FromMinutes(200)),
+        new("Zweites Kapitel", TimeSpan.FromMinutes(200), TimeSpan.FromMinutes(420))
+    ];
 
     private static BookMetadataUpdate Update(params string[] fields) => new()
     {
@@ -235,7 +244,73 @@ public class MetadataApplyTests : IDisposable
         Assert.Null(await _repository.ApplyMetadataAsync(4711, Update(MetadataLocks.Title), default));
     }
 
+    /// <summary>The case asked for: one file, no chapters of its own.</summary>
+    [Fact]
+    public async Task Gives_a_single_file_book_the_catalogue_chapters()
+    {
+        await Scan();
+        var id = Load().Id;
+        Assert.Empty(Load().Chapters);
+
+        var taken = await _repository.ApplyMetadataAsync(
+            id, Update(MetadataLocks.Chapters) with { Chapters = ChapterMarks }, default);
+
+        var book = Load();
+        Assert.Equal(new[] { "chapters" }, taken);
+        Assert.Equal(
+            new[] { "Prolog", "Erstes Kapitel", "Zweites Kapitel" },
+            book.Chapters.OrderBy(c => c.Index).Select(c => c.Title));
+        Assert.Equal(TimeSpan.FromMinutes(200), book.Chapters.Single(c => c.Index == 2).Start);
+        Assert.Equal("chapters", book.MetadataLocks);
+    }
+
     // --- rescanning -------------------------------------------------------------
+
+    /// <summary>
+    /// Changed audio of the same length -- re-tagged, re-muxed: the catalogue's
+    /// marks still fit and stay, where the file would have brought none.
+    /// </summary>
+    [Fact]
+    public async Task Catalogue_chapters_survive_a_rescan_while_the_length_holds()
+    {
+        await Scan();
+        var id = Load().Id;
+        await _repository.ApplyMetadataAsync(
+            id, Update(MetadataLocks.Chapters) with { Chapters = ChapterMarks }, default);
+
+        ChangeTheAudio();
+        await Scan();
+
+        var book = Load();
+        Assert.Equal(3, book.Chapters.Count);
+        Assert.Equal("chapters", book.MetadataLocks);
+    }
+
+    /// <summary>
+    /// A recording of another length: the marks would point at the wrong
+    /// sentences. They go, the lock with them, and the files' own chapters
+    /// -- none, for a single file -- come back.
+    /// </summary>
+    [Fact]
+    public async Task Catalogue_chapters_go_when_the_audio_changes_length()
+    {
+        await Scan();
+        var id = Load().Id;
+        await _repository.ApplyMetadataAsync(
+            id,
+            Update(MetadataLocks.Chapters, MetadataLocks.Title) with { Chapters = ChapterMarks },
+            default);
+
+        _tags.Duration = TimeSpan.FromMinutes(380);
+        ChangeTheAudio();
+        await Scan();
+
+        var book = Load();
+        Assert.Empty(book.Chapters);
+        Assert.Equal("title", book.MetadataLocks);
+        Assert.Equal("Momo oder Die seltsame Geschichte", book.Title);
+    }
+
 
     /// <summary>
     /// The control case: without a lock, changed audio means the tags are read

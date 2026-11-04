@@ -50,7 +50,10 @@ public static class MetadataPreview
     /// preselected only where the book has nothing yet: filling gaps is safe,
     /// replacing what is there is the admin's call.
     /// </summary>
-    public static IReadOnlyList<MetadataField> Fields(Book book, CatalogBook proposal)
+    public static IReadOnlyList<MetadataField> Fields(
+        Book book,
+        CatalogBook proposal,
+        ChapterFitResult? chapters = null)
     {
         var fields = new List<MetadataField>();
 
@@ -94,6 +97,14 @@ public static class MetadataPreview
                 case MetadataLocks.Description:
                     Add(key, "Beschreibung", book.Description, proposal.Description);
                     break;
+                case MetadataLocks.Chapters:
+                    // Only marks that fit this book's audio are offered at all;
+                    // why others are not is said in a note instead.
+                    if (chapters?.Chapters is { Count: > 0 } fitted)
+                        Add(key, "Kapitel",
+                            ChapterSummary(book.Chapters.OrderBy(c => c.Index).Select(c => c.Title).ToList()),
+                            ChapterSummary(fitted.Select(c => c.Title).ToList()));
+                    break;
                 case MetadataLocks.Publisher:
                     Add(key, "Verlag", book.Publisher, proposal.Publisher);
                     break;
@@ -117,6 +128,46 @@ public static class MetadataPreview
             }
         }
         return fields;
+    }
+
+    /// <summary>
+    /// "12 Kapitel: Prolog, Erstes Kapitel, Zweites Kapitel, …". A single
+    /// chapter counts as none: it is the whole book, and nothing to navigate.
+    /// </summary>
+    private static string? ChapterSummary(IReadOnlyList<string> titles)
+    {
+        if (titles.Count <= 1) return null;
+        var sample = string.Join(", ", titles.Take(3));
+        return titles.Count > 3 ? $"{titles.Count} Kapitel: {sample}, \u2026" : $"{titles.Count} Kapitel: {sample}";
+    }
+
+    /// <summary>
+    /// What to tell the admin about chapters beside the fields: why none are
+    /// offered, or that the marks were moved to fit.
+    /// </summary>
+    public static IReadOnlyList<string> ChapterNotes(CatalogChapters? source, ChapterFitResult? fit, bool unavailable)
+    {
+        if (unavailable) return ["Die Kapitel liessen sich nicht laden."];
+        if (source is null) return ["Audible führt für diesen Eintrag keine Kapitel."];
+        if (fit is null) return [];
+        if (fit.Chapters is null)
+            return [$"Kapitel nicht angeboten: Die Laufzeit weicht um {Span(fit.Deviation)} ab, " +
+                    "die Kapitelmarken würden nicht passen."];
+        if (fit.Shift < TimeSpan.Zero)
+            return [$"Kapitelmarken um {Span(-fit.Shift)} vorgezogen: Deiner Datei fehlt das Audible-Intro."];
+        return [];
+    }
+
+    /// <summary>"1 h 2 min", "4 min 12 s", "3 s".</summary>
+    public static string Span(TimeSpan span)
+    {
+        var total = (long)Math.Round(span.Duration().TotalSeconds);
+        var hours = total / 3600;
+        var minutes = total % 3600 / 60;
+        var seconds = total % 60;
+        if (hours > 0) return minutes > 0 ? $"{hours} h {minutes} min" : $"{hours} h";
+        if (minutes > 0) return seconds > 0 ? $"{minutes} min {seconds} s" : $"{minutes} min";
+        return $"{seconds} s";
     }
 
     private static string? Join(IEnumerable<string> names)

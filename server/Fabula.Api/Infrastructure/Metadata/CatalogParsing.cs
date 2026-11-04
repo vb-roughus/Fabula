@@ -85,6 +85,35 @@ public static class CatalogParsing
             RuntimeMinutes: Int(root, "runtimeLengthMin"));
     }
 
+    /// <summary>
+    /// A chapter list from Audnexus (<c>/books/{asin}/chapters</c>); null when
+    /// it has none. Times are milliseconds there.
+    /// </summary>
+    public static CatalogChapters? ParseAudnexusChapters(JsonElement root)
+    {
+        if (root.ValueKind != JsonValueKind.Object ||
+            !root.TryGetProperty("chapters", out var list) ||
+            list.ValueKind != JsonValueKind.Array)
+            return null;
+
+        var chapters = new List<CatalogChapter>();
+        foreach (var item in list.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.Object) continue;
+            var start = Millis(item, "startOffsetMs") ?? Seconds(item, "startOffsetSec");
+            var length = Millis(item, "lengthMs");
+            if (start is null || length is null || length <= TimeSpan.Zero) continue;
+            chapters.Add(new CatalogChapter(Str(item, "title"), start.Value, length.Value));
+        }
+        if (chapters.Count == 0) return null;
+
+        return new CatalogChapters(
+            chapters,
+            Millis(root, "runtimeLengthMs") ?? Seconds(root, "runtimeLengthSec"),
+            Millis(root, "brandIntroDurationMs") ?? TimeSpan.Zero,
+            Millis(root, "brandOutroDurationMs") ?? TimeSpan.Zero);
+    }
+
     // --- conversions ----------------------------------------------------------
 
     private static readonly Regex LineBreak = new(@"<br\s*/?>", RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -188,6 +217,20 @@ public static class CatalogParsing
             JsonValueKind.String when int.TryParse(value.GetString(), out var parsed) => parsed,
             _ => null
         };
+    }
+
+    private static TimeSpan? Millis(JsonElement element, string name)
+    {
+        if (!element.TryGetProperty(name, out var value) || value.ValueKind != JsonValueKind.Number) return null;
+        return value.TryGetInt64(out var ms) ? TimeSpan.FromMilliseconds(ms)
+            : value.TryGetDouble(out var real) ? TimeSpan.FromMilliseconds(real)
+            : null;
+    }
+
+    private static TimeSpan? Seconds(JsonElement element, string name)
+    {
+        if (!element.TryGetProperty(name, out var value) || value.ValueKind != JsonValueKind.Number) return null;
+        return value.TryGetDouble(out var seconds) ? TimeSpan.FromSeconds(seconds) : null;
     }
 
     /// <summary>People listed as objects with a name, or as plain strings.</summary>

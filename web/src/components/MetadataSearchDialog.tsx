@@ -195,6 +195,12 @@ export function MetadataSearchDialog({
               Übernommene Felder bleiben auch bei einem neuen Scan erhalten.
             </p>
 
+            {(preview.notes ?? []).map((note) => (
+              <p key={note} className="text-xs text-accent-400">
+                {note}
+              </p>
+            ))}
+
             {preview.fields.length === 0 && (
               <div className="text-ink-400 text-sm">Dieser Eintrag bringt nichts Neues.</div>
             )}
