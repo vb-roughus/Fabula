@@ -249,7 +249,7 @@ fun FullPlayer(
     }
     val titleRow: @Composable () -> Unit = {
         PlayerTitleRow(
-            scrollTitle = isOpen,
+            scrollText = isOpen,
             title = state.currentChapter?.title ?: book.title,
             author = book.authors.joinToString(", ").ifBlank { book.title },
             bookmarkSaved = bookmarkSavedFlash,
@@ -648,8 +648,8 @@ private fun PlayerCover(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun PlayerTitleRow(
-    /** Whether a title too long for the line scrolls through it. */
-    scrollTitle: Boolean,
+    /** Whether a title or author too long for the line scrolls through it. */
+    scrollText: Boolean,
     title: String,
     author: String,
     bookmarkSaved: Boolean,
@@ -676,13 +676,15 @@ private fun PlayerTitleRow(
                 color = playerFg,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = if (scrollTitle) Modifier.basicMarquee(iterations = Int.MAX_VALUE) else Modifier
+                modifier = if (scrollText) Modifier.basicMarquee(iterations = Int.MAX_VALUE) else Modifier
             )
             Text(
                 text = author,
                 style = MaterialTheme.typography.bodyMedium,
                 color = playerMuted,
-                maxLines = 1
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = if (scrollText) Modifier.basicMarquee(iterations = Int.MAX_VALUE) else Modifier
             )
         }
         IconButton(onClick = onToggleHighlight) {
