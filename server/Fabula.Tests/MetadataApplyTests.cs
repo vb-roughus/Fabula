@@ -169,12 +169,64 @@ public class MetadataApplyTests : IDisposable
         await Scan();
         var id = Load().Id;
 
-        await _repository.ApplyMetadataAsync(id, Update(MetadataLocks.Series), default);
+        await _repository.ApplyMetadataAsync(id, Update(MetadataLocks.Series, MetadataLocks.Volume), default);
 
         var book = Load();
         Assert.Equal("Michael-Ende-Bibliothek", book.Series!.Name);
         Assert.Equal(3m, book.SeriesPosition);
         Assert.True(book.SeriesPositionManuallySet);
+    }
+
+    /// <summary>Like a series assigned by hand without a number: the next free slot.</summary>
+    [Fact]
+    public async Task Joining_a_series_without_its_volume_takes_the_next_free_one()
+    {
+        await Scan();
+        var id = Load().Id;
+
+        await _repository.ApplyMetadataAsync(id, Update(MetadataLocks.Series), default);
+
+        var book = Load();
+        Assert.Equal("Michael-Ende-Bibliothek", book.Series!.Name);
+        Assert.Equal(1m, book.SeriesPosition);
+        Assert.False(book.SeriesPositionManuallySet);
+    }
+
+    /// <summary>
+    /// The reason the two are separate: the catalogue calls the series
+    /// something else, and the book is to stay where it is -- only numbered.
+    /// </summary>
+    [Fact]
+    public async Task The_volume_alone_keeps_the_series_the_book_is_in()
+    {
+        await Scan();
+        var id = Load().Id;
+        await _repository.ApplyMetadataAsync(
+            id, Update(MetadataLocks.Series) with { SeriesName = "Meine Reihe" }, default);
+
+        var taken = await _repository.ApplyMetadataAsync(id, Update(MetadataLocks.Volume), default);
+
+        var book = Load();
+        Assert.Equal(new[] { "volume" }, taken);
+        Assert.Equal("Meine Reihe", book.Series!.Name);
+        Assert.Equal(3m, book.SeriesPosition);
+        Assert.True(book.SeriesPositionManuallySet);
+        Assert.Single(_db.Series);
+    }
+
+    [Fact]
+    public async Task A_volume_for_a_book_in_no_series_is_skipped()
+    {
+        await Scan();
+        var id = Load().Id;
+
+        var taken = await _repository.ApplyMetadataAsync(id, Update(MetadataLocks.Volume), default);
+
+        var book = Load();
+        Assert.Empty(taken!);
+        Assert.Null(book.Series);
+        Assert.Null(book.SeriesPosition);
+        Assert.Null(book.MetadataLocks);
     }
 
     [Fact]
@@ -207,7 +259,7 @@ public class MetadataApplyTests : IDisposable
         await Scan();
         var id = Load().Id;
         await _repository.ApplyMetadataAsync(
-            id, Update(MetadataLocks.Title, MetadataLocks.Narrators, MetadataLocks.Series), default);
+            id, Update(MetadataLocks.Title, MetadataLocks.Narrators, MetadataLocks.Series, MetadataLocks.Volume), default);
 
         _tags.Album = "Momo (aus den Tags)";
         _tags.Narrator = "Anderer Sprecher";

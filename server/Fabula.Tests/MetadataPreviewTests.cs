@@ -144,6 +144,64 @@ public class MetadataPreviewTests
         Assert.Equal(keys.OrderBy(k => MetadataLocks.All.ToList().IndexOf(k)), keys);
     }
 
+    private static Book InSeries(string name, decimal position) => new()
+    {
+        Id = 7,
+        Title = "Momo",
+        SeriesId = 1,
+        Series = new Series { Id = 1, Name = name },
+        SeriesPosition = position,
+        Authors = [new Author { Name = "Michael Ende" }],
+        Narrators = [new Narrator { Name = "Gert Westphal" }]
+    };
+
+    /// <summary>
+    /// The catalogue names the series differently: the name is offered as a
+    /// change, the number -- the same -- is not.
+    /// </summary>
+    [Fact]
+    public void The_series_name_is_offered_on_its_own()
+    {
+        var fields = MetadataPreview.Fields(InSeries("Die drei Fragezeichen", 5m), Record(series: "Die drei ???", position: 5m));
+
+        var series = Field(fields, MetadataLocks.Series);
+        Assert.Equal("Die drei Fragezeichen", series.Current);
+        Assert.Equal("Die drei ???", series.Proposed);
+        Assert.False(series.Preselected);
+        Assert.DoesNotContain(fields, f => f.Key == MetadataLocks.Volume);
+    }
+
+    /// <summary>The case the split is for: same series, different number.</summary>
+    [Fact]
+    public void The_volume_is_offered_on_its_own()
+    {
+        var fields = MetadataPreview.Fields(InSeries("Momo", 2m), Record(series: "Momo", position: 1m));
+
+        var volume = Field(fields, MetadataLocks.Volume);
+        Assert.Equal("2", volume.Current);
+        Assert.Equal("1", volume.Proposed);
+        Assert.False(volume.Preselected);
+        Assert.DoesNotContain(fields, f => f.Key == MetadataLocks.Series);
+    }
+
+    [Fact]
+    public void A_book_in_no_series_gets_both_ticked()
+    {
+        var fields = MetadataPreview.Fields(Book(), Record(series: "Momo", position: 1m));
+
+        Assert.True(Field(fields, MetadataLocks.Series).Preselected);
+        Assert.True(Field(fields, MetadataLocks.Volume).Preselected);
+        Assert.Null(Field(fields, MetadataLocks.Volume).Current);
+    }
+
+    [Theory]
+    [InlineData(3.0, "3")]
+    [InlineData(2.5, "2,5")]
+    public void Writes_a_volume_number(double position, string expected)
+    {
+        Assert.Equal(expected, MetadataPreview.FormatVolume((decimal)position));
+    }
+
     [Theory]
     [InlineData("Harry Potter", 3.0, "Harry Potter · Band 3")]
     [InlineData("Reihe", 2.5, "Reihe · Band 2,5")]

@@ -18,7 +18,15 @@ public static class MetadataLocks
     public const string Description = "description";
     public const string Authors = "authors";
     public const string Narrators = "narrators";
+    /// <summary>Which series the book belongs to -- the name, not the volume.</summary>
     public const string Series = "series";
+
+    /// <summary>
+    /// The book's volume number within its series. Separate from
+    /// <see cref="Series"/> so a catalogue's number can be taken while the
+    /// book stays in a series that the catalogue names differently.
+    /// </summary>
+    public const string Volume = "volume";
     public const string Publisher = "publisher";
     public const string Year = "year";
     public const string Language = "language";
@@ -28,7 +36,7 @@ public static class MetadataLocks
 
     private static readonly string[] Ordered =
     [
-        Title, Subtitle, Authors, Narrators, Series, Description,
+        Title, Subtitle, Authors, Narrators, Series, Volume, Description,
         Publisher, Year, Language, Isbn, Asin, Cover
     ];
 

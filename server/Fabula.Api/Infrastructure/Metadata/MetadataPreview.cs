@@ -80,9 +80,16 @@ public static class MetadataPreview
                     Add(key, "Sprecher", Join(book.Narrators.Select(n => n.Name)), Join(proposal.Narrators));
                     break;
                 case MetadataLocks.Series:
-                    Add(key, "Serie",
-                        SeriesLabel(book.Series?.Name, book.SeriesPosition),
-                        SeriesLabel(proposal.SeriesName, proposal.SeriesPosition));
+                    // The name alone: the number is its own field, so it can be
+                    // taken while the book keeps a series named differently here.
+                    Add(key, "Serie", book.Series?.Name, proposal.SeriesName);
+                    break;
+                case MetadataLocks.Volume:
+                    // A position only means something inside a series; a book in
+                    // none has no number to show, whatever the column holds.
+                    Add(key, "Band",
+                        book.Series is null && book.SeriesId is null ? null : FormatVolume(book.SeriesPosition),
+                        FormatVolume(proposal.SeriesPosition));
                     break;
                 case MetadataLocks.Description:
                     Add(key, "Beschreibung", book.Description, proposal.Description);
@@ -122,10 +129,16 @@ public static class MetadataPreview
     public static string? SeriesLabel(string? name, decimal? position)
     {
         if (string.IsNullOrWhiteSpace(name)) return null;
-        if (position is not decimal p) return name;
-        var shown = p % 1 == 0
+        var volume = FormatVolume(position);
+        return volume is null ? name : $"{name} · Band {volume}";
+    }
+
+    /// <summary>A volume number as it is written: "3", "2,5".</summary>
+    public static string? FormatVolume(decimal? position)
+    {
+        if (position is not decimal p) return null;
+        return p % 1 == 0
             ? decimal.Truncate(p).ToString(CultureInfo.InvariantCulture)
             : p.ToString("0.##", CultureInfo.InvariantCulture).Replace('.', ',');
-        return $"{name} · Band {shown}";
     }
 }
