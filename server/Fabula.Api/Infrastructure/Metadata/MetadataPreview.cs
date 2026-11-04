@@ -57,13 +57,14 @@ public static class MetadataPreview
     {
         var fields = new List<MetadataField>();
 
-        void Add(string key, string label, string? current, string? proposed)
+        void Add(string key, string label, string? current, string? proposed, bool mayPreselect = true)
         {
             if (string.IsNullOrWhiteSpace(proposed)) return;
             if (key != MetadataLocks.Cover &&
                 string.Equals(current?.Trim(), proposed.Trim(), StringComparison.Ordinal))
                 return;
-            fields.Add(new MetadataField(key, label, current, proposed, string.IsNullOrWhiteSpace(current)));
+            fields.Add(new MetadataField(
+                key, label, current, proposed, mayPreselect && string.IsNullOrWhiteSpace(current)));
         }
 
         foreach (var key in MetadataLocks.All)
@@ -100,10 +101,13 @@ public static class MetadataPreview
                 case MetadataLocks.Chapters:
                     // Only marks that fit this book's audio are offered at all;
                     // why others are not is said in a note instead.
+                    // A near miss is offered as approximate and never ticked for
+                    // the admin: marks that may sit seconds off are a choice.
                     if (chapters?.Chapters is { Count: > 0 } fitted)
-                        Add(key, "Kapitel",
+                        Add(key, chapters.Exact ? "Kapitel" : "Kapitel (ungefähr)",
                             ChapterSummary(book.Chapters.OrderBy(c => c.Index).Select(c => c.Title).ToList()),
-                            ChapterSummary(fitted.Select(c => c.Title).ToList()));
+                            ChapterSummary(fitted.Select(c => c.Title).ToList()),
+                            mayPreselect: chapters.Exact);
                     break;
                 case MetadataLocks.Publisher:
                     Add(key, "Verlag", book.Publisher, proposal.Publisher);
@@ -150,12 +154,47 @@ public static class MetadataPreview
         if (unavailable) return ["Die Kapitel liessen sich nicht laden."];
         if (source is null) return ["Audible führt für diesen Eintrag keine Kapitel."];
         if (fit is null) return [];
+
+        var notes = new List<string>();
         if (fit.Chapters is null)
-            return [$"Kapitel nicht angeboten: Die Laufzeit weicht um {Span(fit.Deviation)} ab, " +
-                    "die Kapitelmarken würden nicht passen."];
-        if (fit.Shift < TimeSpan.Zero)
-            return [$"Kapitelmarken um {Span(-fit.Shift)} vorgezogen: Deiner Datei fehlt das Audible-Intro."];
-        return [];
+        {
+            notes.Add($"Kapitel nicht angeboten: {Comparison(fit)} \u2013 wohl eine andere Aufnahme, " +
+                      "die Kapitelmarken würden nicht passen.");
+        }
+        else if (!fit.Exact)
+        {
+            notes.Add($"Kapitel nur ungefähr: {Comparison(fit)}. Der Unterschied ist über das ganze Buch " +
+                      $"verteilt, einzelne Marken können um bis zu {Span(fit.Deviation)} danebenliegen. " +
+                      "Darum nicht vorausgewählt.");
+        }
+        if (fit.Chapters is not null && fit.Shift < TimeSpan.Zero)
+            notes.Add($"Kapitelmarken um {Span(-fit.Shift)} vorgezogen: Deiner Datei fehlt das Audible-Intro.");
+        if (!fit.JinglesKnown && fit.Deviation > MetadataLocks.ChapterTolerance)
+            notes.Add("Audible nennt für diesen Eintrag keine Länge für Intro und Jingle. Fehlen die in " +
+                      "deiner Datei, erklärt das einige Sekunden davon.");
+        return notes;
+    }
+
+    /// <summary>
+    /// "Deine Datei ist 12 s länger als bei Audible (ohne Audibles Intro und
+    /// Jingle verglichen)" -- the direction and the basis of the comparison,
+    /// without which a bare number cannot be checked against the file.
+    /// </summary>
+    private static string Comparison(ChapterFitResult fit)
+    {
+        var how = fit.Comparison switch
+        {
+            JingleComparison.WithoutJingles => "ohne Audibles Intro und Jingle verglichen",
+            JingleComparison.WithoutIntro => "ohne Audibles Intro verglichen",
+            JingleComparison.WithoutOutro => "ohne Audibles Jingle am Ende verglichen",
+            _ => fit.JinglesKnown ? "mit Audibles Intro und Jingle verglichen" : "mit Intro und Jingle verglichen"
+        };
+        var direction = fit.Difference > TimeSpan.Zero ? "länger"
+            : fit.Difference < TimeSpan.Zero ? "kürzer"
+            : null;
+        return direction is null
+            ? $"Die Laufzeit weicht um {Span(fit.Deviation)} ab ({how})"
+            : $"Deine Datei ist {Span(fit.Deviation)} {direction} als bei Audible ({how})";
     }
 
     /// <summary>"1 h 2 min", "4 min 12 s", "3 s".</summary>
