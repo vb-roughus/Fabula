@@ -86,6 +86,88 @@ public class ChapterFitTests
         Assert.Equal(S(100), fit.Deviation);
     }
 
+    /// <summary>
+    /// The reported case: a few seconds beyond the tolerance. Still offered,
+    /// but as approximate, with the direction recorded.
+    /// </summary>
+    [Fact]
+    public void A_near_miss_is_offered_as_approximate()
+    {
+        var fit = ChapterFit.Fit(Audible(), S(3620))!;
+
+        Assert.NotNull(fit.Chapters);
+        Assert.False(fit.Exact);
+        Assert.Equal(S(12), fit.Deviation);
+        Assert.Equal(S(12), fit.Difference);
+        Assert.Equal(JingleComparison.WithJingles, fit.Comparison);
+        Assert.Equal(3620.0, fit.Chapters![^1].End.TotalSeconds);
+    }
+
+    /// <summary>
+    /// Where the extra seconds sit is unknown, so they are spread: a mark a
+    /// third of the way in moves by a third of the difference.
+    /// </summary>
+    [Fact]
+    public void A_near_miss_is_spread_over_the_whole_book()
+    {
+        var source = new CatalogChapters(
+            [
+                new CatalogChapter("A", S(0), S(1200)),
+                new CatalogChapter("B", S(1200), S(1200)),
+                new CatalogChapter("C", S(2400), S(1200))
+            ],
+            Runtime: S(3600), BrandIntro: TimeSpan.Zero, BrandOutro: TimeSpan.Zero);
+
+        var chapters = ChapterFit.Fit(source, S(3630))!.Chapters!;
+
+        Assert.Equal(1210.0, chapters[1].Start.TotalSeconds, precision: 3);
+        Assert.Equal(2420.0, chapters[2].Start.TotalSeconds, precision: 3);
+        Assert.Equal(3630.0, chapters[2].End.TotalSeconds, precision: 3);
+    }
+
+    [Fact]
+    public void Within_the_tolerance_nothing_is_spread()
+    {
+        var fit = ChapterFit.Fit(Audible(), S(3614))!;
+
+        Assert.True(fit.Exact);
+        Assert.Equal(1203.0, fit.Chapters![1].Start.TotalSeconds);
+    }
+
+    [Fact]
+    public void More_than_a_minute_is_another_recording()
+    {
+        var fit = ChapterFit.Fit(Audible(), S(3608 + 61))!;
+
+        Assert.Null(fit.Chapters);
+        Assert.Equal(S(61), fit.Difference);
+    }
+
+    /// <summary>
+    /// Without the jingles' lengths, a file that lacks them looks merely
+    /// shorter -- the result says so, so the note can.
+    /// </summary>
+    [Fact]
+    public void Unknown_jingles_are_recorded()
+    {
+        var withoutLengths = Audible() with { BrandIntro = TimeSpan.Zero, BrandOutro = TimeSpan.Zero };
+
+        var fit = ChapterFit.Fit(withoutLengths, S(3596))!;
+
+        Assert.False(fit.JinglesKnown);
+        Assert.Equal(S(-12), fit.Difference);
+        Assert.False(fit.Exact);
+    }
+
+    [Fact]
+    public void A_comparison_without_the_jingles_is_recorded()
+    {
+        var fit = ChapterFit.Fit(Audible(), S(3600))!;
+
+        Assert.Equal(JingleComparison.WithoutJingles, fit.Comparison);
+        Assert.True(fit.JinglesKnown);
+    }
+
     [Fact]
     public void A_jingle_that_was_its_own_chapter_disappears_with_the_jingle()
     {

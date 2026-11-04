@@ -252,6 +252,65 @@ public class MetadataPreviewTests
         Assert.DoesNotContain(MetadataLocks.Chapters, keys);
     }
 
+    private static ChapterFitResult NearMiss(TimeSpan difference, bool jinglesKnown = true) => new(
+        [
+            new ChapterInfo("Eins", TimeSpan.Zero, TimeSpan.FromMinutes(10)),
+            new ChapterInfo("Zwei", TimeSpan.FromMinutes(10), TimeSpan.FromMinutes(20))
+        ],
+        difference.Duration(),
+        TimeSpan.Zero,
+        difference,
+        Exact: false,
+        Comparison: JingleComparison.WithoutJingles,
+        JinglesKnown: jinglesKnown);
+
+    /// <summary>Approximate marks are the admin's choice, even on a book that has none.</summary>
+    [Fact]
+    public void Approximate_chapters_are_offered_but_never_ticked()
+    {
+        var chapters = Field(
+            MetadataPreview.Fields(Book(), Record(), NearMiss(TimeSpan.FromSeconds(12))),
+            MetadataLocks.Chapters);
+
+        Assert.Equal("Kapitel (ungefähr)", chapters.Label);
+        Assert.False(chapters.Preselected);
+    }
+
+    [Fact]
+    public void A_near_miss_says_by_how_much_which_way_and_compared_how()
+    {
+        var source = new CatalogChapters([], null, TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(5));
+
+        var note = Assert.Single(MetadataPreview.ChapterNotes(source, NearMiss(TimeSpan.FromSeconds(12)), unavailable: false));
+
+        Assert.Contains("12 s länger", note);
+        Assert.Contains("ohne Audibles Intro und Jingle", note);
+        Assert.Contains("ungefähr", note);
+    }
+
+    [Fact]
+    public void A_shorter_file_is_called_shorter()
+    {
+        var source = new CatalogChapters([], null, TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(5));
+
+        var note = Assert.Single(MetadataPreview.ChapterNotes(source, NearMiss(TimeSpan.FromSeconds(-12)), unavailable: false));
+
+        Assert.Contains("12 s kürzer", note);
+    }
+
+    /// <summary>Without the jingles' lengths, the likeliest explanation is worth saying.</summary>
+    [Fact]
+    public void Unknown_jingle_lengths_are_mentioned()
+    {
+        var source = new CatalogChapters([], null, TimeSpan.Zero, TimeSpan.Zero);
+
+        var notes = MetadataPreview.ChapterNotes(
+            source, NearMiss(TimeSpan.FromSeconds(-12), jinglesKnown: false), unavailable: false);
+
+        Assert.Equal(2, notes.Count);
+        Assert.Contains(notes, n => n.Contains("keine Länge für Intro und Jingle"));
+    }
+
     [Fact]
     public void A_deviation_is_explained()
     {
