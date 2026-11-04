@@ -130,6 +130,8 @@ public class LibraryScanner(
         // the tags are what was replaced. Only an existing book can carry locks.
         var locks = MetadataLocks.Parse(existing?.MetadataLocks);
         bool Keeps(string field) => existing is not null && locks.Contains(field);
+        // Read before the book's fields are overwritten below.
+        var previousDuration = existing?.Duration;
 
         string? coverPath = null;
         var folderCover = FindFolderCover(bookDir);
@@ -167,6 +169,29 @@ public class LibraryScanner(
 
         var audioFiles = BuildAudioFiles(allMetadata, usableStats);
         var chapters = BuildChapters(allMetadata, audioFiles);
+
+        // Chapter marks taken from a catalogue are positions in the audio. They
+        // stay while the audio keeps its length; a recording of another length
+        // would put them on the wrong sentences, so then the lock goes and the
+        // files' own chapters come back.
+        if (Keeps(MetadataLocks.Chapters))
+        {
+            if (previousDuration is TimeSpan before &&
+                (totalDuration - before).Duration() <= MetadataLocks.ChapterTolerance)
+            {
+                chapters = existing!.Chapters
+                    .OrderBy(c => c.Index)
+                    .Select(c => new ChapterInfo(c.Title, c.Start, c.End))
+                    .ToList();
+            }
+            else
+            {
+                book.MetadataLocks = MetadataLocks.Remove(book.MetadataLocks, MetadataLocks.Chapters);
+                logger.LogInformation(
+                    "Kapitel von {Dir} aus dem Katalog verworfen: Die Laufzeit hat sich von {Before} auf {After} geändert.",
+                    bookDir, previousDuration, totalDuration);
+            }
+        }
 
         // Locked relations are handed back as they are, so the repository's
         // usual resolution simply finds the same authors, narrators and series.

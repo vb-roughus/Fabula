@@ -171,6 +171,7 @@ public class LibraryRepository(FabulaDbContext db) : ILibraryRepository
             .Include(b => b.Authors)
             .Include(b => b.Narrators)
             .Include(b => b.Series)
+            .Include(b => b.Chapters)
             .FirstOrDefaultAsync(b => b.Id == bookId, cancellationToken);
         if (book is null) return null;
 
@@ -183,6 +184,18 @@ public class LibraryRepository(FabulaDbContext db) : ILibraryRepository
             book.Authors = await ResolveAuthorsAsync(update.Authors, cancellationToken);
         if (taken.Contains(MetadataLocks.Narrators))
             book.Narrators = await ResolveNarratorsAsync(update.Narrators, cancellationToken);
+
+        if (taken.Contains(MetadataLocks.Chapters))
+        {
+            db.Chapters.RemoveRange(book.Chapters);
+            book.Chapters = update.Chapters.Select((c, i) => new Chapter
+            {
+                Index = i,
+                Title = c.Title,
+                Start = c.Start,
+                End = c.End
+            }).ToList();
+        }
 
         var takesVolume = taken.Contains(MetadataLocks.Volume);
 

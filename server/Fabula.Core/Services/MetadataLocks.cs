@@ -27,6 +27,12 @@ public static class MetadataLocks
     /// book stays in a series that the catalogue names differently.
     /// </summary>
     public const string Volume = "volume";
+
+    /// <summary>
+    /// Chapter marks from a catalogue. Kept only while the audio stays the
+    /// length they were fitted to: see <see cref="ChapterTolerance"/>.
+    /// </summary>
+    public const string Chapters = "chapters";
     public const string Publisher = "publisher";
     public const string Year = "year";
     public const string Language = "language";
@@ -36,7 +42,7 @@ public static class MetadataLocks
 
     private static readonly string[] Ordered =
     [
-        Title, Subtitle, Authors, Narrators, Series, Volume, Description,
+        Title, Subtitle, Authors, Narrators, Series, Volume, Description, Chapters,
         Publisher, Year, Language, Isbn, Asin, Cover
     ];
 
@@ -71,4 +77,16 @@ public static class MetadataLocks
     /// <summary>Adds <paramref name="keys"/> to what is locked already.</summary>
     public static string? Add(string? stored, IEnumerable<string> keys) =>
         Format(Parse(stored).Concat(keys));
+
+    /// <summary>Drops <paramref name="key"/> from what is locked.</summary>
+    public static string? Remove(string? stored, string key) =>
+        Format(Parse(stored).Where(k => k != key));
+
+    /// <summary>
+    /// How far a book's length may be from a catalogue's for its chapter marks
+    /// to count as fitting. Chapters are positions in the audio; on a recording
+    /// of a different length they point at the wrong sentences, so the bar is
+    /// seconds, not the percentage that is enough to tell editions apart.
+    /// </summary>
+    public static readonly TimeSpan ChapterTolerance = TimeSpan.FromSeconds(10);
 }

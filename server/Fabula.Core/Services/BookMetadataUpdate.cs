@@ -30,6 +30,9 @@ public sealed record BookMetadataUpdate
     /// <summary>Relative cover path in the cover store, once the image is saved.</summary>
     public string? CoverPath { get; init; }
 
+    /// <summary>Chapter marks already fitted to this book's audio.</summary>
+    public IReadOnlyList<ChapterInfo> Chapters { get; init; } = [];
+
     public bool Takes(string field) => Fields.Contains(field);
 
     /// <summary>
@@ -71,6 +74,7 @@ public sealed record BookMetadataUpdate
         // Relations: written by the repository, locked here.
         if (Takes(MetadataLocks.Authors) && Authors.Count > 0) taken.Add(MetadataLocks.Authors);
         if (Takes(MetadataLocks.Narrators) && Narrators.Count > 0) taken.Add(MetadataLocks.Narrators);
+        if (Takes(MetadataLocks.Chapters) && Chapters.Count > 0) taken.Add(MetadataLocks.Chapters);
 
         var takesSeries = Takes(MetadataLocks.Series) && !string.IsNullOrWhiteSpace(SeriesName);
         if (takesSeries) taken.Add(MetadataLocks.Series);

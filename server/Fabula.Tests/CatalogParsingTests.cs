@@ -97,6 +97,56 @@ public class CatalogParsingTests
         Assert.Null(CatalogParsing.ParseAudnexusBook(Json("""[]""")));
     }
 
+    // --- Audnexus chapters -----------------------------------------------------
+
+    private const string AudnexusChapters = """
+        {
+          "asin": "B004V0YKT2",
+          "brandIntroDurationMs": 2043,
+          "brandOutroDurationMs": 5061,
+          "chapters": [
+            { "lengthMs": 120000, "startOffsetMs": 0, "startOffsetSec": 0, "title": "Prolog" },
+            { "lengthMs": 300500, "startOffsetMs": 120000, "startOffsetSec": 120, "title": "Kapitel 1" },
+            { "title": "kaputt" }
+          ],
+          "isAccurate": true,
+          "region": "de",
+          "runtimeLengthMs": 420500,
+          "runtimeLengthSec": 420
+        }
+        """;
+
+    [Fact]
+    public void Reads_an_Audnexus_chapter_list()
+    {
+        var chapters = CatalogParsing.ParseAudnexusChapters(Json(AudnexusChapters))!;
+
+        Assert.Equal(new[] { "Prolog", "Kapitel 1" }, chapters.Chapters.Select(c => c.Title));
+        Assert.Equal(TimeSpan.FromMilliseconds(120000), chapters.Chapters[1].Start);
+        Assert.Equal(TimeSpan.FromMilliseconds(300500), chapters.Chapters[1].Length);
+        Assert.Equal(TimeSpan.FromMilliseconds(420500), chapters.Runtime);
+        Assert.Equal(TimeSpan.FromMilliseconds(2043), chapters.BrandIntro);
+        Assert.Equal(TimeSpan.FromMilliseconds(5061), chapters.BrandOutro);
+    }
+
+    [Fact]
+    public void A_chapter_list_without_chapters_is_none()
+    {
+        Assert.Null(CatalogParsing.ParseAudnexusChapters(Json("""{ "asin": "B004V0YKT2", "chapters": [] }""")));
+        Assert.Null(CatalogParsing.ParseAudnexusChapters(Json("""{ "asin": "B004V0YKT2" }""")));
+    }
+
+    [Fact]
+    public void Missing_jingle_lengths_count_as_none()
+    {
+        var chapters = CatalogParsing.ParseAudnexusChapters(Json(
+            """{ "chapters": [ { "startOffsetMs": 0, "lengthMs": 1000, "title": "A" } ] }"""))!;
+
+        Assert.Equal(TimeSpan.Zero, chapters.BrandIntro);
+        Assert.Equal(TimeSpan.Zero, chapters.BrandOutro);
+        Assert.Null(chapters.Runtime);
+    }
+
     // --- Audible catalogue search ----------------------------------------------
 
     private const string CatalogSearch = """

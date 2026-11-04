@@ -167,6 +167,28 @@ public class AudibleCatalogClientTests
             () => client.GetBookAsync("B004V0YKT2", CancellationToken.None));
     }
 
+    [Fact]
+    public async Task Asks_Audnexus_for_the_chapters_in_the_region()
+    {
+        var (client, handler) = Client(_ => Json(
+            """{ "chapters": [ { "startOffsetMs": 0, "lengthMs": 60000, "title": "A" } ] }"""));
+
+        var chapters = await client.GetChaptersAsync("B004V0YKT2", CancellationToken.None);
+
+        Assert.Single(chapters!.Chapters);
+        var request = handler.Requests.Single();
+        Assert.Equal("/books/B004V0YKT2/chapters", request.AbsolutePath);
+        Assert.Equal("?region=de", request.Query);
+    }
+
+    [Fact]
+    public async Task A_book_without_chapters_at_Audnexus_has_none()
+    {
+        var (client, _) = Client(_ => Json("""{ "error": "Not Found" }""", HttpStatusCode.NotFound));
+
+        Assert.Null(await client.GetChaptersAsync("B004V0YKT2", CancellationToken.None));
+    }
+
     // --- covers ---------------------------------------------------------------
 
     private static HttpResponseMessage Image(string mime, int size = 64) =>

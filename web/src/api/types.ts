@@ -238,6 +238,8 @@ export interface MetadataPreview {
   runtimeMinutes: number | null;
   runtimeMatches: boolean;
   fields: MetadataField[];
+  /** What the server has to say beside the fields -- why no chapters are offered, say. Absent on older servers. */
+  notes?: string[];
 }
 
 export interface ApplyMetadataResult {

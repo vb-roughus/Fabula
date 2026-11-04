@@ -48,6 +48,26 @@ public class MetadataLocksTests
     }
 
     [Fact]
+    public void Removing_drops_only_that_key()
+    {
+        Assert.Equal("title,cover", MetadataLocks.Remove("title,chapters,cover", MetadataLocks.Chapters));
+        Assert.Null(MetadataLocks.Remove("chapters", MetadataLocks.Chapters));
+        Assert.Null(MetadataLocks.Remove(null, MetadataLocks.Chapters));
+    }
+
+    [Fact]
+    public void Chapters_are_locked_only_when_there_are_some()
+    {
+        var withChapters = Update(MetadataLocks.Chapters) with
+        {
+            Chapters = [new ChapterInfo("Kapitel 1", TimeSpan.Zero, TimeSpan.FromMinutes(10))]
+        };
+
+        Assert.Equal(new[] { "chapters" }, withChapters.ApplyTo(Book()));
+        Assert.Empty(Update(MetadataLocks.Chapters).ApplyTo(Book()));
+    }
+
+    [Fact]
     public void Adding_keeps_what_was_locked_before()
     {
         Assert.Equal("title,narrators,description", MetadataLocks.Add("title,description", new[] { "narrators" }));
