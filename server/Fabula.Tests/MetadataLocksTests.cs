@@ -141,6 +141,41 @@ public class MetadataLocksTests
         Assert.Equal(new[] { "authors" }, taken);
     }
 
+    [Fact]
+    public void A_volume_is_taken_for_a_book_in_a_series()
+    {
+        var book = Book();
+        book.SeriesId = 4;
+        var update = Update(MetadataLocks.Volume) with { SeriesPosition = 3m };
+
+        Assert.Equal(new[] { "volume" }, update.ApplyTo(book));
+        Assert.Equal("volume", book.MetadataLocks);
+    }
+
+    [Fact]
+    public void A_volume_is_taken_along_with_the_series_it_numbers()
+    {
+        var book = Book();
+        var update = Update(MetadataLocks.Series, MetadataLocks.Volume) with
+        {
+            SeriesName = "Michael-Ende-Bibliothek",
+            SeriesPosition = 3m
+        };
+
+        Assert.Equal(new[] { "series", "volume" }, update.ApplyTo(book));
+    }
+
+    /// <summary>A number with nothing to number is not stored, nor locked.</summary>
+    [Fact]
+    public void A_volume_without_any_series_is_skipped()
+    {
+        var book = Book();
+        var update = Update(MetadataLocks.Volume) with { SeriesPosition = 3m };
+
+        Assert.Empty(update.ApplyTo(book));
+        Assert.Null(book.MetadataLocks);
+    }
+
     /// <summary>A catalogue title longer than the column would fail the whole save.</summary>
     [Fact]
     public void A_value_longer_than_its_column_is_cut()

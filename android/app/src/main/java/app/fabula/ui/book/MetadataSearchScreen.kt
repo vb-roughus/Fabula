@@ -34,6 +34,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.TriStateCheckbox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -50,6 +51,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.fabula.data.ApplyMetadataRequest
@@ -288,6 +290,18 @@ fun MetadataSearchScreen(
                     item("nothing") {
                         Text("Dieser Eintrag bringt nichts Neues.", color = MaterialTheme.colorScheme.outline)
                     }
+                } else {
+                    // At the top, with the button beside it: taking everything
+                    // is two taps, without scrolling past a long description.
+                    item("all") {
+                        SelectAllRow(
+                            allKeys = current.fields.map { it.key }.toSet(),
+                            selected = selected,
+                            applying = applying,
+                            onChange = { selected = it },
+                            onApply = { apply(current) }
+                        )
+                    }
                 }
                 items(current.fields, key = { it.key }) { field ->
                     FieldRow(
@@ -330,7 +344,7 @@ fun MetadataSearchScreen(
             text = {
                 Text(
                     "Nicht übernommen: ${labels.joinToString(", ")}. Audible hatte dafür nichts, " +
-                        "oder das Cover liess sich nicht laden."
+                        "das Cover liess sich nicht laden, oder ein Band sollte ohne Serie übernommen werden."
                 )
             },
             confirmButton = {
@@ -396,6 +410,42 @@ private fun CandidateRow(
         }
         if (opening) {
             CircularProgressIndicator(modifier = Modifier.size(20.dp).align(Alignment.CenterVertically), strokeWidth = 2.dp)
+        }
+    }
+}
+
+/** "Alle übernehmen": ticks every field, or none once all are ticked. */
+@Composable
+private fun SelectAllRow(
+    allKeys: Set<String>,
+    selected: Set<String>,
+    applying: Boolean,
+    onChange: (Set<String>) -> Unit,
+    onApply: () -> Unit
+) {
+    val state = when {
+        selected.containsAll(allKeys) -> ToggleableState.On
+        selected.isEmpty() -> ToggleableState.Off
+        else -> ToggleableState.Indeterminate
+    }
+    val toggle = { onChange(if (state == ToggleableState.On) emptySet() else allKeys) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surface)
+            .clickable(onClick = toggle)
+            .padding(end = 12.dp, top = 4.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        TriStateCheckbox(state = state, onClick = toggle)
+        Text(
+            "Alle übernehmen",
+            style = MaterialTheme.typography.labelLarge,
+            modifier = Modifier.weight(1f)
+        )
+        Button(enabled = selected.isNotEmpty() && !applying, onClick = onApply) {
+            Text("Übernehmen")
         }
     }
 }

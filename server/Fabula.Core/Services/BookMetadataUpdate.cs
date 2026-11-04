@@ -71,7 +71,16 @@ public sealed record BookMetadataUpdate
         // Relations: written by the repository, locked here.
         if (Takes(MetadataLocks.Authors) && Authors.Count > 0) taken.Add(MetadataLocks.Authors);
         if (Takes(MetadataLocks.Narrators) && Narrators.Count > 0) taken.Add(MetadataLocks.Narrators);
-        if (Takes(MetadataLocks.Series) && !string.IsNullOrWhiteSpace(SeriesName)) taken.Add(MetadataLocks.Series);
+
+        var takesSeries = Takes(MetadataLocks.Series) && !string.IsNullOrWhiteSpace(SeriesName);
+        if (takesSeries) taken.Add(MetadataLocks.Series);
+
+        // A volume number is a position *in* a series. Without one -- none on
+        // the book and none being taken -- there is nothing for it to number,
+        // so it is skipped rather than stored dangling.
+        var hasSeries = takesSeries || book.SeriesId is not null || book.Series is not null;
+        if (Takes(MetadataLocks.Volume) && SeriesPosition is not null && hasSeries)
+            taken.Add(MetadataLocks.Volume);
 
         if (taken.Count > 0)
         {

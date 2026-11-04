@@ -89,8 +89,8 @@ export function MetadataSearchDialog({
 
         {notTaken && (
           <div className="mb-4 rounded-lg bg-ink-800 ring-1 ring-ink-600 p-3 text-sm text-ink-200">
-            Übernommen. Nicht übernommen: {notTaken.join(', ')} – Audible hatte dafür nichts,
-            oder das Cover liess sich nicht laden.
+            Übernommen. Nicht übernommen: {notTaken.join(', ')} – Audible hatte dafür nichts, das
+            Cover liess sich nicht laden, oder ein Band sollte ohne Serie übernommen werden.
             <div className="mt-2">
               <button onClick={onClose} className="text-accent-400 hover:underline">
                 Schliessen
@@ -199,6 +199,18 @@ export function MetadataSearchDialog({
               <div className="text-ink-400 text-sm">Dieser Eintrag bringt nichts Neues.</div>
             )}
 
+            {preview.fields.length > 0 && (
+              // At the top, with the button beside it: taking everything is
+              // two clicks, without scrolling past a long description.
+              <SelectAllRow
+                allKeys={preview.fields.map((f) => f.key)}
+                selected={selected}
+                onChange={setSelected}
+                onApply={() => apply.mutate(preview)}
+                disabled={apply.isPending || notTaken != null}
+              />
+            )}
+
             {preview.fields.map((field) => (
               <FieldRow
                 key={field.key}
@@ -244,6 +256,47 @@ function Input({ label, value, onChange }: { label: string; value: string; onCha
         className="bg-ink-800 ring-1 ring-ink-600 rounded-lg px-3 py-2 text-ink-100 focus:outline-none focus:ring-accent-500"
       />
     </label>
+  );
+}
+
+/** "Alle übernehmen": ticks every field, or none once all are ticked. */
+function SelectAllRow({
+  allKeys,
+  selected,
+  onChange,
+  onApply,
+  disabled
+}: {
+  allKeys: string[];
+  selected: Set<string>;
+  onChange: (next: Set<string>) => void;
+  onApply: () => void;
+  disabled: boolean;
+}) {
+  const all = allKeys.every((key) => selected.has(key));
+  const some = selected.size > 0 && !all;
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-lg bg-ink-800 ring-1 ring-ink-700 p-3">
+      <label className="flex items-center gap-3 text-sm text-ink-100 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={all}
+          ref={(el) => {
+            if (el) el.indeterminate = some;
+          }}
+          onChange={() => onChange(all ? new Set() : new Set(allKeys))}
+          className="accent-accent-500"
+        />
+        Alle übernehmen
+      </label>
+      <button
+        onClick={onApply}
+        disabled={disabled || selected.size === 0}
+        className="px-3 py-1.5 rounded-lg bg-accent-500 text-ink-900 text-sm font-medium disabled:opacity-50"
+      >
+        Übernehmen
+      </button>
+    </div>
   );
 }
 
