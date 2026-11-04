@@ -10,6 +10,8 @@
 #define ServiceDisplay "Fabula Audiobook Server"
 #define ServiceDescription "Self-hosted audiobook server (Fabula)."
 #define ExeName "Fabula.Api.exe"
+; The service's process name as Windows lists it: the exe without ".exe".
+#define ProcessName "Fabula.Api"
 
 #ifndef AppVersion
   #define AppVersion "0.1.0"
@@ -143,16 +145,45 @@ begin
   Result := S;
 end;
 
-// Stop the service before files are copied, otherwise the running exe is
-// locked. Best-effort: errors are swallowed.
-procedure StopServiceQuiet;
+// Stops the service and waits until its process has really gone.
+//
+// `sc stop` only asks: it returns at once, while the service is still
+// shutting down and its exe and DLLs are still mapped. A file that cannot be
+// replaced is an Abort/Retry/Ignore question, and a silent install -- the
+// server update from the web UI and the app is one -- answers it with Abort:
+// exit code 5, nothing updated. A fixed pause of a second and a half was a
+// guess at how long shutting down takes, and too short whenever it took longer.
+//
+// So this waits for the service to report Stopped, then for the process to
+// exit, and only as a last resort -- after a minute and a half -- ends the
+// process. Best-effort throughout: on a first install there is no service,
+// and without PowerShell the old way runs with a longer pause.
+procedure StopServiceAndWait;
 var
   ResultCode: Integer;
+  PsScript: String;
 begin
-  Exec(ExpandConstant('{sys}\sc.exe'), 'stop {#ServiceName}', '', SW_HIDE,
-    ewWaitUntilTerminated, ResultCode);
-  // Give SCM a beat to release file handles.
-  Sleep(1500);
+  PsScript :=
+    '$s = Get-Service -Name ''{#ServiceName}'' -ErrorAction SilentlyContinue; ' +
+    'if ($s -and $s.Status -ne ''Stopped'') { ' +
+      'try { $s.Stop() } catch {}; ' +
+      'try { $s.WaitForStatus(''Stopped'', [TimeSpan]::FromSeconds(60)) } catch {} ' +
+    '}; ' +
+    '$p = Get-Process -Name ''{#ProcessName}'' -ErrorAction SilentlyContinue; ' +
+    'if ($p) { $p | Wait-Process -Timeout 30 -ErrorAction SilentlyContinue }; ' +
+    'Get-Process -Name ''{#ProcessName}'' -ErrorAction SilentlyContinue | ' +
+      'Stop-Process -Force -ErrorAction SilentlyContinue; ' +
+    'Start-Sleep -Milliseconds 500';
+
+  if not Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+       '-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "' + PsScript + '"',
+       '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+  begin
+    // `net stop` at least waits for the service to report Stopped.
+    Exec(ExpandConstant('{sys}\net.exe'), 'stop {#ServiceName}', '', SW_HIDE,
+      ewWaitUntilTerminated, ResultCode);
+    Sleep(3000);
+  end;
 end;
 
 procedure InitializeWizard;
@@ -253,7 +284,7 @@ end;
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssInstall then
-    StopServiceQuiet
+    StopServiceAndWait
   else if CurStep = ssPostInstall then
   begin
     WriteUpdateSettings;
@@ -266,5 +297,5 @@ end;
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if CurUninstallStep = usUninstall then
-    StopServiceQuiet;
+    StopServiceAndWait;
 end;

@@ -338,7 +338,24 @@ public class ServerUpdateService
     /// and take the only remedy (the web UI) with it. `sc failure` does not
     /// cover this, as it only reacts to crashes, not to an orderly stop.
     /// </summary>
-    private void WriteWrapper(string setupPath, string logPath)
+    private void WriteWrapper(string setupPath, string logPath) =>
+        File.WriteAllText(
+            WrapperFile,
+            WrapperScript(setupPath, logPath, ResultFile, SystemDirectory()),
+            Encoding.ASCII);
+
+    /// <summary>
+    /// The wrapper's text. Separate so its order can be tested: stop and wait,
+    /// install, record the exit code, start again.
+    ///
+    /// The stop comes first, and `net stop` rather than `sc stop`, because
+    /// `net stop` waits until the service reports Stopped. The installer stops
+    /// it too, but a silent install that finds a file still in use aborts
+    /// (exit code 5) instead of asking -- so the service should already be down
+    /// when the installer starts. Stopping it does not end this script: a
+    /// service's child processes outlive it.
+    /// </summary>
+    public static string WrapperScript(string setupPath, string logPath, string resultFile, string systemDirectory)
     {
         var script = new StringBuilder();
         script.AppendLine("@echo off");
@@ -349,13 +366,14 @@ public class ServerUpdateService
         // fails in a service context. The pause only gives the HTTP response to
         // the admin's browser a moment to flush before the service goes away.
         script.AppendLine("ping -n 4 127.0.0.1 >nul 2>&1");
+        script.AppendLine($"\"{Path.Combine(systemDirectory, "net.exe")}\" stop Fabula >nul 2>&1");
         script.AppendLine($"\"{setupPath}\" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /LOG=\"{logPath}\"");
         script.AppendLine("set FABULA_CODE=%ERRORLEVEL%");
-        script.AppendLine($"> \"{ResultFile}\" echo {{\"exitCode\": %FABULA_CODE%}}");
+        script.AppendLine($"> \"{resultFile}\" echo {{\"exitCode\": %FABULA_CODE%}}");
         script.AppendLine("rem Safety net -- see the comment in ServerUpdateService.WriteWrapper.");
-        script.AppendLine($"\"{Path.Combine(SystemDirectory(), "sc.exe")}\" start Fabula >nul 2>&1");
+        script.AppendLine($"\"{Path.Combine(systemDirectory, "sc.exe")}\" start Fabula >nul 2>&1");
         script.AppendLine("endlocal");
-        File.WriteAllText(WrapperFile, script.ToString(), Encoding.ASCII);
+        return script.ToString();
     }
 
     private void LaunchWrapper()
