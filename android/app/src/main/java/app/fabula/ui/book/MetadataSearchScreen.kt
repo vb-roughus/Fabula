@@ -20,6 +20,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
@@ -213,28 +214,13 @@ fun MetadataSearchScreen(
             ) {
                 item("form") {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(
-                            value = title,
-                            onValueChange = { title = it },
-                            label = { Text("Titel") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        OutlinedTextField(
-                            value = author,
-                            onValueChange = { author = it },
-                            label = { Text("Autor") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        OutlinedTextField(
+                        ClearableField(value = title, onValueChange = { title = it }, label = "Titel")
+                        ClearableField(value = author, onValueChange = { author = it }, label = "Autor")
+                        ClearableField(
                             value = asin,
                             onValueChange = { asin = it },
-                            label = { Text("ASIN (optional)") },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                            keyboardActions = KeyboardActions(onSearch = { search() }),
-                            modifier = Modifier.fillMaxWidth()
+                            label = "ASIN (optional)",
+                            onSearch = { search() }
                         )
                         Text(
                             "Mit einer ASIN wird genau dieser Audible-Eintrag geladen, sonst wird nach " +
@@ -352,6 +338,43 @@ fun MetadataSearchScreen(
             }
         )
     }
+}
+
+/**
+ * A search field with a bin that empties it in one tap.
+ *
+ * The fields arrive filled from the book, and a filled ASIN decides the whole
+ * search -- with it, only that one record is looked up. Clearing it letter by
+ * letter on a phone keyboard is the kind of chore that makes a search feel
+ * stuck. The bin only shows while there is something to clear.
+ */
+@Composable
+private fun ClearableField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    onSearch: (() -> Unit)? = null
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label) },
+        singleLine = true,
+        trailingIcon = if (value.isEmpty()) null else {
+            {
+                IconButton(onClick = { onValueChange("") }) {
+                    Icon(
+                        Icons.Outlined.Delete,
+                        contentDescription = "$label leeren",
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+        },
+        keyboardOptions = if (onSearch != null) KeyboardOptions(imeAction = ImeAction.Search) else KeyboardOptions.Default,
+        keyboardActions = if (onSearch != null) KeyboardActions(onSearch = { onSearch() }) else KeyboardActions.Default,
+        modifier = Modifier.fillMaxWidth()
+    )
 }
 
 @Composable

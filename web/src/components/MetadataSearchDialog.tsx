@@ -246,15 +246,40 @@ export function MetadataSearchDialog({
   );
 }
 
+/**
+ * A search field with a bin that empties it in one click. The fields arrive
+ * filled from the book, and a filled ASIN decides the whole search -- so
+ * clearing one has to be easy. The bin only shows while there is something
+ * to clear.
+ */
 function Input({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
   return (
     <label className="flex flex-col gap-1 text-sm text-ink-300">
       {label}
-      <input
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="bg-ink-800 ring-1 ring-ink-600 rounded-lg px-3 py-2 text-ink-100 focus:outline-none focus:ring-accent-500"
-      />
+      <div className="relative">
+        <input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="w-full bg-ink-800 ring-1 ring-ink-600 rounded-lg px-3 py-2 pr-9 text-ink-100 focus:outline-none focus:ring-accent-500"
+        />
+        {value && (
+          <button
+            type="button"
+            onClick={() => onChange('')}
+            title={`${label} leeren`}
+            aria-label={`${label} leeren`}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-ink-400 hover:text-ink-100"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+              strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M3 6h18" />
+              <path d="M8 6V4h8v2" />
+              <path d="M19 6l-1 14H6L5 6" />
+              <path d="M10 11v6M14 11v6" />
+            </svg>
+          </button>
+        )}
+      </div>
     </label>
   );
 }
