@@ -12,7 +12,9 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -88,6 +90,7 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -108,7 +111,9 @@ fun FullPlayer(
     player: PlayerController,
     repository: FabulaRepository,
     onCollapse: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** False while the player is composed but hidden; endless animations wait for it. */
+    isOpen: Boolean = true
 ) {
     val state by player.state.collectAsState()
     val book = state.book ?: return
@@ -244,6 +249,7 @@ fun FullPlayer(
     }
     val titleRow: @Composable () -> Unit = {
         PlayerTitleRow(
+            scrollTitle = isOpen,
             title = state.currentChapter?.title ?: book.title,
             author = book.authors.joinToString(", ").ifBlank { book.title },
             bookmarkSaved = bookmarkSavedFlash,
@@ -639,8 +645,11 @@ private fun PlayerCover(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun PlayerTitleRow(
+    /** Whether a title too long for the line scrolls through it. */
+    scrollTitle: Boolean,
     title: String,
     author: String,
     bookmarkSaved: Boolean,
@@ -656,12 +665,18 @@ private fun PlayerTitleRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
+            // A chapter title too long for the line scrolls through it rather
+            // than being cut off; one that fits stands still. Only while the
+            // player is open: it stays composed when collapsed, and an endless
+            // animation there would redraw an invisible screen the whole time.
             Text(
                 text = title,
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 color = playerFg,
-                maxLines = 1
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = if (scrollTitle) Modifier.basicMarquee(iterations = Int.MAX_VALUE) else Modifier
             )
             Text(
                 text = author,

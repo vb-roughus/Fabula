@@ -634,7 +634,8 @@ fun Navigation(
                         player = player,
                         repository = repository,
                         onCollapse = { fullPlayerOpen = false },
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier.fillMaxSize(),
+                        isOpen = fullPlayerOpen
                     )
                 }
             }
