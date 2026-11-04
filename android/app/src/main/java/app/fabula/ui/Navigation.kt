@@ -592,7 +592,8 @@ fun Navigation(
                     MiniPlayer(
                         player = player,
                         repository = repository,
-                        onClick = { fullPlayerOpen = true }
+                        onClick = { fullPlayerOpen = true },
+                        scrollText = !fullPlayerOpen
                     )
                 }
                 FabulaNavigationBar(navController = navController)

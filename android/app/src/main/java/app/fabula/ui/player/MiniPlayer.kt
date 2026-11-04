@@ -1,6 +1,8 @@
 package app.fabula.ui.player
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,18 +32,26 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.fabula.data.FabulaRepository
 import app.fabula.data.parseTimeSpan
 import app.fabula.player.PlayerController
 import coil3.compose.AsyncImage
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun MiniPlayer(
     player: PlayerController,
     repository: FabulaRepository,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /**
+     * Whether texts too long for their line scroll through it. Off while the
+     * full player covers this one: an endless animation behind it would keep
+     * redrawing something nobody can see.
+     */
+    scrollText: Boolean = true
 ) {
     val state by player.state.collectAsState()
     val book = state.book ?: return
@@ -88,19 +98,26 @@ fun MiniPlayer(
             }
             Spacer(Modifier.width(12.dp))
             val onGreen = MaterialTheme.colorScheme.onPrimary
+            // Long titles scroll through the line instead of being cut off;
+            // ones that fit stand still.
+            val scroll = if (scrollText) Modifier.basicMarquee(iterations = Int.MAX_VALUE) else Modifier
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = book.title,
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = onGreen,
-                    maxLines = 1
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = scroll
                 )
                 Text(
                     text = state.currentChapter?.title ?: book.authors.joinToString(", "),
                     style = MaterialTheme.typography.bodySmall,
                     color = onGreen.copy(alpha = 0.75f),
-                    maxLines = 1
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = scroll
                 )
             }
             IconButton(
