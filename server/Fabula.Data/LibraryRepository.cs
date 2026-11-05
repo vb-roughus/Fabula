@@ -227,6 +227,101 @@ public class LibraryRepository(FabulaDbContext db) : ILibraryRepository
         return taken;
     }
 
+    public Task<Book?> GetBookWithFilesAsync(int bookId, CancellationToken cancellationToken) =>
+        db.Books
+            .AsSplitQuery()
+            .Include(b => b.Files)
+            .Include(b => b.LibraryFolder)
+            .FirstOrDefaultAsync(b => b.Id == bookId, cancellationToken);
+
+    public async Task RestoreFieldsAsync(
+        int bookId,
+        IReadOnlySet<string> fields,
+        TagValues? tags,
+        CancellationToken cancellationToken)
+    {
+        var book = await db.Books
+            .AsSplitQuery()
+            .Include(b => b.Authors)
+            .Include(b => b.Narrators)
+            .Include(b => b.Series)
+            .Include(b => b.Chapters)
+            .FirstOrDefaultAsync(b => b.Id == bookId, cancellationToken);
+        if (book is null) return;
+
+        book.MetadataLocks = MetadataLocks.Format(
+            MetadataLocks.Parse(book.MetadataLocks).Where(k => !fields.Contains(k)));
+
+        if (tags is not null)
+        {
+            bool Restores(string field) => fields.Contains(field);
+
+            // Written as the files have them, empty included: a description
+            // the tags never had goes away again, as it would on a fresh scan.
+            if (Restores(MetadataLocks.Title)) book.Title = tags.Title;
+            if (Restores(MetadataLocks.Subtitle)) book.Subtitle = tags.Subtitle;
+            if (Restores(MetadataLocks.Description)) book.Description = tags.Description;
+            if (Restores(MetadataLocks.Publisher)) book.Publisher = tags.Publisher;
+            if (Restores(MetadataLocks.Year)) book.PublishYear = tags.Year;
+            if (Restores(MetadataLocks.Language)) book.Language = tags.Language;
+            if (Restores(MetadataLocks.Isbn)) book.Isbn = tags.Isbn;
+            if (Restores(MetadataLocks.Asin)) book.Asin = tags.Asin;
+            if (Restores(MetadataLocks.Cover)) book.CoverPath = tags.CoverPath;
+
+            if (Restores(MetadataLocks.Authors))
+                book.Authors = await ResolveAuthorsAsync(tags.Authors, cancellationToken);
+            if (Restores(MetadataLocks.Narrators))
+                book.Narrators = await ResolveNarratorsAsync(tags.Narrators, cancellationToken);
+
+            if (Restores(MetadataLocks.Series))
+            {
+                if (string.IsNullOrWhiteSpace(tags.SeriesName))
+                {
+                    book.Series = null;
+                    book.SeriesId = null;
+                    book.SeriesPosition = null;
+                    book.SeriesPositionManuallySet = false;
+                }
+                else
+                {
+                    var series = await ResolveSeriesAsync(tags.SeriesName.Trim(), cancellationToken);
+                    var changed = !string.Equals(book.Series?.Name, series.Name, StringComparison.Ordinal);
+                    book.Series = series;
+                    if (changed || book.SeriesPosition is null)
+                    {
+                        book.SeriesPosition = tags.SeriesPosition
+                            ?? await NextSeriesPositionAsync(series, book.Id, cancellationToken);
+                        book.SeriesPositionManuallySet = false;
+                    }
+                }
+            }
+
+            // The files' number, where they have one; the position stops
+            // counting as set by hand either way, so scans may update it again.
+            if (Restores(MetadataLocks.Volume) && (book.SeriesId is not null || book.Series is not null))
+            {
+                book.SeriesPosition = tags.SeriesPosition ?? book.SeriesPosition;
+                book.SeriesPositionManuallySet = false;
+            }
+
+            if (Restores(MetadataLocks.Chapters))
+            {
+                db.Chapters.RemoveRange(book.Chapters);
+                book.Chapters = tags.Chapters.Select((c, i) => new Chapter
+                {
+                    Index = i,
+                    Title = c.Title,
+                    Start = c.Start,
+                    End = c.End
+                }).ToList();
+            }
+
+            book.UpdatedAt = DateTime.UtcNow;
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
     private async Task<List<Author>> ResolveAuthorsAsync(IReadOnlyList<string> names, CancellationToken ct)
     {
         if (names.Count == 0) return [];

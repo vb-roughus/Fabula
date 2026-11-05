@@ -6,6 +6,7 @@ import { usePlayerContext } from '../hooks/playerContext';
 import { formatDurationHours, formatTimeSpan, parseTimeSpan } from '../lib/time';
 import { useAuth } from '../auth/AuthContext';
 import { MetadataSearchDialog } from '../components/MetadataSearchDialog';
+import { RestoreFieldsDialog } from '../components/RestoreFieldsDialog';
 
 export function BookPage() {
   // Assigning a book to a series edits the shared catalogue -- admin-only.
@@ -46,6 +47,7 @@ export function BookPage() {
 
   const [editingSeries, setEditingSeries] = useState(false);
   const [metadataOpen, setMetadataOpen] = useState(false);
+  const [restoreOpen, setRestoreOpen] = useState(false);
   const [selectedSeriesId, setSelectedSeriesId] = useState<string>('');
   const [positionInput, setPositionInput] = useState<string>('');
 
@@ -154,7 +156,27 @@ export function BookPage() {
                 >
                   Metadaten suchen
                 </button>
+                {(book.lockedFields ?? []).length > 0 && (
+                  <button
+                    onClick={() => setRestoreOpen(true)}
+                    className="text-ink-400 hover:text-ink-100 text-sm underline underline-offset-2"
+                  >
+                    Übernommene Felder freigeben
+                  </button>
+                )}
               </div>
+            )}
+            {restoreOpen && (
+              <RestoreFieldsDialog
+                bookId={book.id}
+                locked={book.lockedFields ?? []}
+                onClose={() => setRestoreOpen(false)}
+                onRestored={() => {
+                  qc.invalidateQueries({ queryKey: ['book', bookId] });
+                  qc.invalidateQueries({ queryKey: ['books'] });
+                  qc.invalidateQueries({ queryKey: ['series'] });
+                }}
+              />
             )}
             {metadataOpen && (
               <MetadataSearchDialog

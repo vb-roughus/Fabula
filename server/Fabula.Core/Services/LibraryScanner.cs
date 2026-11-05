@@ -124,7 +124,7 @@ public class LibraryScanner(
         var firstMeta = allMetadata[0].Meta;
         var totalDuration = TimeSpan.FromTicks(allMetadata.Sum(m => m.Meta.Duration.Ticks));
 
-        var title = firstMeta.Album ?? firstMeta.Title ?? Path.GetFileName(bookDir);
+        var title = TitleFromTags(firstMeta, bookDir);
 
         // Fields an admin took over from an online catalogue keep their value:
         // the tags are what was replaced. Only an existing book can carry locks.
@@ -133,21 +133,9 @@ public class LibraryScanner(
         // Read before the book's fields are overwritten below.
         var previousDuration = existing?.Duration;
 
-        string? coverPath = null;
-        var folderCover = FindFolderCover(bookDir);
-        if (Keeps(MetadataLocks.Cover))
-        {
-            coverPath = existing!.CoverPath;
-        }
-        else if (folderCover is not null)
-        {
-            var bytes = await File.ReadAllBytesAsync(folderCover, cancellationToken);
-            coverPath = await coverStore.SaveCoverAsync(bookDir, bytes, GetImageMimeType(folderCover), cancellationToken);
-        }
-        else if (firstMeta.CoverImage is { Length: > 0 })
-        {
-            coverPath = await coverStore.SaveCoverAsync(bookDir, firstMeta.CoverImage, firstMeta.CoverMimeType, cancellationToken);
-        }
+        var coverPath = Keeps(MetadataLocks.Cover)
+            ? existing!.CoverPath
+            : await CoverFromFilesAsync(bookDir, firstMeta, cancellationToken);
 
         var book = existing ?? new Book
         {
@@ -240,6 +228,103 @@ public class LibraryScanner(
                 return false;
         }
         return true;
+    }
+
+    /// <summary>The title a scan gives a book: the album tag, else the title tag, else the folder name.</summary>
+    private static string TitleFromTags(AudioMetadata first, string bookDir) =>
+        first.Album ?? first.Title ?? Path.GetFileName(bookDir);
+
+    /// <summary>
+    /// The cover a scan gives a book: an image in its folder, else the one
+    /// embedded in its first file. Saved to the cover store; null without either.
+    /// </summary>
+    private async Task<string?> CoverFromFilesAsync(string bookDir, AudioMetadata first, CancellationToken ct)
+    {
+        var folderCover = FindFolderCover(bookDir);
+        if (folderCover is not null)
+        {
+            var bytes = await File.ReadAllBytesAsync(folderCover, ct);
+            return await coverStore.SaveCoverAsync(bookDir, bytes, GetImageMimeType(folderCover), ct);
+        }
+        if (first.CoverImage is { Length: > 0 })
+            return await coverStore.SaveCoverAsync(bookDir, first.CoverImage, first.CoverMimeType, ct);
+        return null;
+    }
+
+    public async Task<RestoreResult?> RestoreFromFilesAsync(
+        int bookId,
+        IReadOnlySet<string> fields,
+        CancellationToken cancellationToken = default)
+    {
+        var book = await repository.GetBookWithFilesAsync(bookId, cancellationToken);
+        if (book is null) return null;
+
+        var released = MetadataLocks.All.Where(fields.Contains).ToList();
+        var paths = book.Files
+            .OrderBy(f => f.TrackIndex)
+            .Select(f => f.Path)
+            .Where(File.Exists)
+            .ToList();
+
+        TagValues? tags = null;
+        if (paths.Count > 0)
+        {
+            var bookDir = GetBookDirectory(
+                book.LibraryFolder.Path,
+                Path.GetDirectoryName(paths[0]) ?? book.LibraryFolder.Path);
+            tags = await ReadTagValuesAsync(
+                book.LibraryFolder, bookDir, paths,
+                withCover: released.Contains(MetadataLocks.Cover),
+                cancellationToken);
+        }
+        if (tags is null)
+            logger.LogWarning(
+                "Gesperrte Felder von Buch {BookId} freigegeben, die Dateien liessen sich aber nicht lesen.", bookId);
+
+        await repository.RestoreFieldsAsync(bookId, released.ToHashSet(), tags, cancellationToken);
+        return new RestoreResult(released, tags is not null);
+    }
+
+    /// <summary>
+    /// Everything a scan would take from these files, without writing any of
+    /// it. The cover is only saved when asked for, since that is a file write.
+    /// </summary>
+    private async Task<TagValues?> ReadTagValuesAsync(
+        LibraryFolder folder,
+        string bookDir,
+        List<string> files,
+        bool withCover,
+        CancellationToken ct)
+    {
+        var stats = files.Select(f => new FileInfo(f)).ToList();
+        var raw = await ReadMetadataParallelAsync(files, bookDir, ct);
+        var good = raw
+            .Select((entry, idx) => (entry, idx))
+            .Where(x => x.entry.Meta is not null)
+            .ToList();
+        if (good.Count == 0) return null;
+
+        var all = good.Select(x => (Path: x.entry.Path, Meta: x.entry.Meta!)).ToList();
+        var usableStats = good.Select(x => stats[x.idx]).ToList();
+        var first = all[0].Meta;
+        var audioFiles = BuildAudioFiles(all, usableStats);
+        var series = ResolveSeries(folder.Path, bookDir, first.SeriesName, first.SeriesPosition);
+
+        return new TagValues(
+            Title: TitleFromTags(first, bookDir),
+            Subtitle: first.Subtitle,
+            Description: first.Description,
+            Language: first.Language,
+            Publisher: first.Publisher,
+            Year: first.Year,
+            Isbn: first.Isbn,
+            Asin: first.Asin,
+            Authors: first.Authors,
+            Narrators: first.Narrators,
+            SeriesName: series.Name,
+            SeriesPosition: series.Position,
+            Chapters: BuildChapters(all, audioFiles),
+            CoverPath: withCover ? await CoverFromFilesAsync(bookDir, first, ct) : null);
     }
 
     /// <summary>

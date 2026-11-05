@@ -20,7 +20,8 @@ import type {
   UserDetail,
   ApplyMetadataResult,
   MetadataCandidate,
-  MetadataPreview
+  MetadataPreview,
+  RestoreMetadataResult
 } from './types';
 
 const TOKEN_KEY = 'fabula.token';
@@ -179,6 +180,12 @@ export const api = {
 
   previewMetadata: (bookId: number, asin: string) =>
     request<MetadataPreview>(`/api/books/${bookId}/metadata/${encodeURIComponent(asin)}`),
+
+  restoreMetadata: (bookId: number, fields: string[]) =>
+    request<RestoreMetadataResult>(`/api/books/${bookId}/metadata/restore`, {
+      method: 'POST',
+      body: JSON.stringify({ fields })
+    }),
 
   applyMetadata: (bookId: number, asin: string, fields: string[]) =>
     request<ApplyMetadataResult>(`/api/books/${bookId}/metadata/${encodeURIComponent(asin)}`, {

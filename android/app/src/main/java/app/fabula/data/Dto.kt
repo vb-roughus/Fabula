@@ -55,8 +55,13 @@ data class BookDetailDto(
     val libraryFolderName: String = "",
     val progress: ProgressSummaryDto? = null,
     val chapters: List<ChapterDto> = emptyList(),
-    val files: List<AudioFileDto> = emptyList()
+    val files: List<AudioFileDto> = emptyList(),
+    /** Fields taken over from a catalogue and locked against rescans. */
+    val lockedFields: List<LockedFieldDto> = emptyList()
 )
+
+@Serializable
+data class LockedFieldDto(val key: String, val label: String)
 
 /**
  * Narrows a cached book detail back to the summary shape the library and home
@@ -350,6 +355,16 @@ data class MetadataPreviewDto(
 
 @Serializable
 data class ApplyMetadataRequest(val fields: List<String>)
+
+@Serializable
+data class RestoreMetadataRequest(val fields: List<String>)
+
+@Serializable
+data class RestoreMetadataResultDto(
+    val restored: List<String> = emptyList(),
+    /** False when the locks were released but the files could not be read. */
+    val filesRead: Boolean = true
+)
 
 @Serializable
 data class ApplyMetadataResultDto(

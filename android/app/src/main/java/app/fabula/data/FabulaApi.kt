@@ -44,6 +44,12 @@ interface FabulaApi {
     @GET("api/books/{id}/metadata/{asin}")
     suspend fun previewMetadata(@Path("id") id: Int, @Path("asin") asin: String): MetadataPreviewDto
 
+    @POST("api/books/{id}/metadata/restore")
+    suspend fun restoreMetadata(
+        @Path("id") id: Int,
+        @Body body: RestoreMetadataRequest
+    ): RestoreMetadataResultDto
+
     @POST("api/books/{id}/metadata/{asin}")
     suspend fun applyMetadata(
         @Path("id") id: Int,

@@ -42,8 +42,10 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.TravelExplore
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -84,6 +86,8 @@ import androidx.compose.ui.unit.sp
 import app.fabula.FabulaApp
 import app.fabula.data.AssignSeriesRequest
 import app.fabula.data.BookDetailDto
+import app.fabula.data.RestoreMetadataRequest
+import app.fabula.data.LockedFieldDto
 import app.fabula.data.BookDownloadState
 import app.fabula.data.BookmarkDto
 import app.fabula.data.ChapterDto
@@ -123,6 +127,7 @@ fun BookScreen(
     var addBookmarkOpen by remember { mutableStateOf(false) }
     var bookmarkNote by remember { mutableStateOf("") }
     var assignSeriesOpen by remember { mutableStateOf(false) }
+    var restoreOpen by remember { mutableStateOf(false) }
     var bookmarkManagerOpen by remember { mutableStateOf(false) }
     var highlightManagerOpen by remember { mutableStateOf(false) }
     val highlightsRevision by repository.highlightsRevision.collectAsState()
@@ -467,6 +472,18 @@ fun BookScreen(
                                     assignSeriesOpen = true
                                 }
                             )
+                            // Only where something was taken over: the way back to
+                            // what the files say.
+                            if (isAdmin && !book?.lockedFields.isNullOrEmpty()) DropdownMenuItem(
+                                text = { Text("Übernommene Felder freigeben") },
+                                leadingIcon = {
+                                    Icon(Icons.Filled.LockOpen, contentDescription = null)
+                                },
+                                onClick = {
+                                    moreMenuOpen = false
+                                    restoreOpen = true
+                                }
+                            )
                             // Admin-only: what is taken over changes the book for everyone.
                             if (isAdmin) DropdownMenuItem(
                                 text = { Text("Metadaten suchen") },
@@ -795,6 +812,26 @@ fun BookScreen(
         )
     }
 
+    if (restoreOpen) {
+        val locked = book?.lockedFields.orEmpty()
+        RestoreFieldsDialog(
+            locked = locked,
+            onDismiss = { restoreOpen = false },
+            onRestore = { keys ->
+                restoreOpen = false
+                scope.launch {
+                    runCatching {
+                        val api = repository.apiOrNull() ?: return@runCatching
+                        api.restoreMetadata(bookId, RestoreMetadataRequest(keys.toList()))
+                        // Reloads this book, and the lists that show its title,
+                        // cover and series.
+                        repository.bumpSeriesRevision()
+                    }.onFailure { repository.logFailure("Metadata.restore", it) }
+                }
+            }
+        )
+    }
+
     if (bookmarkManagerOpen) {
         BookmarkManagerSheet(
             bookId = bookId,
@@ -830,6 +867,59 @@ fun BookScreen(
             }
         )
     }
+}
+
+/**
+ * Choosing which taken-over fields to give back to the files. All ticked to
+ * start with: the menu entry is the way back, and most of the time the whole
+ * way is wanted.
+ */
+@Composable
+private fun RestoreFieldsDialog(
+    locked: List<LockedFieldDto>,
+    onDismiss: () -> Unit,
+    onRestore: (Set<String>) -> Unit
+) {
+    var chosen by remember(locked) { mutableStateOf(locked.map { it.key }.toSet()) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Übernommene Felder freigeben") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    "Die gewählten Felder bekommen wieder den Wert aus den Dateien und werden " +
+                        "bei einem Scan wieder aktualisiert. Alles andere am Buch bleibt, wie es ist.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                locked.forEach { field ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                chosen = if (field.key in chosen) chosen - field.key else chosen + field.key
+                            }
+                    ) {
+                        Checkbox(
+                            checked = field.key in chosen,
+                            onCheckedChange = {
+                                chosen = if (field.key in chosen) chosen - field.key else chosen + field.key
+                            }
+                        )
+                        Text(field.label)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = chosen.isNotEmpty(), onClick = { onRestore(chosen) }) {
+                Text("Freigeben")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Abbrechen") }
+        }
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
