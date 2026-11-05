@@ -51,6 +51,12 @@ public class MigrationTests : IDisposable
     }
 
     [Fact]
+    public void The_device_time_of_progress_comes_with_its_own_migration()
+    {
+        Assert.Contains("20261105120000_AddProgressRecordedAt", _db.Database.GetMigrations());
+    }
+
+    [Fact]
     public void The_lock_column_comes_with_its_own_migration()
     {
         Assert.Contains("20261101130000_AddMetadataLocks", _db.Database.GetMigrations());

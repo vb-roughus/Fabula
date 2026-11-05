@@ -731,7 +731,11 @@ class PlayerController(
                             UpdateProgressRequest(
                                 position = toTimeSpanString(entry.positionSec),
                                 finished = entry.finished,
-                                device = repository.deviceId()
+                                device = repository.deviceId(),
+                                // When it was heard, not when it is sent: a
+                                // backlog from offline listening is older than
+                                // its arrival, and the server needs to know.
+                                recordedAt = java.time.Instant.ofEpochMilli(entry.updatedAtMs).toString()
                             )
                         )
                     }.isSuccess

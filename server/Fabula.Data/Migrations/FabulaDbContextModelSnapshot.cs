@@ -366,6 +366,9 @@ namespace Fabula.Data.Migrations
                     b.Property<TimeSpan>("Position")
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTime?>("RecordedAt")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("TEXT");
 

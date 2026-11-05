@@ -63,27 +63,13 @@ public static class ProgressEndpoints
             var bookExists = await db.Books.AnyAsync(b => b.Id == bookId, ct);
             if (!bookExists) return Results.NotFound();
 
-            var uid = http.UserId();
-            var p = await db.PlaybackProgress
-                .FirstOrDefaultAsync(x => x.UserId == uid && x.BookId == bookId, ct);
-
-            if (p is null)
-            {
-                p = new PlaybackProgress
-                {
-                    UserId = uid,
-                    BookId = bookId
-                };
-                db.PlaybackProgress.Add(p);
-            }
-
-            p.Position = req.Position;
-            p.Finished = req.Finished;
-            p.LastDevice = req.Device;
-            p.UpdatedAt = DateTime.UtcNow;
-
-            await db.SaveChangesAsync(ct);
-            return Results.Ok(new ProgressDto(p.BookId, p.Position, p.Finished, p.UpdatedAt, p.LastDevice));
+            // An update recorded before what is stored -- a phone handing over
+            // offline listening late -- is turned away, and the stored, newer
+            // progress is what comes back.
+            var (p, accepted) = await ProgressUpdates.ApplyAsync(
+                db, http.UserId(), bookId, req.Position, req.Finished, req.Device,
+                req.RecordedAt, DateTime.UtcNow, ct);
+            return Results.Ok(new ProgressDto(p.BookId, p.Position, p.Finished, p.UpdatedAt, p.LastDevice, accepted));
         });
 
         // Convenience endpoint for "mark as already heard" / "mark as
@@ -100,28 +86,22 @@ public static class ProgressEndpoints
             var book = await db.Books.AsNoTracking().FirstOrDefaultAsync(b => b.Id == bookId, ct);
             if (book is null) return Results.NotFound();
 
-            var uid = http.UserId();
-            var p = await db.PlaybackProgress
-                .FirstOrDefaultAsync(x => x.UserId == uid && x.BookId == bookId, ct);
-            if (p is null)
-            {
-                p = new PlaybackProgress { UserId = uid, BookId = bookId };
-                db.PlaybackProgress.Add(p);
-            }
-
-            p.Finished = req.Finished;
-            p.Position = req.Finished ? book.Duration : TimeSpan.Zero;
-            p.LastDevice = req.Device;
-            p.UpdatedAt = DateTime.UtcNow;
-
-            await db.SaveChangesAsync(ct);
-            return Results.Ok(new ProgressDto(p.BookId, p.Position, p.Finished, p.UpdatedAt, p.LastDevice));
+            var (p, accepted) = await ProgressUpdates.ApplyAsync(
+                db, http.UserId(), bookId,
+                req.Finished ? book.Duration : TimeSpan.Zero, req.Finished, req.Device,
+                req.RecordedAt, DateTime.UtcNow, ct);
+            return Results.Ok(new ProgressDto(p.BookId, p.Position, p.Finished, p.UpdatedAt, p.LastDevice, accepted));
         });
 
         return app;
     }
 }
 
-public record ProgressDto(int BookId, TimeSpan Position, bool Finished, DateTime? UpdatedAt, string? Device);
-public record UpdateProgressRequest(TimeSpan Position, bool Finished, string? Device);
-public record SetFinishedRequest(bool Finished, string? Device);
+/// <summary><c>Accepted</c> is false when the update was older than what is stored; the stored progress is returned then.</summary>
+public record ProgressDto(
+    int BookId, TimeSpan Position, bool Finished, DateTime? UpdatedAt, string? Device, bool Accepted = true);
+
+/// <summary><c>RecordedAt</c>: when the device recorded the position. Optional; without it, the arrival counts.</summary>
+public record UpdateProgressRequest(TimeSpan Position, bool Finished, string? Device, DateTime? RecordedAt = null);
+
+public record SetFinishedRequest(bool Finished, string? Device, DateTime? RecordedAt = null);
