@@ -216,7 +216,7 @@ fun BookScreen(
             }
             val fresh = api.getBook(bookId)
             book = fresh
-            offlineStore.refreshCachedBook(fresh)
+            if (offlineStore.refreshCachedBook(fresh)) downloads.refreshCover(fresh)
             downloads.refreshFromDisk(fresh)
         } catch (c: kotlinx.coroutines.CancellationException) {
             throw c  // effect cancelled (navigation) -- not an error
@@ -973,6 +973,11 @@ private fun BookContent(
         )
     ) {
         item {
+            // Read here so a replaced downloaded cover shows at once: the copy
+            // on disk is preferred, and its revision moves when it changes.
+            val offlineRevision by (LocalContext.current.applicationContext as FabulaApp)
+                .offlineStore.revision.collectAsState()
+            val coverUrl = remember(book.id, book.coverUrl, offlineRevision) { repository.coverUrl(book) }
             // Cover block, centered, large.
             Box(
                 modifier = Modifier
@@ -982,7 +987,7 @@ private fun BookContent(
                     .clip(RoundedCornerShape(8.dp))
                     .background(MaterialTheme.colorScheme.surfaceVariant)
             ) {
-                repository.coverUrl(book)?.let { url ->
+                coverUrl?.let { url ->
                     AsyncImage(
                         model = url,
                         contentDescription = book.title,

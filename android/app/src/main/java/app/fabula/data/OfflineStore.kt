@@ -138,6 +138,23 @@ class OfflineStore(context: Context, private val logStore: LogStore) {
         return File(dir, "cover.$ext")
     }
 
+    /**
+     * Where a replacement cover goes. A new name each time, because image
+     * caches key a local file by its path: written over the old one, the new
+     * picture would be found under the old key and never shown.
+     */
+    fun replacementCoverFile(bookId: Int, ext: String): File {
+        val dir = bookDir(bookId).apply { mkdirs() }
+        return File(dir, "cover.${System.currentTimeMillis()}.$ext")
+    }
+
+    /** Removes every cover copy of a book except [keep]. */
+    fun deleteCoversExcept(bookId: Int, keep: File) {
+        bookDir(bookId).listFiles()
+            ?.filter { it.isFile && it.name.startsWith("cover.") && it != keep }
+            ?.forEach { it.delete() }
+    }
+
     // --- manifest / cached book detail --------------------------------------
 
     fun readManifest(bookId: Int): OfflineManifest? {
@@ -165,8 +182,21 @@ class OfflineStore(context: Context, private val logStore: LogStore) {
     }
 
     /** Refreshes the cached detail when the book dir already exists. */
-    fun refreshCachedBook(book: BookDetailDto) {
-        if (bookDir(book.id).isDirectory) writeManifest(book)
+    /**
+     * Writes a fresh detail over the cached one. Returns true when the server's
+     * cover is a different one from when the copy on disk was made -- one taken
+     * over from a catalogue, say -- so the caller can fetch it again: the app
+     * prefers the copy on disk, and would otherwise keep showing the old one.
+     *
+     * Cover URLs carry the stored file's name as a version, so a different URL
+     * is a different picture. A manifest written before that versioning has a
+     * bare URL, which reads as changed once: one more download, then they agree.
+     */
+    fun refreshCachedBook(book: BookDetailDto): Boolean {
+        if (!bookDir(book.id).isDirectory) return false
+        val before = cachedBook(book.id)?.coverUrl
+        writeManifest(book)
+        return book.coverUrl != null && before != book.coverUrl
     }
 
     /**

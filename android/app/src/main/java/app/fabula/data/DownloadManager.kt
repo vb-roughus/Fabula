@@ -313,6 +313,48 @@ class DownloadManager(
         offlineStore.reindex()
     }
 
+    /**
+     * Fetches a downloaded book's cover again, replacing the copy on disk.
+     * For a cover that changed on the server: the app prefers the copy, so
+     * without this the book would keep showing the old picture.
+     *
+     * Best-effort, like the first download of a cover: a failure leaves the
+     * old copy in place and is only logged.
+     */
+    fun refreshCover(book: BookDetailDto) {
+        scope.launch {
+            val api = repository.apiOrNull() ?: return@launch
+            try {
+                replaceCover(api, book)
+            } catch (c: kotlinx.coroutines.CancellationException) {
+                throw c
+            } catch (t: Throwable) {
+                logStore.w("Download", "Cover von Buch ${book.id} nicht erneuert", t)
+            }
+        }
+    }
+
+    private suspend fun replaceCover(api: FabulaApi, book: BookDetailDto) = withContext(Dispatchers.IO) {
+        val response = api.downloadCover(book.id)
+        if (!response.isSuccessful) return@withContext
+        val body = response.body() ?: return@withContext
+        val ext = OfflineStore.coverExtensionFor(response.headers()["Content-Type"])
+        val target = offlineStore.replacementCoverFile(book.id, ext)
+        // Into a part file first, so a broken download never replaces a good copy.
+        val part = java.io.File(target.path + ".part")
+        body.use { rb ->
+            rb.byteStream().use { input ->
+                java.io.FileOutputStream(part).use { output -> input.copyTo(output) }
+            }
+        }
+        if (part.length() == 0L || !part.renameTo(target)) {
+            part.delete()
+            return@withContext
+        }
+        offlineStore.deleteCoversExcept(book.id, target)
+        offlineStore.reindex()
+    }
+
     private suspend fun downloadCoverIfMissing(api: FabulaApi, book: BookDetailDto) {
         if (offlineStore.localCover(book.id) != null) return
         if (book.coverUrl == null) return
