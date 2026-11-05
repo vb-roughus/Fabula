@@ -72,31 +72,31 @@ public static class MetadataPreview
             switch (key)
             {
                 case MetadataLocks.Title:
-                    Add(key, "Titel", book.Title, proposal.Title);
+                    Add(key, MetadataLabels.For(key), book.Title, proposal.Title);
                     break;
                 case MetadataLocks.Subtitle:
-                    Add(key, "Untertitel", book.Subtitle, proposal.Subtitle);
+                    Add(key, MetadataLabels.For(key), book.Subtitle, proposal.Subtitle);
                     break;
                 case MetadataLocks.Authors:
-                    Add(key, "Autor", Join(book.Authors.Select(a => a.Name)), Join(proposal.Authors));
+                    Add(key, MetadataLabels.For(key), Join(book.Authors.Select(a => a.Name)), Join(proposal.Authors));
                     break;
                 case MetadataLocks.Narrators:
-                    Add(key, "Sprecher", Join(book.Narrators.Select(n => n.Name)), Join(proposal.Narrators));
+                    Add(key, MetadataLabels.For(key), Join(book.Narrators.Select(n => n.Name)), Join(proposal.Narrators));
                     break;
                 case MetadataLocks.Series:
                     // The name alone: the number is its own field, so it can be
                     // taken while the book keeps a series named differently here.
-                    Add(key, "Serie", book.Series?.Name, proposal.SeriesName);
+                    Add(key, MetadataLabels.For(key), book.Series?.Name, proposal.SeriesName);
                     break;
                 case MetadataLocks.Volume:
                     // A position only means something inside a series; a book in
                     // none has no number to show, whatever the column holds.
-                    Add(key, "Band",
+                    Add(key, MetadataLabels.For(key),
                         book.Series is null && book.SeriesId is null ? null : FormatVolume(book.SeriesPosition),
                         FormatVolume(proposal.SeriesPosition));
                     break;
                 case MetadataLocks.Description:
-                    Add(key, "Beschreibung", book.Description, proposal.Description);
+                    Add(key, MetadataLabels.For(key), book.Description, proposal.Description);
                     break;
                 case MetadataLocks.Chapters:
                     // Only marks that fit this book's audio are offered at all;
@@ -104,30 +104,30 @@ public static class MetadataPreview
                     // A near miss is offered as approximate and never ticked for
                     // the admin: marks that may sit seconds off are a choice.
                     if (chapters?.Chapters is { Count: > 0 } fitted)
-                        Add(key, chapters.Exact ? "Kapitel" : "Kapitel (ungefähr)",
+                        Add(key, chapters.Exact ? MetadataLabels.For(key) : $"{MetadataLabels.For(key)} (ungefähr)",
                             ChapterSummary(book.Chapters.OrderBy(c => c.Index).Select(c => c.Title).ToList()),
                             ChapterSummary(fitted.Select(c => c.Title).ToList()),
                             mayPreselect: chapters.Exact);
                     break;
                 case MetadataLocks.Publisher:
-                    Add(key, "Verlag", book.Publisher, proposal.Publisher);
+                    Add(key, MetadataLabels.For(key), book.Publisher, proposal.Publisher);
                     break;
                 case MetadataLocks.Year:
-                    Add(key, "Jahr", book.PublishYear?.ToString(CultureInfo.InvariantCulture),
+                    Add(key, MetadataLabels.For(key), book.PublishYear?.ToString(CultureInfo.InvariantCulture),
                         proposal.Year?.ToString(CultureInfo.InvariantCulture));
                     break;
                 case MetadataLocks.Language:
-                    Add(key, "Sprache", book.Language, proposal.Language);
+                    Add(key, MetadataLabels.For(key), book.Language, proposal.Language);
                     break;
                 case MetadataLocks.Isbn:
-                    Add(key, "ISBN", book.Isbn, proposal.Isbn);
+                    Add(key, MetadataLabels.For(key), book.Isbn, proposal.Isbn);
                     break;
                 case MetadataLocks.Asin:
-                    Add(key, "ASIN", book.Asin, proposal.Asin);
+                    Add(key, MetadataLabels.For(key), book.Asin, proposal.Asin);
                     break;
                 case MetadataLocks.Cover:
                     // Current and proposed are image URLs here; the clients show them as pictures.
-                    Add(key, "Cover", CoverUrls.Book(book.Id, book.CoverPath), proposal.CoverUrl);
+                    Add(key, MetadataLabels.For(key), CoverUrls.Book(book.Id, book.CoverPath), proposal.CoverUrl);
                     break;
             }
         }

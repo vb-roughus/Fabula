@@ -1,4 +1,5 @@
 using Fabula.Api.Infrastructure;
+using Fabula.Api.Infrastructure.Metadata;
 using Fabula.Core.Domain;
 using Fabula.Core.Services;
 using Fabula.Data;
@@ -122,7 +123,8 @@ public static class BookEndpoints
                 book.LibraryFolder.Name,
                 progress,
                 book.Chapters.Select(c => new ChapterDto(c.Index, c.Title, c.Start, c.End)).ToList(),
-                book.Files.Select(f => new AudioFileDto(f.Id, f.TrackIndex, f.Duration, f.OffsetInBook, f.SizeBytes)).ToList()));
+                book.Files.Select(f => new AudioFileDto(f.Id, f.TrackIndex, f.Duration, f.OffsetInBook, f.SizeBytes)).ToList(),
+                MetadataLabels.Locked(book.MetadataLocks)));
         });
 
         group.MapPut("/{id:int}/series", async (int id, FabulaDbContext db, AssignSeriesRequest req, CancellationToken ct) =>
@@ -259,7 +261,11 @@ public record BookDetailDto(
     string LibraryFolderName,
     ProgressSummaryDto? Progress,
     List<ChapterDto> Chapters,
-    List<AudioFileDto> Files);
+    List<AudioFileDto> Files,
+    /// <summary>Fields taken over from a catalogue and locked against rescans.</summary>
+    List<LockedFieldDto> LockedFields);
+
+public record LockedFieldDto(string Key, string Label);
 
 public record ChapterDto(int Index, string Title, TimeSpan Start, TimeSpan End);
 public record AudioFileDto(int Id, int TrackIndex, TimeSpan Duration, TimeSpan OffsetInBook, long SizeBytes);

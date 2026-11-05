@@ -395,4 +395,132 @@ public class MetadataApplyTests : IDisposable
 
         Assert.StartsWith("saved-", Load().CoverPath);
     }
+
+    // --- releasing ----------------------------------------------------------------
+
+    private async Task<RestoreResult?> Restore(int id, params string[] fields) =>
+        await _scanner.RestoreFromFilesAsync(id, fields.ToHashSet());
+
+    /// <summary>The point of releasing: the field shows what the files say again, and scans may update it.</summary>
+    [Fact]
+    public async Task A_released_field_gets_the_files_value_back_and_is_unlocked()
+    {
+        await Scan();
+        var id = Load().Id;
+        await _repository.ApplyMetadataAsync(
+            id, Update(MetadataLocks.Title, MetadataLocks.Description, MetadataLocks.Narrators), default);
+
+        var result = await Restore(id, MetadataLocks.Title);
+
+        var book = Load();
+        Assert.Equal(new[] { "title" }, result!.Released);
+        Assert.True(result.FilesRead);
+        Assert.Equal("Momo", book.Title);
+        Assert.Equal("Aus dem Katalog", book.Description);
+        Assert.Equal(new[] { "Gert Westphal" }, book.Narrators.Select(n => n.Name));
+        Assert.Equal("narrators,description", book.MetadataLocks);
+    }
+
+    /// <summary>
+    /// Why it is not a full rescan: a change nobody locked -- made by hand -- is
+    /// left alone. A rescan would have put the tag value back.
+    /// </summary>
+    [Fact]
+    public async Task Releasing_leaves_every_other_field_as_it_is()
+    {
+        await Scan();
+        var id = Load().Id;
+        await _repository.ApplyMetadataAsync(id, Update(MetadataLocks.Title), default);
+        var edited = Load();
+        edited.Publisher = "Von Hand gesetzt";
+        _db.SaveChanges();
+
+        await Restore(id, MetadataLocks.Title);
+
+        Assert.Equal("Von Hand gesetzt", Load().Publisher);
+    }
+
+    /// <summary>Files without a value give none back: the field empties, as on a fresh scan.</summary>
+    [Fact]
+    public async Task A_value_the_files_do_not_have_goes_away()
+    {
+        await Scan();
+        var id = Load().Id;
+        await _repository.ApplyMetadataAsync(
+            id, Update(MetadataLocks.Subtitle) with { Subtitle = "Ein Märchen-Roman" }, default);
+        Assert.Equal("Ein Märchen-Roman", Load().Subtitle);
+
+        await Restore(id, MetadataLocks.Subtitle);
+
+        Assert.Null(Load().Subtitle);
+    }
+
+    [Fact]
+    public async Task Released_chapters_come_back_from_the_files()
+    {
+        await Scan();
+        var id = Load().Id;
+        await _repository.ApplyMetadataAsync(
+            id, Update(MetadataLocks.Chapters) with { Chapters = ChapterMarks }, default);
+
+        await Restore(id, MetadataLocks.Chapters);
+
+        var book = Load();
+        Assert.Empty(book.Chapters);
+        Assert.Null(book.MetadataLocks);
+    }
+
+    [Fact]
+    public async Task A_released_series_follows_the_files()
+    {
+        await Scan();
+        var id = Load().Id;
+        await _repository.ApplyMetadataAsync(id, Update(MetadataLocks.Series, MetadataLocks.Volume), default);
+
+        await Restore(id, MetadataLocks.Series, MetadataLocks.Volume);
+
+        var book = Load();
+        Assert.Null(book.Series);
+        Assert.Null(book.SeriesPosition);
+        Assert.False(book.SeriesPositionManuallySet);
+    }
+
+    [Fact]
+    public async Task A_released_cover_returns_to_the_folder_image()
+    {
+        await Scan();
+        var id = Load().Id;
+        await _repository.ApplyMetadataAsync(id, Update(MetadataLocks.Cover), default);
+        File.WriteAllBytes(Path.Combine(_bookDir, "cover.jpg"), new byte[10]);
+
+        await Restore(id, MetadataLocks.Cover);
+
+        Assert.StartsWith("saved-", Load().CoverPath);
+    }
+
+    /// <summary>
+    /// Files that cannot be read still release the lock; the values come back
+    /// with the next scan that reads them, and nothing is emptied meanwhile.
+    /// </summary>
+    [Fact]
+    public async Task Unreadable_files_release_the_lock_and_keep_the_value()
+    {
+        await Scan();
+        var id = Load().Id;
+        await _repository.ApplyMetadataAsync(id, Update(MetadataLocks.Title), default);
+        File.Delete(_audioFile);
+
+        var result = await Restore(id, MetadataLocks.Title);
+
+        var book = Load();
+        Assert.False(result!.FilesRead);
+        Assert.Null(book.MetadataLocks);
+        Assert.Equal("Momo oder Die seltsame Geschichte", book.Title);
+    }
+
+    [Fact]
+    public async Task Releasing_on_an_unknown_book_is_reported_as_such()
+    {
+        Assert.Null(await Restore(4711, MetadataLocks.Title));
+    }
 }

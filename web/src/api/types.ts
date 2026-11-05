@@ -43,6 +43,8 @@ export interface BookDetail extends BookSummary {
   asin: string | null;
   chapters: Chapter[];
   files: AudioFileInfo[];
+  /** Fields taken over from a catalogue and locked against rescans. Absent on older servers. */
+  lockedFields?: LockedField[];
 }
 
 export const LIBRARY_TYPE_LABEL: Record<LibraryType, string> = {
@@ -246,4 +248,15 @@ export interface ApplyMetadataResult {
   taken: string[];
   /** Ticked but not taken: nothing in the catalogue, or the cover would not download. */
   skipped: string[];
+}
+
+export interface LockedField {
+  key: string;
+  label: string;
+}
+
+export interface RestoreMetadataResult {
+  restored: string[];
+  /** False when the locks were released but the files could not be read. */
+  filesRead: boolean;
 }

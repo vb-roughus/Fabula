@@ -220,6 +220,25 @@ public static class MetadataEndpoints
             return Results.Ok(new ApplyMetadataResultDto(taken.ToList(), skipped));
         });
 
+        // Releases locked fields and gives them back what the files say. Only
+        // those fields: a full rescan would also undo things nobody locked, a
+        // series assigned by hand, say.
+        group.MapPost("/restore", async (
+            int id, RestoreMetadataRequest request, ILibraryScanner scanner, CancellationToken ct) =>
+        {
+            var fields = (request.Fields ?? [])
+                .Select(f => f.Trim().ToLowerInvariant())
+                .Where(f => MetadataLocks.All.Contains(f))
+                .ToHashSet();
+            if (fields.Count == 0)
+                return Results.BadRequest(new { error = "Keine Felder ausgewählt." });
+
+            var result = await scanner.RestoreFromFilesAsync(id, fields, ct);
+            return result is null
+                ? Results.NotFound()
+                : Results.Ok(new RestoreMetadataResultDto(result.Released.ToList(), result.FilesRead));
+        });
+
         return app;
     }
 
@@ -253,3 +272,8 @@ public record MetadataFieldDto(string Key, string Label, string? Current, string
 public record ApplyMetadataRequest(List<string>? Fields);
 
 public record ApplyMetadataResultDto(List<string> Taken, List<string> Skipped);
+
+public record RestoreMetadataRequest(List<string>? Fields);
+
+/// <summary><c>FilesRead</c> is false when the locks were released but the files could not be read.</summary>
+public record RestoreMetadataResultDto(List<string> Restored, bool FilesRead);
