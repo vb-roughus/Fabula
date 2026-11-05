@@ -124,7 +124,14 @@ data class ProgressDto(
 data class UpdateProgressRequest(
     val position: String,
     val finished: Boolean,
-    val device: String
+    val device: String,
+    /**
+     * When this device recorded the position, ISO-8601 in UTC. The server
+     * orders progress by it, so a position handed over late -- after listening
+     * offline -- cannot overwrite newer listening from another device. Left
+     * out for live calls, where the arrival is the recording time anyway.
+     */
+    val recordedAt: String? = null
 )
 
 @Serializable
