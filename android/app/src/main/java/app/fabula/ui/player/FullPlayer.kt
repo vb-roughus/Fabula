@@ -133,7 +133,7 @@ fun FullPlayer(
     var currentSpeed by remember { mutableFloatStateOf(1.0f) }
     // Dusch-Modus controls live behind the water-drop toggle in the utility
     // row and roll out on demand, so the player stays uncluttered.
-    var showerExpanded by remember { mutableStateOf(false) }
+    var showerSheetOpen by remember { mutableStateOf(false) }
     val showerEffectivelyOn = state.showerBoostDb > 0f && state.showerSpeakerOnly
 
     // Aggressive breathing for the gradient when pulse mode is active.
@@ -284,23 +284,13 @@ fun FullPlayer(
             playerFg = playerFg
         )
     }
-    val showerSection: @Composable () -> Unit = {
-        PlayerShowerSection(
-            visible = showerExpanded,
-            boostDb = state.showerBoostDb,
-            speakerOnly = state.showerSpeakerOnly,
-            onBoostChange = { player.setShowerBoostDb(it) },
-            playerFg = playerFg,
-            playerMuted = playerMuted
-        )
-    }
     val utilityRow: @Composable () -> Unit = {
         PlayerUtilityRow(
             currentSpeed = currentSpeed,
             onSelectSpeed = { currentSpeed = it; player.setSpeed(it) },
             showerEffectivelyOn = showerEffectivelyOn,
-            showerExpanded = showerExpanded,
-            onToggleShower = { showerExpanded = !showerExpanded },
+            showerSet = state.showerBoostDb > 0f,
+            onOpenShower = { showerSheetOpen = true },
             pulseEnabled = pulseEnabled,
             onTogglePulse = { pulseEnabled = !pulseEnabled },
             // Only offered where there is a series to continue into.
@@ -369,7 +359,6 @@ fun FullPlayer(
                         Spacer(Modifier.height(16.dp))
                         mainControls()
                         Spacer(Modifier.height(12.dp))
-                        showerSection()
                         utilityRow()
                     }
                 }
@@ -409,7 +398,6 @@ fun FullPlayer(
                 Spacer(Modifier.height(16.dp))
                 mainControls()
                 Spacer(Modifier.height(12.dp))
-                showerSection()
                 utilityRow()
             }
         }
@@ -433,6 +421,15 @@ fun FullPlayer(
         visible = isOpen && showerEffectivelyOn,
         modifier = Modifier.fillMaxSize()
     )
+    }
+
+    if (showerSheetOpen) {
+        ShowerStrengthSheet(
+            boostDb = state.showerBoostDb,
+            speakerOnly = state.showerSpeakerOnly,
+            onSelect = { player.setShowerBoostDb(it) },
+            onDismiss = { showerSheetOpen = false }
+        )
     }
 
     if (bookmarkManagerOpen) {
@@ -904,41 +901,13 @@ private fun PlayerMainControls(
 }
 
 @Composable
-private fun PlayerShowerSection(
-    visible: Boolean,
-    boostDb: Float,
-    speakerOnly: Boolean,
-    onBoostChange: (Float) -> Unit,
-    playerFg: Color,
-    playerMuted: Color
-) {
-    AnimatedVisibility(
-        visible = visible,
-        enter = expandVertically(tween(220, easing = FastOutSlowInEasing)) +
-            fadeIn(tween(180)),
-        exit = shrinkVertically(tween(180, easing = FastOutSlowInEasing)) +
-            fadeOut(tween(120))
-    ) {
-        Column {
-            ShowerModeRow(
-                boostDb = boostDb,
-                speakerOnly = speakerOnly,
-                onBoostChange = onBoostChange,
-                playerFg = playerFg,
-                playerMuted = playerMuted
-            )
-            Spacer(Modifier.height(8.dp))
-        }
-    }
-}
-
-@Composable
 private fun PlayerUtilityRow(
     currentSpeed: Float,
     onSelectSpeed: (Float) -> Unit,
     showerEffectivelyOn: Boolean,
-    showerExpanded: Boolean,
-    onToggleShower: () -> Unit,
+    /** Set, though perhaps not acting right now -- headphones connected. */
+    showerSet: Boolean,
+    onOpenShower: () -> Unit,
     pulseEnabled: Boolean,
     onTogglePulse: () -> Unit,
     /** Null when this book is in no series; then the toggle is hidden. */
@@ -993,15 +962,16 @@ private fun PlayerUtilityRow(
         Spacer(Modifier.weight(1f))
 
         IconButton(
-            onClick = onToggleShower,
+            onClick = onOpenShower,
             modifier = Modifier.size(40.dp)
         ) {
             Icon(
-                imageVector = if (showerEffectivelyOn) Icons.Filled.WaterDrop else Icons.Outlined.WaterDrop,
-                contentDescription = if (showerExpanded) "Dusch-Modus ausblenden" else "Dusch-Modus einblenden",
+                imageVector = if (showerSet) Icons.Filled.WaterDrop else Icons.Outlined.WaterDrop,
+                contentDescription = "Duschmodus",
                 tint = when {
                     showerEffectivelyOn -> MaterialTheme.colorScheme.primary
-                    showerExpanded -> playerFg
+                    // Set but idle behind headphones: there, but quiet about it.
+                    showerSet -> playerFg.copy(alpha = 0.45f)
                     else -> playerFg.copy(alpha = 0.7f)
                 },
                 modifier = Modifier.size(20.dp)
@@ -1084,70 +1054,3 @@ private fun PlayerUtilityRow(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun ShowerModeRow(
-    boostDb: Float,
-    speakerOnly: Boolean,
-    onBoostChange: (Float) -> Unit,
-    playerFg: Color,
-    playerMuted: Color
-) {
-    val active = boostDb > 0f
-    val effectivelyOn = active && speakerOnly
-    val iconTint = when {
-        effectivelyOn -> MaterialTheme.colorScheme.primary
-        active && !speakerOnly -> playerFg.copy(alpha = 0.35f)
-        else -> playerFg.copy(alpha = 0.7f)
-    }
-
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = if (effectivelyOn) Icons.Filled.WaterDrop else Icons.Outlined.WaterDrop,
-                contentDescription = null,
-                tint = iconTint,
-                modifier = Modifier.size(20.dp)
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(
-                "Dusch-Modus",
-                style = MaterialTheme.typography.labelLarge,
-                color = if (effectivelyOn) playerFg else playerMuted
-            )
-            if (active && !speakerOnly) {
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    "· Nur Lautsprecher",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = playerFg.copy(alpha = 0.4f)
-                )
-            }
-            Spacer(Modifier.weight(1f))
-            Text(
-                if (boostDb <= 0f) "AUS" else "+${boostDb.toInt()} dB",
-                style = MaterialTheme.typography.labelMedium,
-                color = if (effectivelyOn) MaterialTheme.colorScheme.primary else playerMuted
-            )
-        }
-        Slider(
-            value = boostDb,
-            onValueChange = onBoostChange,
-            valueRange = 0f..15f,
-            steps = 14,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 0.dp),
-            colors = SliderDefaults.colors(
-                thumbColor = if (effectivelyOn) MaterialTheme.colorScheme.primary else playerFg.copy(alpha = 0.5f),
-                activeTrackColor = if (effectivelyOn) MaterialTheme.colorScheme.primary else playerFg.copy(alpha = 0.5f),
-                inactiveTrackColor = playerFg.copy(alpha = 0.15f),
-                activeTickColor = Color.Transparent,
-                inactiveTickColor = Color.Transparent
-            )
-        )
-    }
-}
