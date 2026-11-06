@@ -133,7 +133,7 @@ fun FullPlayer(
     var currentSpeed by remember { mutableFloatStateOf(1.0f) }
     // Dusch-Modus controls live behind the water-drop toggle in the utility
     // row and roll out on demand, so the player stays uncluttered.
-    var showerSheetOpen by remember { mutableStateOf(false) }
+    var showerExpanded by remember { mutableStateOf(false) }
     val showerEffectivelyOn = state.showerBoostDb > 0f && state.showerSpeakerOnly
 
     // Aggressive breathing for the gradient when pulse mode is active.
@@ -284,13 +284,24 @@ fun FullPlayer(
             playerFg = playerFg
         )
     }
+    val showerSection: @Composable () -> Unit = {
+        PlayerShowerSection(
+            visible = showerExpanded,
+            boostDb = state.showerBoostDb,
+            speakerOnly = state.showerSpeakerOnly,
+            onBoostChange = { player.setShowerBoostDb(it) },
+            playerFg = playerFg,
+            playerMuted = playerMuted
+        )
+    }
     val utilityRow: @Composable () -> Unit = {
         PlayerUtilityRow(
             currentSpeed = currentSpeed,
             onSelectSpeed = { currentSpeed = it; player.setSpeed(it) },
             showerEffectivelyOn = showerEffectivelyOn,
             showerSet = state.showerBoostDb > 0f,
-            onOpenShower = { showerSheetOpen = true },
+            showerExpanded = showerExpanded,
+            onToggleShower = { showerExpanded = !showerExpanded },
             pulseEnabled = pulseEnabled,
             onTogglePulse = { pulseEnabled = !pulseEnabled },
             // Only offered where there is a series to continue into.
@@ -359,6 +370,7 @@ fun FullPlayer(
                         Spacer(Modifier.height(16.dp))
                         mainControls()
                         Spacer(Modifier.height(12.dp))
+                        showerSection()
                         utilityRow()
                     }
                 }
@@ -398,6 +410,7 @@ fun FullPlayer(
                 Spacer(Modifier.height(16.dp))
                 mainControls()
                 Spacer(Modifier.height(12.dp))
+                showerSection()
                 utilityRow()
             }
         }
@@ -421,15 +434,6 @@ fun FullPlayer(
         visible = isOpen && showerEffectivelyOn,
         modifier = Modifier.fillMaxSize()
     )
-    }
-
-    if (showerSheetOpen) {
-        ShowerStrengthSheet(
-            boostDb = state.showerBoostDb,
-            speakerOnly = state.showerSpeakerOnly,
-            onSelect = { player.setShowerBoostDb(it) },
-            onDismiss = { showerSheetOpen = false }
-        )
     }
 
     if (bookmarkManagerOpen) {
@@ -900,6 +904,34 @@ private fun PlayerMainControls(
     }
 }
 
+/** Shower mode's scale, folding out under the controls. */
+@Composable
+private fun PlayerShowerSection(
+    visible: Boolean,
+    boostDb: Float,
+    speakerOnly: Boolean,
+    onBoostChange: (Float) -> Unit,
+    playerFg: Color,
+    playerMuted: Color
+) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = expandVertically(tween(220, easing = FastOutSlowInEasing)) + fadeIn(tween(180)),
+        exit = shrinkVertically(tween(180, easing = FastOutSlowInEasing)) + fadeOut(tween(120))
+    ) {
+        Column {
+            ShowerScaleControl(
+                boostDb = boostDb,
+                speakerOnly = speakerOnly,
+                onBoostChange = onBoostChange,
+                playerFg = playerFg,
+                playerMuted = playerMuted
+            )
+            Spacer(Modifier.height(8.dp))
+        }
+    }
+}
+
 @Composable
 private fun PlayerUtilityRow(
     currentSpeed: Float,
@@ -907,7 +939,8 @@ private fun PlayerUtilityRow(
     showerEffectivelyOn: Boolean,
     /** Set, though perhaps not acting right now -- headphones connected. */
     showerSet: Boolean,
-    onOpenShower: () -> Unit,
+    showerExpanded: Boolean,
+    onToggleShower: () -> Unit,
     pulseEnabled: Boolean,
     onTogglePulse: () -> Unit,
     /** Null when this book is in no series; then the toggle is hidden. */
@@ -962,16 +995,17 @@ private fun PlayerUtilityRow(
         Spacer(Modifier.weight(1f))
 
         IconButton(
-            onClick = onOpenShower,
+            onClick = onToggleShower,
             modifier = Modifier.size(40.dp)
         ) {
             Icon(
                 imageVector = if (showerSet) Icons.Filled.WaterDrop else Icons.Outlined.WaterDrop,
-                contentDescription = "Duschmodus",
+                contentDescription = if (showerExpanded) "Duschmodus ausblenden" else "Duschmodus einblenden",
                 tint = when {
                     showerEffectivelyOn -> MaterialTheme.colorScheme.primary
                     // Set but idle behind headphones: there, but quiet about it.
                     showerSet -> playerFg.copy(alpha = 0.45f)
+                    showerExpanded -> playerFg
                     else -> playerFg.copy(alpha = 0.7f)
                 },
                 modifier = Modifier.size(20.dp)
