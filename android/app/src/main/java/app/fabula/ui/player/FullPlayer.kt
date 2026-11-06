@@ -314,8 +314,11 @@ fun FullPlayer(
         )
     }
 
+    // The rain sits over everything, system bars included, like water on
+    // the glass in front of the whole screen.
+    Box(modifier = modifier.fillMaxSize()) {
     BoxWithConstraints(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxSize()
             .background(brush = backgroundGradient)
             // Absorb taps on empty areas (spacers, padding) so they cannot
@@ -422,6 +425,14 @@ fun FullPlayer(
                 .widthIn(max = 560.dp)
                 .padding(horizontal = 24.dp, vertical = 12.dp)
         )
+    }
+
+    // Shower mode on, player open: rain on the glass. It takes no touches,
+    // so everything underneath still works.
+    WindshieldRain(
+        visible = isOpen && showerEffectivelyOn,
+        modifier = Modifier.fillMaxSize()
+    )
     }
 
     if (bookmarkManagerOpen) {
