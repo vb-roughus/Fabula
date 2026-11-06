@@ -57,21 +57,30 @@ class UploadSyncer(
         var uploadedHighlight = false
 
         for (entry in store.allBookmarks()) {
-            val ok = runCatching {
+            val failure = runCatching {
                 api.createBookmark(
                     entry.bookId,
                     CreateBookmarkRequest(position = entry.position, note = entry.note)
                 )
-            }.onFailure {
-                logStore.w("Pending", "Lesezeichen buch=${entry.bookId} noch offen: ${it.message}")
-            }.isSuccess
-            if (!ok) break  // offline or failing; keep this and the rest queued
+            }.exceptionOrNull()
+            if (failure is kotlinx.coroutines.CancellationException) throw failure
+            if (failure != null) {
+                val status = httpStatusOf(failure)
+                if (afterFailedHandover(status) == HandoverOutcome.RetryLater) {
+                    logStore.w("Pending", "Lesezeichen buch=${entry.bookId} noch offen: ${failure.message}")
+                    break  // offline or failing; keep this and the rest queued
+                }
+                // Refused for good -- the book is gone, say. Kept, it would
+                // hold up every bookmark behind it.
+                logStore.w("Pending", "Lesezeichen buch=${entry.bookId} abgelehnt (HTTP $status), verworfen")
+            }
             store.removeBookmark(entry.localId)
+            // The list changed either way -- taken, or dropped -- so it reloads.
             uploadedBookmark = true
         }
 
         for (entry in store.allHighlights()) {
-            val ok = runCatching {
+            val failure = runCatching {
                 api.createHighlight(
                     entry.bookId,
                     CreateHighlightRequest(
@@ -81,10 +90,16 @@ class UploadSyncer(
                         note = entry.note
                     )
                 )
-            }.onFailure {
-                logStore.w("Pending", "Markierung buch=${entry.bookId} noch offen: ${it.message}")
-            }.isSuccess
-            if (!ok) break
+            }.exceptionOrNull()
+            if (failure is kotlinx.coroutines.CancellationException) throw failure
+            if (failure != null) {
+                val status = httpStatusOf(failure)
+                if (afterFailedHandover(status) == HandoverOutcome.RetryLater) {
+                    logStore.w("Pending", "Markierung buch=${entry.bookId} noch offen: ${failure.message}")
+                    break
+                }
+                logStore.w("Pending", "Markierung buch=${entry.bookId} abgelehnt (HTTP $status), verworfen")
+            }
             store.removeHighlight(entry.localId)
             uploadedHighlight = true
         }
