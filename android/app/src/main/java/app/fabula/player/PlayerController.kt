@@ -725,7 +725,7 @@ class PlayerController(
                 // Oldest observation first, so a book listened to earlier is
                 // handed over before the current one.
                 for (entry in progressStore.pending()) {
-                    val ok = runCatching {
+                    val failure = try {
                         api.saveProgress(
                             entry.bookId,
                             UpdateProgressRequest(
@@ -738,9 +738,43 @@ class PlayerController(
                                 recordedAt = java.time.Instant.ofEpochMilli(entry.updatedAtMs).toString()
                             )
                         )
-                    }.isSuccess
-                    if (!ok) break  // offline or failing; keep the rest pending
-                    progressStore.markSynced(entry.bookId, entry.updatedAtMs)
+                        null
+                    } catch (c: kotlinx.coroutines.CancellationException) {
+                        throw c
+                    } catch (t: Throwable) {
+                        t
+                    }
+
+                    if (failure == null) {
+                        progressStore.markSynced(entry.bookId, entry.updatedAtMs)
+                        continue
+                    }
+
+                    val status = app.fabula.data.httpStatusOf(failure)
+                    when (app.fabula.data.afterFailedHandover(status)) {
+                        // Never to be taken -- the book is gone, say. Left in
+                        // place it would hold up everything behind it for good,
+                        // the book being listened to now included.
+                        app.fabula.data.HandoverOutcome.GiveUp -> {
+                            repository.logFailure(
+                                "Progress.sync: Buch ${entry.bookId} vom Server abgelehnt (HTTP $status), verworfen",
+                                failure
+                            )
+                            progressStore.markSynced(entry.bookId, entry.updatedAtMs)
+                        }
+                        // Offline or the server's trouble: keep this and the
+                        // rest for the next attempt. Network errors are logged
+                        // by the offline handling already; server errors are not.
+                        app.fabula.data.HandoverOutcome.RetryLater -> {
+                            if (status != null) {
+                                repository.logFailure(
+                                    "Progress.sync: Buch ${entry.bookId} nicht übergeben (HTTP $status), später erneut",
+                                    failure
+                                )
+                            }
+                            break
+                        }
+                    }
                 }
             }
         }
