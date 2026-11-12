@@ -3,7 +3,9 @@ package app.fabula.ui.book
 import app.fabula.data.BookDetailDto
 import app.fabula.data.ChapterDto
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -155,5 +157,40 @@ class ResumeChapterTest {
                 storedPositionSec = 15 * 60.0
             )
         )
+    }
+
+    // --- Tapping a chapter: carry on or start over ---------------------------
+
+    /** The marked chapter picks up where the listener left off. */
+    @Test
+    fun `tapping the chapter holding the position carries on`() {
+        assertTrue(continuesInChapter(754.0, finished = false, chapterStartSec = 600.0, chapterEndSec = 1200.0))
+    }
+
+    /** Any other chapter is an explicit choice to hear it from its start. */
+    @Test
+    fun `tapping another chapter starts it from the beginning`() {
+        assertFalse(continuesInChapter(754.0, finished = false, chapterStartSec = 0.0, chapterEndSec = 600.0))
+        assertFalse(continuesInChapter(754.0, finished = false, chapterStartSec = 1200.0, chapterEndSec = 1800.0))
+    }
+
+    /** A position resting on a boundary belongs to the chapter that begins there. */
+    @Test
+    fun `a position on the boundary belongs to the following chapter`() {
+        assertTrue(continuesInChapter(599.995, finished = false, chapterStartSec = 600.0, chapterEndSec = 1200.0))
+        assertFalse(continuesInChapter(599.995, finished = false, chapterStartSec = 0.0, chapterEndSec = 600.0))
+    }
+
+    /** Carrying on two seconds before the end would only clip into the next chapter. */
+    @Test
+    fun `the last seconds of a chapter start it over`() {
+        assertFalse(continuesInChapter(1199.0, finished = false, chapterStartSec = 600.0, chapterEndSec = 1200.0))
+        assertTrue(continuesInChapter(1197.0, finished = false, chapterStartSec = 600.0, chapterEndSec = 1200.0))
+    }
+
+    /** A finished book has nothing to carry on from. */
+    @Test
+    fun `a finished book starts the chapter over`() {
+        assertFalse(continuesInChapter(754.0, finished = true, chapterStartSec = 600.0, chapterEndSec = 1200.0))
     }
 }
