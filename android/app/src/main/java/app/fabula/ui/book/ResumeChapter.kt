@@ -34,3 +34,24 @@ internal fun resumeChapterIndex(
         probe >= parseTimeSpan(c.start) && probe < parseTimeSpan(c.end)
     }.takeIf { it >= 0 }
 }
+
+/** The last seconds of a chapter count as done: resuming there would only clip into the next one. */
+internal const val RESUME_END_MARGIN_SEC = 2.0
+
+/**
+ * Whether tapping a chapter carries on from [positionSec] instead of starting
+ * the chapter over: when the position lies inside it -- the chapter the list
+ * scrolled to and marked -- the book is not finished, and the position is not
+ * in the chapter's last seconds. Any other chapter starts from its beginning.
+ */
+internal fun continuesInChapter(
+    positionSec: Double,
+    finished: Boolean,
+    chapterStartSec: Double,
+    chapterEndSec: Double
+): Boolean {
+    if (finished) return false
+    // The same 10 ms tolerance at boundaries as everywhere else.
+    val probe = positionSec + 0.010
+    return probe >= chapterStartSec && positionSec < chapterEndSec - RESUME_END_MARGIN_SEC
+}

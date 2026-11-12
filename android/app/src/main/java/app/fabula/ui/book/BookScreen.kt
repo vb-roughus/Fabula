@@ -595,7 +595,18 @@ fun BookScreen(
                     onChapterClick = { chapter ->
                         scope.launch {
                             if (playerState.book?.id != b.id) player.loadBook(b)
-                            player.jumpToChapter(chapter)
+                            // Loading resumes where the book was left. Tapping
+                            // the chapter that position lies in -- the one the
+                            // list scrolled to -- carries on from there; any
+                            // other chapter starts from its beginning.
+                            val now = player.state.value
+                            val carriesOn = now.book?.id == b.id && continuesInChapter(
+                                positionSec = now.positionInBook,
+                                finished = now.finished,
+                                chapterStartSec = parseTimeSpan(chapter.start),
+                                chapterEndSec = parseTimeSpan(chapter.end)
+                            )
+                            if (!carriesOn) player.jumpToChapter(chapter)
                             player.play()
                             onPlaybackStarted()
                         }
