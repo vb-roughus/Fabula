@@ -23,7 +23,6 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -225,8 +224,7 @@ fun FullPlayer(
         }
     }
 
-    // Shared building blocks -- assembled differently for portrait vs. landscape
-    // so the two orientations never drift out of sync.
+    // The building blocks of the player, assembled into one column below.
     val topBar: @Composable () -> Unit = {
         PlayerTopBar(
             label = if (book.series != null) "AUS DER SERIE" else "WIRD ABGESPIELT",
@@ -331,91 +329,66 @@ fun FullPlayer(
             )
             .systemBarsPadding()
     ) {
-        // Two-pane only when the screen is clearly wider than tall (phone in
-        // landscape). Near-square large screens (e.g. an unfolded foldable)
-        // use the single-column layout below -- a full-height square cover
-        // would otherwise dominate the pane.
-        if (maxWidth > maxHeight * 1.3f) {
-            // Landscape (wide): a square cover on the left, the controls
-            // stacked in a scrollable column on the right so nothing is ever
-            // pushed off the (short) screen.
-            Column(
+        // One layout in every orientation: the cover on top, the controls
+        // beneath it. The controls are measured first and always get the room
+        // they need; the cover takes what is left, as the largest square that
+        // fits -- generous upright and on a tablet, a thumbnail on a phone held
+        // sideways, left out when not even that fits. The column is capped to
+        // a comfortable width and centred, so a wide screen reads like a
+        // normal player instead of pushing the controls off to one side.
+        val short = playerIsShort(maxHeight)
+        val gap = if (short) 8.dp else 16.dp
+        val smallGap = if (short) 4.dp else 12.dp
+        val controlsScroll = rememberScrollState()
+        Column(
+            modifier = Modifier
+                .fillMaxHeight()
+                .widthIn(max = 560.dp)
+                .align(Alignment.TopCenter)
+                .padding(horizontal = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            topBar()
+            Box(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 24.dp)
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .padding(vertical = if (short) 4.dp else 12.dp),
+                contentAlignment = Alignment.Center
             ) {
-                topBar()
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    cover(
-                        Modifier
-                            .fillMaxHeight()
-                            .aspectRatio(1f)
-                            .padding(top = 8.dp, bottom = 8.dp, end = 20.dp)
-                    )
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
-                            .verticalScroll(rememberScrollState()),
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        titleRow()
-                        Spacer(Modifier.height(16.dp))
-                        scrubber()
-                        Spacer(Modifier.height(16.dp))
-                        mainControls()
-                        Spacer(Modifier.height(12.dp))
-                        showerSection()
-                        utilityRow()
-                    }
+                BoxWithConstraints {
+                    val side = playerCoverSide(maxWidth, maxHeight)
+                    if (side > 0.dp) cover(Modifier.size(side))
                 }
             }
-        } else {
-            // Portrait / near-square: the cover takes the flexible space up top
-            // (so it shrinks instead of pushing the controls off the bottom),
-            // the controls sit beneath at their natural size. The cover is sized
-            // to the largest square that fits its region -- min of the available
-            // width and height -- so it never overflows. The whole column is
-            // capped to a comfortable width and centred, so on a big/near-square
-            // screen it reads like a normal player instead of stretching wide.
+            // Natural height whenever it fits. On a screen too short for even
+            // the controls alone -- the shower scale folded out on a phone held
+            // sideways -- they scroll instead of being cut off. Anchored at the
+            // bottom, so what gives way is the title line, while play/pause and
+            // the shower button that just opened the scale stay in reach.
+            // Scrolling is switched on only then, so a vertical swipe across
+            // controls that fit doesn't set off the overscroll stretch.
             Column(
                 modifier = Modifier
-                    .fillMaxHeight()
-                    .widthIn(max = 560.dp)
-                    .align(Alignment.TopCenter)
-                    .padding(horizontal = 24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+                    .fillMaxWidth()
+                    .verticalScroll(
+                        controlsScroll,
+                        enabled = controlsScroll.maxValue > 0,
+                        reverseScrolling = true
+                    )
             ) {
-                topBar()
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth()
-                        .padding(vertical = 12.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    BoxWithConstraints {
-                        val side = minOf(maxWidth, maxHeight)
-                        cover(Modifier.size(side))
-                    }
-                }
                 titleRow()
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(gap))
                 scrubber()
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(gap))
                 mainControls()
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(smallGap))
                 showerSection()
                 utilityRow()
             }
         }
 
-        // Floats over whichever layout is in use, at the bottom edge where the
+        // Floats over the controls, at the bottom edge where the
         // thumb already is. Only visible during the closing seconds, and only
         // when the next volume is ready to start.
         SeriesNextUpCard(
